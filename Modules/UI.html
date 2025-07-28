@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, orientation=landscape">
+    <title>Interactive DashCam Platform</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: row;
+            height: 100vh;
+            background: #f0f0f0;
+        }
+        #menu {
+            width: 20%;
+            background: #333;
+            color: white;
+            padding: 10px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #content {
+            width: 80%;
+            position: relative;
+        }
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #p5Canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10; /* Ensure canvas is on top of video */
+        }
+        button, select, input {
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="menu">
+        <select id="inputSource" onchange="changeInputSource()">
+            <option value="none">Select Input</option>
+            <option value="camera">Camera</option>
+            <option value="video">Upload Video</option>
+            <option value="screen">Upload Screen Record</option>
+            <option value="host">Host URL (e.g., RTSP)</option>
+        </select>
+        <input type="file" id="videoFile" accept="video/*" style="display: none;">
+        <input type="text" id="hostUrl" placeholder="Enter Host URL" style="display: none;">
+        <button onclick="goBack()">Back</button>
+        <button onclick="saveSettings()">Save Settings</button>
+        <button onclick="placeholderAction()">More Options</button>
+    </div>
+    <div id="content">
+        <video id="videoElement" autoplay playsinline></video>
+    </div>
+
+    <script>
+        let video;
+        let points = [];
+        let draggingPoint = null;
+
+        function setup() {
+            // Create canvas with the same size as content div
+            let contentDiv = document.getElementById('content');
+            let canvas = createCanvas(contentDiv.offsetWidth, contentDiv.offsetHeight);
+            canvas.parent('content');
+            canvas.id('p5Canvas'); // Ensure canvas has correct ID
+
+            // Initialize 4 draggable points with relative positions
+            points = [
+                {x: width * 0.2, y: height * 0.2},
+                {x: width * 0.8, y: height * 0.2},
+                {x: width * 0.8, y: height * 0.8},
+                {x: width * 0.2, y: height * 0.8}
+            ];
+            video = document.getElementById('videoElement');
+        }
+
+        function draw() {
+            // Clear canvas with transparent background
+            clear();
+            background(0, 0, 0, 0); // Transparent background
+
+            // Draw Convex Hull
+            if (points.length >= 3) {
+                let hull = computeConvexHull(points);
+                stroke(255, 0, 0); // Red line for Convex Hull
+                strokeWeight(2);
+                noFill();
+                beginShape();
+                for (let p of hull) {
+                    vertex(p.x, p.y);
+                }
+                endShape(CLOSE);
+            }
+
+            // Draw Points
+            fill(0, 255, 0); // Green points
+            noStroke();
+            for (let p of points) {
+                ellipse(p.x, p.y, 15, 15); // Larger points for visibility
+            }
+        }
+
+        function mousePressed() {
+            for (let p of points) {
+                if (dist(mouseX, mouseY, p.x, p.y) < 15) {
+                    draggingPoint = p;
+                    break;
+                }
+            }
+        }
+
+        function mouseDragged() {
+            if (draggingPoint) {
+                // Restrict points within canvas
+                draggingPoint.x = constrain(mouseX, 0, width);
+                draggingPoint.y = constrain(mouseY, 0, height);
+            }
+        }
+
+        function mouseReleased() {
+            draggingPoint = null;
+        }
+
+        function computeConvexHull(points) {
+            // Graham Scan Algorithm
+            points.sort((a, b) => a.y === b.y ? a.x - b.x : a.y - b.y);
+            let hull = [];
+            let n = points.length;
+            hull.push(points[0]);
+            points.sort((a, b) => {
+                let angleA = Math.atan2(a.y - points[0].y, a.x - points[0].x);
+                let angleB = Math.atan2(b.y - points[0].y, b.x - points[0].x);
+                return angleA - angleB;
+            });
+            for (let i = 1; i < n; i++) {
+                while (hull.length >= 2 && ccw(hull[hull.length - 2], hull[hull.length - 1], points[i]) <= 0) {
+                    hull.pop();
+                }
+                hull.push(points[i]);
+            }
+            return hull;
+        }
+
+        function ccw(p1, p2, p3) {
+            return (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
+        }
+
+        function changeInputSource() {
+            let source = document.getElementById('inputSource').value;
+            let videoFileInput = document.getElementById('videoFile');
+            let hostUrlInput = document.getElementById('hostUrl');
+            videoFileInput.style.display = source === 'video' || source === 'screen' ? 'block' : 'none';
+            hostUrlInput.style.display = source === 'host' ? 'block' : 'none';
+
+            if (source === 'camera') {
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then(stream => {
+                        video.srcObject = stream;
+                    })
+                    .catch(err => alert('Camera access failed: ' + err));
+            } else if (source === 'video' || source === 'screen') {
+                videoFileInput.onchange = function(e) {
+                    let file = e.target.files[0];
+                    video.src = URL.createObjectURL(file);
+                };
+                videoFileInput.click();
+            } else if (source === 'host') {
+                video.src = hostUrlInput.value;
+            }
+        }
+
+        function goBack() {
+            alert('Back button pressed');
+            // Logic for going back
+        }
+
+        function saveSettings() {
+            alert('Settings saved: ' + JSON.stringify(points));
+            // Save points coordinates for syncing
+        }
+
+        function placeholderAction() {
+            alert('More options to be implemented');
+        }
+
+        function windowResized() {
+            let contentDiv = document.getElementById('content');
+            resizeCanvas(contentDiv.offsetWidth, contentDiv.offsetHeight);
+            // Adjust points proportionally
+            points.forEach(p => {
+                p.x = p.x * (contentDiv.offsetWidth / width);
+                p.y = p.y * (contentDiv.offsetHeight / height);
+            });
+        }
+    </script>
+</body>
+</html>
