@@ -74,8 +74,97 @@ function setupEventListeners() {
     // Video file input
     document.getElementById('videoFileInput').addEventListener('change', handleVideoFile);
     
+    // Mobile-specific setup for segmentation button
+    setupMobileButtons();
+    
     // Initialize frame processing
     initializeFrameProcessing();
+}
+
+function setupMobileButtons() {
+    if (isMobileDevice()) {
+        // Add additional touch event handling for segmentation button
+        document.addEventListener('DOMContentLoaded', function() {
+            setupSegmentationButtonMobile();
+        });
+    }
+}
+
+function setupSegmentationButtonMobile() {
+    if (isMobileDevice()) {
+        const segButton = document.getElementById('toggleProcessingBtn');
+        if (segButton) {
+            console.log('Setting up mobile touch events for segmentation button');
+            
+            // Remove ALL existing event listeners to avoid conflicts
+            segButton.removeEventListener('touchstart', handleSegButtonTouchStart);
+            segButton.removeEventListener('touchend', handleSegButtonTouchEnd);
+            segButton.removeEventListener('click', handleSegButtonClick);
+            
+            // Add new event listeners
+            segButton.addEventListener('touchstart', handleSegButtonTouchStart, { passive: false });
+            segButton.addEventListener('touchend', handleSegButtonTouchEnd, { passive: false });
+            
+            // Prevent click events on mobile to avoid double triggering
+            segButton.addEventListener('click', handleSegButtonClick, { passive: false });
+            
+            // Remove the onclick attribute to prevent conflicts
+            segButton.removeAttribute('onclick');
+            segButton.removeAttribute('ontouchend');
+            
+            // Start monitoring button state to prevent reversion
+            startButtonStateMonitoring();
+            
+        } else {
+            console.warn('Segmentation button not found for mobile setup');
+        }
+    }
+}
+
+// Add a flag to prevent double triggering
+let isSegmentationButtonPressed = false;
+
+function handleSegButtonTouchStart(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.style.transform = 'scale(0.95)';
+    this.style.opacity = '0.8';
+}
+
+function handleSegButtonTouchEnd(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.style.transform = 'scale(1)';
+    this.style.opacity = '1';
+    
+    // Prevent double triggering
+    if (isSegmentationButtonPressed) return;
+    isSegmentationButtonPressed = true;
+    
+    // Call the toggle function with a slight delay
+    setTimeout(() => {
+        console.log('Mobile touch triggered segmentation toggle');
+        toggleFrameProcessing();
+        isSegmentationButtonPressed = false;
+    }, 100);
+}
+
+function handleSegButtonClick(e) {
+    if (isMobileDevice()) {
+        // On mobile, prevent click events to avoid double triggering
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    } else {
+        // On desktop, allow normal click behavior
+        if (isSegmentationButtonPressed) return;
+        isSegmentationButtonPressed = true;
+        
+        setTimeout(() => {
+            toggleFrameProcessing();
+            isSegmentationButtonPressed = false;
+        }, 50);
+    }
 }
 
 /**
@@ -135,6 +224,9 @@ function initializeSocketConnection() {
             console.log('✅ Connected to segmentation processor');
             updateStatus('Processor connected - Ready for segmentation');
             updateSegmentationStatus('Connected');
+            
+            // Maintain button state after connection
+            updateSegmentationButtonState();
             
             // Start requesting updates
             startRequestingUpdates();
@@ -334,35 +426,103 @@ function updateFrameCounter(count) {
 }
 
 function toggleFrameProcessing() {
+    console.log('🎯 toggleFrameProcessing called, current state:', frameProcessingEnabled);
+    
     frameProcessingEnabled = !frameProcessingEnabled;
+    
+    console.log('🎯 New state:', frameProcessingEnabled);
+    
+    // Update button state immediately
+    updateSegmentationButtonState();
+    
+    if (frameProcessingEnabled) {
+        updateStatus('Frame processing enabled');
+        console.log('✅ Segmentation turned ON');
+        
+        // Reconnect if disconnected
+        if (!segmentationSocket || !segmentationSocket.connected) {
+            connectToProcessor();
+        }
+    } else {
+        updateStatus('Frame processing disabled');
+        console.log('❌ Segmentation turned OFF');
+        
+        // Clear segmentation display
+        const segImg = document.getElementById('segmentationImage');
+        const statusDiv = document.getElementById('segmentationStatus');
+        if (segImg && statusDiv) {
+            segImg.style.display = 'none';
+            statusDiv.style.display = 'block';
+            statusDiv.textContent = 'Processing disabled';
+        }
+    }
+}
+
+function updateSegmentationButtonState() {
     const button = document.getElementById('toggleProcessingBtn');
     
     if (button) {
+        console.log('🎯 Updating button state. frameProcessingEnabled:', frameProcessingEnabled);
+        
         if (frameProcessingEnabled) {
             button.textContent = '🔍 Segmentation: ON';
             button.style.background = '#00ff88';
             button.style.color = 'black';
-            updateStatus('Frame processing enabled');
-            
-            // Reconnect if disconnected
-            if (!segmentationSocket || !segmentationSocket.connected) {
-                connectToProcessor();
-            }
         } else {
             button.textContent = '🔍 Segmentation: OFF';
             button.style.background = '#666';
             button.style.color = 'white';
-            updateStatus('Frame processing disabled');
-            
-            // Clear segmentation display
-            const segImg = document.getElementById('segmentationImage');
-            const statusDiv = document.getElementById('segmentationStatus');
-            if (segImg && statusDiv) {
-                segImg.style.display = 'none';
-                statusDiv.style.display = 'block';
-                statusDiv.textContent = 'Processing disabled';
+        }
+        
+        // Preserve mobile-friendly styles
+        button.style.padding = '8px 16px';
+        button.style.borderRadius = '6px';
+        button.style.minHeight = '44px';
+        button.style.minWidth = '120px';
+        button.style.border = 'none';
+        button.style.cursor = 'pointer';
+        button.style.fontSize = '12px';
+        button.style.fontWeight = 'bold';
+        button.style.touchAction = 'manipulation';
+        button.style.userSelect = 'none';
+        button.style.webkitTapHighlightColor = 'transparent';
+        
+        console.log('🎯 Button updated to:', button.textContent);
+        
+        // Force a DOM update to ensure the change sticks
+        button.offsetHeight; // This forces a repaint
+        
+    } else {
+        console.error('❌ Segmentation button not found!');
+    }
+}
+
+// Add a periodic check to ensure button state stays correct
+let buttonStateCheckInterval;
+
+function startButtonStateMonitoring() {
+    // Clear any existing interval
+    if (buttonStateCheckInterval) {
+        clearInterval(buttonStateCheckInterval);
+    }
+    
+    // Check button state every 100ms to ensure it doesn't revert
+    buttonStateCheckInterval = setInterval(() => {
+        const button = document.getElementById('toggleProcessingBtn');
+        if (button) {
+            const expectedText = frameProcessingEnabled ? '🔍 Segmentation: ON' : '🔍 Segmentation: OFF';
+            if (button.textContent !== expectedText) {
+                console.log('🔄 Button state reverted! Fixing it. Expected:', expectedText, 'Actual:', button.textContent);
+                updateSegmentationButtonState();
             }
         }
+    }, 100);
+}
+
+function stopButtonStateMonitoring() {
+    if (buttonStateCheckInterval) {
+        clearInterval(buttonStateCheckInterval);
+        buttonStateCheckInterval = null;
     }
 }
 
@@ -490,6 +650,9 @@ function setupMainInterface() {
     
     // Setup ROI canvas
     setupRoiCanvas();
+    
+    // Setup mobile-specific button handling (with delay to ensure DOM is ready)
+    setTimeout(setupSegmentationButtonMobile, 100);
     
     // Start video capture
     startVideoCapture();
