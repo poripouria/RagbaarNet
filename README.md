@@ -17,7 +17,7 @@ A modular video processing system that performs real-time semantic segmentation 
 
 ## 🏗️ System Architecture
 
-```
+```bash
 UI.html (Frontend)
     ↓ (HTTP/WebSocket)
 processor.py (Backend)
@@ -27,7 +27,7 @@ Segmentor.py (AI Models)
 YOLO/Segformer Models
 ```
 
-```
+```bash
 UI.html (Frontend)
     ↓ (HTTP/WebSocket)
 processor.py (Backend)
@@ -243,7 +243,7 @@ pip install flask flask-socketio
 
 ## 📂 Project Structure
 
-```
+```bash
 RagbaarNet/
 ├── modules/
 │   ├── Platform/
