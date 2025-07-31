@@ -26,8 +26,8 @@
             <h3>Enter DashCam Stream URL:</h3>
             <input type="text" id="streamUrl" class="url-input" placeholder="http://192.168.1.100:8080/video">
             <div class="url-buttons">
-                <button class="url-btn confirm-btn" onclick="confirmUrl()">Confirm</button>
-                <button class="url-btn cancel-btn" onclick="cancelUrl()">Cancel</button>
+                <button class="url-btn confirm-btn" onclick="confirmUrl()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); confirmUrl();}">Confirm</button>
+                <button class="url-btn cancel-btn" onclick="cancelUrl()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); cancelUrl();}">Cancel</button>
             </div>
         </div>
     </div>
@@ -44,8 +44,12 @@
         </div>
         
         <div class="button-group">
-            <button class="menu-btn" onclick="togglePause()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); togglePause();}">⏸️ Pause/Resume</button>
+            <button class="menu-btn" id="pauseBtn" onclick="togglePause()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); togglePause();}">⏸️ Pause</button>
             <button class="menu-btn" onclick="takeScreenshot()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); takeScreenshot();}">📸 Screenshot</button>
+        </div>
+        
+        <div class="button-group">
+            <button class="menu-btn" id="toggleSegmentationBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}">🔍 Segmentation: OFF</button>
         </div>
         
         <button class="music-gen-btn" onclick="startMusicGeneration()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); startMusicGeneration();}">🎵 Generate Music</button>
@@ -63,24 +67,7 @@
         <div class="video-container" id="videoContainer">
             <video id="videoElement" class="video-element" autoplay playsinline muted></video>
             <canvas id="roiCanvas" class="canvas-overlay"></canvas>
-        </div>
-        
-        <!-- Segmentation Display Container -->
-        <div class="segmentation-container" id="segmentationContainer" style="position: absolute; top: 10px; right: 10px; width: 300px; background: rgba(30, 30, 30, 0.95); border-radius: 10px; padding: 15px; border: 2px solid #00ff88; z-index: 1000; font-family: Arial, sans-serif; color: white; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);">
-            <h3 style="margin: 0 0 10px 0; color: #00ff88; font-size: 16px;">🔍 Segmentation Preview</h3>
-            <div id="segmentationDisplay" style="width: 100%; height: 160px; background: #1e1e1e; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #888; margin-bottom: 10px; position: relative;">
-                <div id="segmentationStatus">Waiting for processor...</div>
-                <img id="segmentationImage" style="max-width: 100%; max-height: 100%; border-radius: 5px; display: none;" />
-            </div>
-            <div style="font-size: 12px; color: #ccc; line-height: 1.4;">
-                <div>Frame: <span id="segFrameCount">0</span></div>
-                <div>Processing: Every <span id="segInterval">5</span> frames</div>
-                <div>Last segmentation: <span id="segFramesSince">-</span> frames ago</div>
-                <div>Status: <span id="segProcessorStatus">Disconnected</span></div>
-            </div>
-            <div style="margin-top: 10px;">
-                <button id="toggleProcessingBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}" style="background: #00ff88; color: black; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; min-height: 44px; min-width: 120px; touch-action: manipulation; user-select: none; -webkit-tap-highlight-color: transparent;">🔍 Segmentation: ON</button>
-            </div>
+            <canvas id="segmentationCanvas" class="canvas-overlay" style="display: none; pointer-events: none;"></canvas>
         </div>
         
         <div class="instructions">Drag green points to adjust ROI corners • Drag red points to control edge curves</div>
