@@ -79,7 +79,7 @@
                 <div>Status: <span id="segProcessorStatus">Disconnected</span></div>
             </div>
             <div style="margin-top: 10px;">
-                <button id="toggleProcessingBtn" onclick="toggleFrameProcessing()" style="background: #00ff88; color: black; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold;">🔍 Segmentation: ON</button>
+                <button id="toggleProcessingBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}" style="background: #00ff88; color: black; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; min-height: 44px; min-width: 120px; touch-action: manipulation; user-select: none; -webkit-tap-highlight-color: transparent;">🔍 Segmentation: ON</button>
             </div>
         </div>
         
