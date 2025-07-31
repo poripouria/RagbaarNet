@@ -43,7 +43,7 @@ class VideoProcessor:
         # Initialize segmentation models
         print("🔄 Initializing segmentation models...")
         try:
-            # # YOLO model
+            # YOLO model
             # model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolov8m-seg.pt')
             # self.segmentor = Segmentor('yolo', model_path)
             # print("✅ YOLO Segmentor initialized successfully")
@@ -64,7 +64,7 @@ class VideoProcessor:
         # Cityscapes color palette (SegFormer model classes)
         # These colors match the standard Cityscapes dataset visualization
         color_map = {
-            0: [128, 64, 128],    # Road - purple (THIS IS THE CORRECT ROAD CLASS!)
+            0: [128, 64, 128],    # Road - purple
             1: [244, 35, 232],    # Sidewalk - magenta  
             2: [70, 70, 70],      # Building - gray
             3: [102, 102, 156],   # Wall - blue-gray
