@@ -14,6 +14,7 @@ import threading
 from queue import Queue, Empty
 from flask import Flask, request, jsonify, render_template_string
 from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 import os
 import sys
 
@@ -145,6 +146,9 @@ class VideoProcessor:
             # Blend with original frame
             blended = cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)
             
+            # Convert back to BGR for encoding
+            blended = cv2.cvtColor(blended, cv2.COLOR_RGB2BGR)
+            
             return blended
             
         except Exception as e:
@@ -196,7 +200,9 @@ class VideoProcessor:
         
         # Encode current frame
         if self.current_frame is not None:
-            _, buffer = cv2.imencode('.jpg', self.current_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            # Convert RGB to BGR for JPEG encoding
+            frame_bgr = cv2.cvtColor(self.current_frame, cv2.COLOR_RGB2BGR)
+            _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
             frame_b64 = base64.b64encode(buffer).decode('utf-8')
             display_data['original_frame'] = f"data:image/jpeg;base64,{frame_b64}"
         
@@ -230,7 +236,16 @@ class VideoProcessor:
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'video_processing_secret'
+CORS(app)  # Enable CORS for all routes
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Additional CORS headers for all routes
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
 
 # Global processor instance
 processor = VideoProcessor()
@@ -357,6 +372,9 @@ def process_frame():
         
         if frame is None:
             return jsonify({'error': 'Invalid frame data'}), 400
+        
+        # Convert BGR to RGB for proper processing
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
         # Add frame to processor
         frame_id = data.get('frame_id', f"frame_{int(time.time() * 1000)}")

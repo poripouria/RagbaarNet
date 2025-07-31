@@ -18,6 +18,17 @@ let isPaused = false;
 let settings = {};
 let showControlPoints = true;
 
+// Frame processing variables
+let frameProcessingEnabled = true;
+let processorUrl = 'http://127.0.0.1:5000';
+let frameCounter = 0;
+let lastFrameSentTime = 0;
+let frameSendInterval = 200; // Send frames every 200ms for better performance
+let processingCanvas = null;
+let processingCtx = null;
+let segmentationSocket = null;
+let segmentationDisplay = null;
+
 // Color scheme
 const colors = {
     bg: '#2b2b2b',
@@ -62,6 +73,297 @@ function setupEventListeners() {
     
     // Video file input
     document.getElementById('videoFileInput').addEventListener('change', handleVideoFile);
+    
+    // Initialize frame processing
+    initializeFrameProcessing();
+}
+
+/**
+ * Frame Processing Functions
+ */
+function initializeFrameProcessing() {
+    console.log('🔄 Initializing frame processing...');
+    
+    // Create processing canvas (hidden, used for frame capture)
+    processingCanvas = document.createElement('canvas');
+    processingCtx = processingCanvas.getContext('2d');
+    
+    // Try to connect to segmentation processor
+    connectToProcessor();
+    
+    console.log('✅ Frame processing initialized');
+}
+
+function connectToProcessor() {
+    // First check if processor is running
+    checkProcessorStatus()
+        .then(() => {
+            console.log('🔗 Connecting to segmentation processor...');
+            updateSegmentationStatus('Connecting...');
+            
+            // Load Socket.IO library if not already loaded
+            if (typeof io === 'undefined') {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js';
+                script.onload = () => initializeSocketConnection();
+                script.onerror = () => {
+                    console.error('❌ Failed to load Socket.IO library');
+                    updateSegmentationStatus('Socket.IO load failed');
+                };
+                document.head.appendChild(script);
+            } else {
+                initializeSocketConnection();
+            }
+        })
+        .catch(error => {
+            console.warn('⚠️ Processor not available:', error);
+            updateStatus('Processor offline - Run: python modules/Platform/processor.py');
+            updateSegmentationStatus('Offline - Start processor.py');
+            
+            const statusDiv = document.getElementById('segmentationStatus');
+            if (statusDiv) {
+                statusDiv.textContent = 'Processor offline - Start processor.py first';
+            }
+        });
+}
+
+function initializeSocketConnection() {
+    try {
+        segmentationSocket = io(processorUrl);
+        
+        segmentationSocket.on('connect', function() {
+            console.log('✅ Connected to segmentation processor');
+            updateStatus('Processor connected - Ready for segmentation');
+            updateSegmentationStatus('Connected');
+            
+            // Start requesting updates
+            startRequestingUpdates();
+        });
+        
+        segmentationSocket.on('disconnect', function() {
+            console.log('⚠️ Disconnected from segmentation processor');
+            updateStatus('Processor disconnected');
+            updateSegmentationStatus('Disconnected');
+        });
+        
+        segmentationSocket.on('frame_update', function(data) {
+            updateSegmentationDisplay(data);
+        });
+        
+        segmentationSocket.on('error', function(error) {
+            console.error('❌ Socket error:', error);
+            updateStatus('Processor error: ' + error.message);
+            updateSegmentationStatus('Error');
+        });
+        
+    } catch (error) {
+        console.error('❌ Failed to initialize socket connection:', error);
+        updateStatus('Connection failed');
+        updateSegmentationStatus('Connection Failed');
+    }
+}
+
+function startRequestingUpdates() {
+    // Request updates every 100ms
+    setInterval(() => {
+        if (segmentationSocket && segmentationSocket.connected) {
+            segmentationSocket.emit('request_update');
+        }
+    }, 100);
+}
+
+async function checkProcessorStatus() {
+    const response = await fetch(`${processorUrl}/api/status`);
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    return response.json();
+}
+
+function captureAndSendFrame() {
+    if (!frameProcessingEnabled || !videoElement || !videoElement.videoWidth) {
+        return;
+    }
+    
+    const now = Date.now();
+    if (now - lastFrameSentTime < frameSendInterval) {
+        return; // Rate limiting
+    }
+    
+    try {
+        // Set processing canvas size to match video
+        processingCanvas.width = videoElement.videoWidth;
+        processingCanvas.height = videoElement.videoHeight;
+        
+        // Draw current video frame to processing canvas
+        processingCtx.drawImage(videoElement, 0, 0);
+        
+        // Convert to base64
+        const frameData = processingCanvas.toDataURL('image/jpeg', 0.8);
+        
+        // Send frame to processor
+        const frameInfo = {
+            frame: frameData,
+            frame_id: `frame_${frameCounter}`,
+            timestamp: now / 1000,
+            roi_points: roiPoints
+        };
+        
+        // Log frame sending for debugging
+        console.log(`📤 Sending frame ${frameCounter} to processor`);
+        
+        // Send via HTTP (more reliable than WebSocket for large data)
+        sendFrameToProcessor(frameInfo)
+            .then(response => {
+                if (response.success) {
+                    frameCounter++;
+                    lastFrameSentTime = now;
+                    
+                    // Update frame counter in display
+                    updateFrameCounter(frameCounter);
+                    
+                    console.log(`✅ Frame ${frameCounter} processed successfully`);
+                    updateSegmentationStatus('Processing');
+                } else {
+                    console.warn('⚠️ Frame processing failed:', response.error);
+                }
+            })
+            .catch(error => {
+                console.warn('⚠️ Frame send error:', error);
+                updateSegmentationStatus('Send Error');
+                
+                // Check if it's a CORS or network error
+                if (error.message.includes('Failed to fetch') || error.message.includes('CORS')) {
+                    updateSegmentationStatus('Connection Error - Check CORS');
+                    const statusDiv = document.getElementById('segmentationStatus');
+                    if (statusDiv) {
+                        statusDiv.textContent = 'Connection failed - Check processor is running';
+                    }
+                }
+            });
+            
+    } catch (error) {
+        console.error('❌ Frame capture error:', error);
+        updateSegmentationStatus('Capture Error');
+    }
+}
+
+async function sendFrameToProcessor(frameInfo) {
+    const response = await fetch(`${processorUrl}/api/process_frame`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(frameInfo)
+    });
+    
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    return response.json();
+}
+
+function updateSegmentationStatus(status) {
+    const statusElement = document.getElementById('segProcessorStatus');
+    if (statusElement) {
+        statusElement.textContent = status;
+    }
+    
+    // Update container border color based on status
+    const container = document.getElementById('segmentationContainer');
+    if (container) {
+        if (status === 'Connected') {
+            container.style.borderColor = '#00ff88';
+        } else if (status.includes('Error') || status.includes('Failed')) {
+            container.style.borderColor = '#ff4444';
+        } else {
+            container.style.borderColor = '#ffaa00';
+        }
+    }
+}
+
+function updateSegmentationDisplay(data) {
+    // Update frame counter
+    if (data.frame_counter !== undefined) {
+        updateFrameCounter(data.frame_counter);
+    }
+    
+    // Update segmentation image
+    if (data.segmentation_overlay) {
+        const segImg = document.getElementById('segmentationImage');
+        const statusDiv = document.getElementById('segmentationStatus');
+        
+        if (segImg && statusDiv) {
+            segImg.src = data.segmentation_overlay;
+            segImg.style.display = 'block';
+            statusDiv.style.display = 'none';
+            
+            // Update segmentation info
+            if (data.segmentation_info) {
+                const framesSince = data.segmentation_info.frames_since_segmentation || 0;
+                const framesSinceElement = document.getElementById('segFramesSince');
+                if (framesSinceElement) {
+                    framesSinceElement.textContent = framesSince;
+                }
+                
+                // Log successful segmentation
+                console.log('🔍 Segmentation updated:', data.segmentation_info);
+            }
+            
+            updateSegmentationStatus('Processing');
+        }
+    } else {
+        // No segmentation available
+        const segImg = document.getElementById('segmentationImage');
+        const statusDiv = document.getElementById('segmentationStatus');
+        
+        if (segImg && statusDiv) {
+            segImg.style.display = 'none';
+            statusDiv.style.display = 'block';
+            statusDiv.textContent = 'Processing...';
+        }
+    }
+}
+
+function updateFrameCounter(count) {
+    const frameCountElement = document.getElementById('segFrameCount');
+    if (frameCountElement) {
+        frameCountElement.textContent = count;
+    }
+}
+
+function toggleFrameProcessing() {
+    frameProcessingEnabled = !frameProcessingEnabled;
+    const button = document.getElementById('toggleProcessingBtn');
+    
+    if (button) {
+        if (frameProcessingEnabled) {
+            button.textContent = '🔍 Segmentation: ON';
+            button.style.background = '#00ff88';
+            button.style.color = 'black';
+            updateStatus('Frame processing enabled');
+            
+            // Reconnect if disconnected
+            if (!segmentationSocket || !segmentationSocket.connected) {
+                connectToProcessor();
+            }
+        } else {
+            button.textContent = '🔍 Segmentation: OFF';
+            button.style.background = '#666';
+            button.style.color = 'white';
+            updateStatus('Frame processing disabled');
+            
+            // Clear segmentation display
+            const segImg = document.getElementById('segmentationImage');
+            const statusDiv = document.getElementById('segmentationStatus');
+            if (segImg && statusDiv) {
+                segImg.style.display = 'none';
+                statusDiv.style.display = 'block';
+                statusDiv.textContent = 'Processing disabled';
+            }
+        }
+    }
 }
 
 /**
@@ -381,6 +683,9 @@ function updateVideoFeed() {
     if (!isPaused) {
         drawRoi();
         updateRoiInfo();
+        
+        // Capture and send frame for processing
+        captureAndSendFrame();
     }
     requestAnimationFrame(updateVideoFeed);
 }
