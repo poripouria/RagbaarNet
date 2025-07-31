@@ -4,9 +4,6 @@ Modular Segmentation Framework for Computer Vision
 
 This module provides an extensible framework for semantic segmentation using various models.
 It supports YOLO and Segformer models with easy integration for additional models.
-
-Author: Pouria Ar
-Project: RagbaarNet - Master Thesis
 """
 
 import torch
@@ -131,7 +128,7 @@ class YOLOSegmentor(BaseSegmentor):
     capabilities including bounding boxes and individual object masks.
     """
     
-    def __init__(self, model_path: str = "yolov8m-seg.pt", device: str = 'auto'):
+    def __init__(self, model_path: str = "yolov8s-seg.pt", device: str = 'auto'):
         """
         Initialize YOLO segmentor.
         
@@ -146,7 +143,7 @@ class YOLOSegmentor(BaseSegmentor):
         try:
             # Check if model path exists in Pre-trained Models directory
             if not os.path.exists(self.model_path):
-                pretrained_path = os.path.join("Pre-trained Models", self.model_path)
+                pretrained_path = os.path.join("modules/Segmentation/Pre-trained Models", self.model_path)
                 if os.path.exists(pretrained_path):
                     self.model_path = pretrained_path
             
@@ -271,60 +268,15 @@ class SegformerSegmentor(BaseSegmentor):
     def load_model(self) -> None:
         """Load the Segformer model with safety considerations."""
         try:
-            # Disable progress bars for cleaner output
-            os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
-            
-            # Try loading with different methods
-            try:
-                # First try: Load with safetensors if available
-                self.model = SegformerForSemanticSegmentation.from_pretrained(
-                    self.model_path,
-                    use_safetensors=True
-                )
-                print("✅ Segformer loaded using safetensors")
-            except Exception as e1:
-                print(f"Safetensors loading failed: {e1}")
-                print("Trying standard loading method...")
-                
-                try:
-                    # Second try: Standard loading
-                    self.model = SegformerForSemanticSegmentation.from_pretrained(
-                        self.model_path
-                    )
-                    print("✅ Segformer loaded using standard method")
-                except Exception as e2:
-                    print(f"Standard loading failed: {e2}")
-                    print("Trying offline/local loading...")
-                    
-                    # Third try: Try local pre-trained model if available
-                    local_model_path = os.path.join("Pre-trained Models", "segformer-b0-finetuned-cityscapes-1024-1024")
-                    if os.path.exists(local_model_path):
-                        self.model = SegformerForSemanticSegmentation.from_pretrained(local_model_path)
-                        print(f"✅ Segformer loaded from local path: {local_model_path}")
-                    else:
-                        # Fallback: Try a different model that might be available
-                        fallback_models = [
-                            "nvidia/segformer-b0-finetuned-cityscapes-1024-1024",
-                            "nvidia/segformer-b1-finetuned-cityscapes-1024-1024",
-                        ]
-                        
-                        for fallback_model in fallback_models:
-                            try:
-                                print(f"Trying fallback model: {fallback_model}")
-                                self.model = SegformerForSemanticSegmentation.from_pretrained(fallback_model)
-                                self.model_path = fallback_model  # Update model path
-                                print(f"✅ Segformer loaded using fallback: {fallback_model}")
-                                break
-                            except Exception as e3:
-                                print(f"Fallback {fallback_model} failed: {e3}")
-                                continue
-                        else:
-                            raise RuntimeError(f"All Segformer loading methods failed. Last error: {e2}")
+            self.model = SegformerForSemanticSegmentation.from_pretrained(
+                self.model_path,
+                use_safetensors=True
+            )       
             
             self.model.to(self.device)
             self.processor = SegformerImageProcessor()
             self.is_loaded = True
-            print(f"Segformer model loaded on: {self.device}")
+            print(f"✅ Segformer model loaded on: {self.device}")
             
         except Exception as e:
             raise RuntimeError(f"Failed to load Segformer model: {e}")
@@ -480,7 +432,22 @@ class Segmentor:
         
         # Segmentation map
         if result.class_labels:
-            colors = plt.colormaps.get_cmap('tab20').colors[:len(result.class_labels)]
+            # Generate colors for the segmentation map
+            num_classes = len(result.class_labels)
+            
+            # Try to use tab20 colormap first (works well for up to 20 classes)
+            if num_classes <= 20:
+                try:
+                    base_cmap = plt.colormaps.get_cmap('tab20')
+                    colors = [base_cmap(i) for i in range(num_classes)]
+                except:
+                    # Fallback if tab20 is not available
+                    colors = plt.cm.Set3(np.linspace(0, 1, num_classes))
+            else:
+                # For more than 20 classes, sample from a continuous colormap
+                base_cmap = plt.colormaps.get_cmap('gist_ncar')
+                colors = [base_cmap(i / num_classes) for i in range(num_classes)]
+            
             cmap = mcolors.ListedColormap(colors)
             
             im = axes[1].imshow(result.segmentation_map, cmap=cmap, 
