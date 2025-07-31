@@ -1,0 +1,893 @@
+/**
+ * AI Music Generation Platform - Main JavaScript Module
+ * Handles video input sources, ROI drawing, and music generation
+ */
+
+// Global variables
+let inputSource = null;
+let videoElement = null;
+let canvas = null;
+let ctx = null;
+let roiPoints = []; // Will be initialized based on video dimensions
+let controlPoints = []; // Bézier control points for curves
+let draggingPoint = null;
+let draggingControl = null;
+let scale = {x: 1, y: 1};
+let offset = {x: 0, y: 0};
+let isPaused = false;
+let settings = {};
+let showControlPoints = true;
+
+// Color scheme
+const colors = {
+    bg: '#2b2b2b',
+    menu: '#1e1e1e',
+    button: '#4a4a4a',
+    accent: '#00ff88',
+    text: '#ffffff'
+};
+
+/**
+ * Device Detection
+ */
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+           (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+}
+
+/**
+ * Application Initialization
+ */
+window.onload = function() {
+    setupEventListeners();
+    showInputSelection();
+};
+
+/**
+ * Event Listeners Setup
+ */
+function setupEventListeners() {
+    // Canvas mouse events
+    document.addEventListener('mousedown', onCanvasClick);
+    document.addEventListener('mousemove', onCanvasMove);
+    document.addEventListener('mouseup', onCanvasRelease);
+    
+    // Canvas touch events for mobile
+    document.addEventListener('touchstart', onCanvasTouch);
+    document.addEventListener('touchmove', onCanvasTouchMove);
+    document.addEventListener('touchend', onCanvasTouchEnd);
+    
+    // Window resize
+    window.addEventListener('resize', onWindowResize);
+    
+    // Video file input
+    document.getElementById('videoFileInput').addEventListener('change', handleVideoFile);
+}
+
+/**
+ * Input Source Selection
+ */
+function showInputSelection() {
+    document.getElementById('inputModal').style.display = 'block';
+    
+    // Add mobile-specific event listeners for input buttons
+    if (isMobileDevice()) {
+        const inputButtons = document.querySelectorAll('.input-btn');
+        inputButtons.forEach((button, index) => {
+            // Remove any existing listeners
+            button.removeEventListener('touchend', handleInputButtonTouch);
+            
+            // Add touch event listener
+            button.addEventListener('touchend', handleInputButtonTouch, { passive: false });
+        });
+    }
+}
+
+function handleInputButtonTouch(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const button = event.target;
+    const onclick = button.getAttribute('onclick');
+    
+    if (onclick) {
+        // Extract the source type from onclick attribute
+        const match = onclick.match(/selectInputSource\('([^']+)'\)/);
+        if (match) {
+            const sourceType = match[1];
+            selectInputSource(sourceType);
+        }
+    }
+}
+
+function selectInputSource(source) {
+    inputSource = source;
+    document.getElementById('inputModal').style.display = 'none';
+    
+    if (source === 'video_file') {
+        document.getElementById('videoFileInput').click();
+    } else if (source === 'network_stream') {
+        showUrlInput();
+    } else {
+        setupMainInterface();
+    }
+}
+
+/**
+ * URL Input Modal Functions
+ */
+function showUrlInput() {
+    document.getElementById('urlModal').style.display = 'block';
+}
+
+function confirmUrl() {
+    const url = document.getElementById('streamUrl').value.trim();
+    if (url) {
+        document.getElementById('urlModal').style.display = 'none';
+        setupMainInterface();
+    } else {
+        alert('Please enter a valid URL');
+    }
+}
+
+function cancelUrl() {
+    inputSource = null;
+    document.getElementById('urlModal').style.display = 'none';
+    showInputSelection();
+}
+
+/**
+ * Video File Handling
+ */
+function handleVideoFile(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const url = URL.createObjectURL(file);
+        // Setup main interface first
+        setupMainInterface();
+        // Then set the video source after interface is ready
+        setTimeout(() => {
+            videoElement = document.getElementById('videoElement');
+            
+            // Clear any existing camera stream
+            if (videoElement.srcObject) {
+                videoElement.srcObject.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+            
+            videoElement.src = url;
+            videoElement.load(); // Force video to load
+        }, 100);
+    } else {
+        inputSource = null;
+        showInputSelection();
+    }
+}
+
+/**
+ * Main Interface Setup
+ */
+function setupMainInterface() {
+    // Show main interface
+    document.getElementById('menuFrame').style.display = 'flex';
+    document.getElementById('displayFrame').style.display = 'flex';
+    
+    // Update source info in the Change Source button
+    const sourceNames = {
+        'phone_camera': 'Camera',
+        'video_file': 'Video File',
+        'screen_record': 'Screen Record',
+        'network_stream': 'Network Stream'
+    };
+    
+    const sourceDisplayName = sourceNames[inputSource] || 'Unknown';
+    document.getElementById('changeSourceBtn').textContent = `📂 Change Source (${sourceDisplayName})`;
+    
+    // Setup video display
+    setupVideoDisplay();
+    
+    // Setup ROI canvas
+    setupRoiCanvas();
+    
+    // Start video capture
+    startVideoCapture();
+    
+    updateStatus('Ready');
+}
+
+/**
+ * Video Display Setup
+ */
+function setupVideoDisplay() {
+    videoElement = document.getElementById('videoElement');
+    
+    // Mobile-specific video settings
+    videoElement.setAttribute('playsinline', 'true');
+    videoElement.setAttribute('webkit-playsinline', 'true');
+    
+    // Handle video load
+    videoElement.addEventListener('loadedmetadata', function() {
+        updateStatus('Video loaded successfully');
+        console.log('Video dimensions:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+        
+        // Reinitialize ROI points based on actual video dimensions
+        initializeRoiPoints();
+        
+        updateVideoFeed();
+    });
+    
+    videoElement.addEventListener('loadeddata', function() {
+        console.log('Video data loaded');
+        drawRoi();
+    });
+    
+    videoElement.addEventListener('canplay', function() {
+        console.log('Video can start playing');
+        if (inputSource === 'video_file') {
+            videoElement.play();
+        }
+    });
+    
+    videoElement.addEventListener('error', function(e) {
+        console.error('Video error details:', e);
+        updateStatus('Error loading video source');
+    });
+    
+    // Add mobile debugging
+    videoElement.addEventListener('loadstart', function() {
+        console.log('Video load started');
+        updateStatus('Starting video...');
+    });
+    
+    videoElement.addEventListener('progress', function() {
+        console.log('Video loading progress');
+    });
+}
+
+/**
+ * ROI Canvas Setup
+ */
+function setupRoiCanvas() {
+    canvas = document.getElementById('roiCanvas');
+    ctx = canvas.getContext('2d');
+    
+    // Set canvas size to match container
+    const container = document.getElementById('videoContainer');
+    canvas.width = container.offsetWidth;
+    canvas.height = container.offsetHeight;
+    
+    // Initialize ROI points based on video/canvas dimensions
+    initializeRoiPoints();
+    
+    // Start drawing ROI
+    drawRoi();
+}
+
+/**
+ * ROI Point Initialization
+ */
+function initializeControlPoints() {
+    // Create control points for each edge (2 control points per edge for quadratic Bézier curves)
+    controlPoints = [];
+    for (let i = 0; i < roiPoints.length; i++) {
+        const current = roiPoints[i];
+        const next = roiPoints[(i + 1) % roiPoints.length];
+        
+        // Calculate control points for this edge
+        const midX = (current[0] + next[0]) / 2;
+        const midY = (current[1] + next[1]) / 2;
+        
+        // Offset control points slightly to create initial curve
+        const offset = 20;
+        const perpX = -(next[1] - current[1]) / Math.sqrt((next[0] - current[0])**2 + (next[1] - current[1])**2) * offset;
+        const perpY = (next[0] - current[0]) / Math.sqrt((next[0] - current[0])**2 + (next[1] - current[1])**2) * offset;
+        
+        controlPoints.push([midX + perpX, midY + perpY]);
+    }
+}
+
+function initializeRoiPoints() {
+    // Get video dimensions, fallback to canvas dimensions if video not loaded yet
+    const videoWidth = videoElement.videoWidth || canvas.width || 640;
+    const videoHeight = videoElement.videoHeight || canvas.height || 480;
+    
+    // Calculate ROI points as percentages of video dimensions
+    // Create a rectangle that's 60% of the video size, centered
+    const roiWidth = videoWidth * 0.6;
+    const roiHeight = videoHeight * 0.6;
+    const offsetX = (videoWidth - roiWidth) / 2;
+    const offsetY = (videoHeight - roiHeight) / 2;
+    
+    roiPoints = [
+        [offsetX, offsetY], // Top-left
+        [offsetX + roiWidth, offsetY], // Top-right
+        [offsetX + roiWidth, offsetY + roiHeight], // Bottom-right
+        [offsetX, offsetY + roiHeight] // Bottom-left
+    ];
+    
+    // Initialize control points after setting ROI points
+    initializeControlPoints();
+}
+
+/**
+ * Video Capture Management
+ */
+function startVideoCapture() {
+    // Clear any existing sources first
+    if (videoElement.srcObject) {
+        videoElement.srcObject.getTracks().forEach(track => track.stop());
+        videoElement.srcObject = null;
+    }
+    if (videoElement.src) {
+        videoElement.src = '';
+    }
+    
+    if (inputSource === 'phone_camera') {
+        // Enhanced mobile camera constraints
+        const constraints = {
+            video: {
+                facingMode: 'environment', // Use back camera on mobile
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 720, max: 1080 },
+                frameRate: { ideal: 30, max: 60 }
+            }
+        };
+        
+        navigator.mediaDevices.getUserMedia(constraints)
+            .then(stream => {
+                videoElement.srcObject = stream;
+                updateStatus('Connected - Receiving camera feed');
+                console.log('Camera stream started successfully');
+            })
+            .catch(err => {
+                console.error('Camera error details:', err);
+                updateStatus(`Error: Could not access camera - ${err.message}`);
+                
+                // Fallback: try with basic constraints
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then(stream => {
+                        videoElement.srcObject = stream;
+                        updateStatus('Connected - Using fallback camera settings');
+                    })
+                    .catch(fallbackErr => {
+                        console.error('Fallback camera error:', fallbackErr);
+                        updateStatus('Error: Camera not available on this device');
+                    });
+            });
+    } else if (inputSource === 'network_stream') {
+        const url = document.getElementById('streamUrl').value;
+        videoElement.src = url;
+        updateStatus('Connecting to network stream...');
+    } else if (inputSource === 'screen_record') {
+        // For screen recording, fall back to camera for now
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                videoElement.srcObject = stream;
+                updateStatus('Connected - Using camera as fallback');
+            })
+            .catch(err => {
+                updateStatus('Error: Could not access camera');
+            });
+    } else if (inputSource === 'video_file') {
+        // Video file source is handled in handleVideoFile function
+        updateStatus('Loading video file...');
+    }
+}
+
+/**
+ * Video Feed Update Loop
+ */
+function updateVideoFeed() {
+    if (!isPaused) {
+        drawRoi();
+        updateRoiInfo();
+    }
+    requestAnimationFrame(updateVideoFeed);
+}
+
+/**
+ * ROI Drawing Functions
+ */
+function drawRoi() {
+    if (!canvas || !ctx) return;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Calculate scaling factors
+    const videoRect = videoElement.getBoundingClientRect();
+    const containerRect = canvas.getBoundingClientRect();
+    
+    if (videoElement.videoWidth && videoElement.videoHeight) {
+        const videoAspect = videoElement.videoWidth / videoElement.videoHeight;
+        const containerAspect = canvas.width / canvas.height;
+        
+        let displayWidth, displayHeight;
+        // Use 'cover' behavior - fill the container completely
+        if (videoAspect > containerAspect) {
+            displayHeight = canvas.height;
+            displayWidth = canvas.height * videoAspect;
+        } else {
+            displayWidth = canvas.width;
+            displayHeight = canvas.width / videoAspect;
+        }
+        
+        scale.x = displayWidth / videoElement.videoWidth;
+        scale.y = displayHeight / videoElement.videoHeight;
+        offset.x = (canvas.width - displayWidth) / 2;
+        offset.y = (canvas.height - displayHeight) / 2;
+    }
+    
+    // Convert ROI points to canvas coordinates
+    const canvasPoints = roiPoints.map(point => ({
+        x: point[0] * scale.x + offset.x,
+        y: point[1] * scale.y + offset.y
+    }));
+    
+    // Convert control points to canvas coordinates
+    const canvasControlPoints = controlPoints.map(point => ({
+        x: point[0] * scale.x + offset.x,
+        y: point[1] * scale.y + offset.y
+    }));
+    
+    // Draw ROI with curved edges using Bézier curves
+    if (canvasPoints.length >= 3) {
+        ctx.strokeStyle = colors.accent;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        
+        // Start from the first point
+        ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
+        
+        // Draw curved edges
+        for (let i = 0; i < canvasPoints.length; i++) {
+            const current = canvasPoints[i];
+            const next = canvasPoints[(i + 1) % canvasPoints.length];
+            const control = canvasControlPoints[i];
+            
+            // Draw quadratic Bézier curve
+            ctx.quadraticCurveTo(control.x, control.y, next.x, next.y);
+        }
+        
+        ctx.closePath();
+        ctx.stroke();
+        
+        // Fill with semi-transparent color
+        ctx.fillStyle = colors.accent + '20'; // Add transparency
+        ctx.fill();
+    }
+    
+    // Draw ROI corner points
+    const isMobile = isMobileDevice();
+    const cornerRadius = isMobile ? 12 : 8; // Larger on mobile
+    
+    canvasPoints.forEach((point, index) => {
+        ctx.fillStyle = colors.accent;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, cornerRadius, 0, 2 * Math.PI);
+        ctx.fill();
+        
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = isMobile ? 3 : 2; // Thicker border on mobile
+        ctx.stroke();
+        
+        // Draw point numbers
+        ctx.fillStyle = 'white';
+        ctx.font = `bold ${isMobile ? 14 : 12}px Arial`; // Larger font on mobile
+        ctx.textAlign = 'center';
+        ctx.fillText((index + 1).toString(), point.x, point.y - (isMobile ? 18 : 15));
+    });
+    
+    // Draw control points for curve adjustment
+    if (showControlPoints) {
+        const controlRadius = isMobile ? 10 : 6; // Larger on mobile
+        
+        canvasControlPoints.forEach((control, index) => {
+            ctx.fillStyle = '#00ffff'; // Cyan color for control points
+            ctx.beginPath();
+            ctx.arc(control.x, control.y, controlRadius, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = isMobile ? 2 : 1; // Thicker border on mobile
+            ctx.stroke();
+            
+            // Draw connection lines to show which edge this control point affects
+            const current = canvasPoints[index];
+            const next = canvasPoints[(index + 1) % canvasPoints.length];
+            
+            ctx.strokeStyle = '#00ffff60'; // Semi-transparent cyan
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(current.x, current.y);
+            ctx.lineTo(control.x, control.y);
+            ctx.lineTo(next.x, next.y);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset line dash
+        });
+    }
+}
+
+/**
+ * Mouse Event Handlers
+ */
+function onCanvasClick(event) {
+    if (event.target !== canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    
+    // Check if click is near any control point first (smaller targets)
+    for (let i = 0; i < controlPoints.length; i++) {
+        const canvasX = controlPoints[i][0] * scale.x + offset.x;
+        const canvasY = controlPoints[i][1] * scale.y + offset.y;
+        
+        if (Math.abs(mouseX - canvasX) < 10 && Math.abs(mouseY - canvasY) < 10) {
+            draggingControl = i;
+            canvas.style.cursor = 'grab';
+            return;
+        }
+    }
+    
+    // Check if click is near any ROI corner point
+    for (let i = 0; i < roiPoints.length; i++) {
+        const canvasX = roiPoints[i][0] * scale.x + offset.x;
+        const canvasY = roiPoints[i][1] * scale.y + offset.y;
+        
+        if (Math.abs(mouseX - canvasX) < 12 && Math.abs(mouseY - canvasY) < 12) {
+            draggingPoint = i;
+            canvas.style.cursor = 'grab';
+            break;
+        }
+    }
+}
+
+function onCanvasMove(event) {
+    if (event.target !== canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    
+    if (draggingControl !== null) {
+        // Convert canvas coordinates back to frame coordinates for control point
+        const frameX = (mouseX - offset.x) / scale.x;
+        const frameY = (mouseY - offset.y) / scale.y;
+        
+        // Clamp to frame boundaries
+        const maxX = videoElement.videoWidth || 640;
+        const maxY = videoElement.videoHeight || 480;
+        
+        controlPoints[draggingControl][0] = Math.max(0, Math.min(frameX, maxX));
+        controlPoints[draggingControl][1] = Math.max(0, Math.min(frameY, maxY));
+        
+        drawRoi();
+        updateRoiInfo();
+    } else if (draggingPoint !== null) {
+        // Convert canvas coordinates back to frame coordinates for corner point
+        const frameX = (mouseX - offset.x) / scale.x;
+        const frameY = (mouseY - offset.y) / scale.y;
+        
+        // Clamp to frame boundaries
+        const maxX = videoElement.videoWidth || 640;
+        const maxY = videoElement.videoHeight || 480;
+        
+        roiPoints[draggingPoint][0] = Math.max(0, Math.min(frameX, maxX));
+        roiPoints[draggingPoint][1] = Math.max(0, Math.min(frameY, maxY));
+        
+        // Update control points when corner points move
+        updateControlPointsForCornerChange(draggingPoint);
+        
+        drawRoi();
+        updateRoiInfo();
+    } else {
+        // Check if mouse is over any point for cursor change
+        let overPoint = false;
+        
+        // Check control points first
+        for (let i = 0; i < controlPoints.length; i++) {
+            const canvasX = controlPoints[i][0] * scale.x + offset.x;
+            const canvasY = controlPoints[i][1] * scale.y + offset.y;
+            
+            if (Math.abs(mouseX - canvasX) < 10 && Math.abs(mouseY - canvasY) < 10) {
+                overPoint = true;
+                break;
+            }
+        }
+        
+        // Check corner points
+        if (!overPoint) {
+            for (let i = 0; i < roiPoints.length; i++) {
+                const canvasX = roiPoints[i][0] * scale.x + offset.x;
+                const canvasY = roiPoints[i][1] * scale.y + offset.y;
+                
+                if (Math.abs(mouseX - canvasX) < 12 && Math.abs(mouseY - canvasY) < 12) {
+                    overPoint = true;
+                    break;
+                }
+            }
+        }
+        
+        canvas.style.cursor = overPoint ? 'pointer' : 'crosshair';
+    }
+}
+
+function updateControlPointsForCornerChange(cornerIndex) {
+    // When a corner point moves, adjust the adjacent control points proportionally
+    const prevControlIndex = (cornerIndex - 1 + controlPoints.length) % controlPoints.length;
+    const currentControlIndex = cornerIndex;
+    
+    // Update the control point for the edge ending at this corner
+    if (prevControlIndex >= 0) {
+        const prevCorner = roiPoints[(cornerIndex - 1 + roiPoints.length) % roiPoints.length];
+        const currentCorner = roiPoints[cornerIndex];
+        
+        const midX = (prevCorner[0] + currentCorner[0]) / 2;
+        const midY = (prevCorner[1] + currentCorner[1]) / 2;
+        
+        // Keep the control point proportionally positioned
+        const currentControl = controlPoints[prevControlIndex];
+        const oldMidX = (prevCorner[0] + currentCorner[0]) / 2;
+        const oldMidY = (prevCorner[1] + currentCorner[1]) / 2;
+        
+        // Adjust control point position
+        controlPoints[prevControlIndex][0] = midX + (currentControl[0] - oldMidX);
+        controlPoints[prevControlIndex][1] = midY + (currentControl[1] - oldMidY);
+    }
+    
+    // Update the control point for the edge starting from this corner
+    if (currentControlIndex < controlPoints.length) {
+        const currentCorner = roiPoints[cornerIndex];
+        const nextCorner = roiPoints[(cornerIndex + 1) % roiPoints.length];
+        
+        const midX = (currentCorner[0] + nextCorner[0]) / 2;
+        const midY = (currentCorner[1] + nextCorner[1]) / 2;
+        
+        // Keep the control point proportionally positioned
+        const currentControl = controlPoints[currentControlIndex];
+        const oldMidX = (currentCorner[0] + nextCorner[0]) / 2;
+        const oldMidY = (currentCorner[1] + nextCorner[1]) / 2;
+        
+        // Adjust control point position
+        controlPoints[currentControlIndex][0] = midX + (currentControl[0] - oldMidX);
+        controlPoints[currentControlIndex][1] = midY + (currentControl[1] - oldMidY);
+    }
+}
+
+function onCanvasRelease(event) {
+    draggingPoint = null;
+    draggingControl = null;
+    if (canvas) {
+        canvas.style.cursor = 'crosshair';
+    }
+}
+
+/**
+ * Touch Event Handlers for Mobile
+ */
+function onCanvasTouch(event) {
+    event.preventDefault(); // Prevent scrolling
+    if (event.target !== canvas) return;
+    
+    const touch = event.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+    
+    // Check if touch is near any control point first (smaller targets, larger touch area)
+    for (let i = 0; i < controlPoints.length; i++) {
+        const canvasX = controlPoints[i][0] * scale.x + offset.x;
+        const canvasY = controlPoints[i][1] * scale.y + offset.y;
+        
+        if (Math.abs(touchX - canvasX) < 20 && Math.abs(touchY - canvasY) < 20) { // Larger touch area
+            draggingControl = i;
+            return;
+        }
+    }
+    
+    // Check if touch is near any ROI corner point
+    for (let i = 0; i < roiPoints.length; i++) {
+        const canvasX = roiPoints[i][0] * scale.x + offset.x;
+        const canvasY = roiPoints[i][1] * scale.y + offset.y;
+        
+        if (Math.abs(touchX - canvasX) < 25 && Math.abs(touchY - canvasY) < 25) { // Larger touch area
+            draggingPoint = i;
+            break;
+        }
+    }
+}
+
+function onCanvasTouchMove(event) {
+    event.preventDefault(); // Prevent scrolling
+    if (event.target !== canvas) return;
+    
+    const touch = event.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    const touchX = touch.clientX - rect.left;
+    const touchY = touch.clientY - rect.top;
+    
+    if (draggingControl !== null) {
+        // Convert canvas coordinates back to frame coordinates for control point
+        const frameX = (touchX - offset.x) / scale.x;
+        const frameY = (touchY - offset.y) / scale.y;
+        
+        // Clamp to frame boundaries
+        const maxX = videoElement.videoWidth || 640;
+        const maxY = videoElement.videoHeight || 480;
+        
+        controlPoints[draggingControl][0] = Math.max(0, Math.min(frameX, maxX));
+        controlPoints[draggingControl][1] = Math.max(0, Math.min(frameY, maxY));
+        
+        drawRoi();
+        updateRoiInfo();
+    } else if (draggingPoint !== null) {
+        // Convert canvas coordinates back to frame coordinates for corner point
+        const frameX = (touchX - offset.x) / scale.x;
+        const frameY = (touchY - offset.y) / scale.y;
+        
+        // Clamp to frame boundaries
+        const maxX = videoElement.videoWidth || 640;
+        const maxY = videoElement.videoHeight || 480;
+        
+        roiPoints[draggingPoint][0] = Math.max(0, Math.min(frameX, maxX));
+        roiPoints[draggingPoint][1] = Math.max(0, Math.min(frameY, maxY));
+        
+        // Update control points when corner points move
+        updateControlPointsForCornerChange(draggingPoint);
+        
+        drawRoi();
+        updateRoiInfo();
+    }
+}
+
+function onCanvasTouchEnd(event) {
+    event.preventDefault();
+    draggingPoint = null;
+    draggingControl = null;
+}
+
+/**
+ * Window Event Handlers
+ */
+function onWindowResize() {
+    if (canvas) {
+        const container = document.getElementById('videoContainer');
+        canvas.width = container.offsetWidth;
+        canvas.height = container.offsetHeight;
+        drawRoi();
+    }
+}
+
+/**
+ * UI Update Functions
+ */
+function updateRoiInfo() {
+    let roiText = '<table style="width: 100%; border-collapse: collapse; font-size: 10px;">';
+    roiText += '<tr><th style="border: 1px solid #555; padding: 4px; background-color: #444;">Corner Points</th>';
+    
+    if (showControlPoints) {
+        roiText += '<th style="border: 1px solid #555; padding: 4px; background-color: #444;">Curve Controls</th>';
+    }
+    roiText += '</tr>';
+    
+    const maxRows = Math.max(roiPoints.length, showControlPoints ? controlPoints.length : 0);
+    
+    for (let i = 0; i < maxRows; i++) {
+        roiText += '<tr>';
+        
+        // Corner Points column
+        if (i < roiPoints.length) {
+            const point = roiPoints[i];
+            roiText += `<td style="border: 1px solid #555; padding: 4px;">P${i + 1}: (${Math.round(point[0])}, ${Math.round(point[1])})</td>`;
+        } else {
+            roiText += '<td style="border: 1px solid #555; padding: 4px;"></td>';
+        }
+        
+        // Curve Controls column (only if showControlPoints is true)
+        if (showControlPoints) {
+            if (i < controlPoints.length) {
+                const point = controlPoints[i];
+                roiText += `<td style="border: 1px solid #555; padding: 4px;">C${i + 1}: (${Math.round(point[0])}, ${Math.round(point[1])})</td>`;
+            } else {
+                roiText += '<td style="border: 1px solid #555; padding: 4px;"></td>';
+            }
+        }
+        
+        roiText += '</tr>';
+    }
+    
+    roiText += '</table>';
+    
+    document.getElementById('roiInfo').innerHTML = roiText;
+}
+
+function updateStatus(message) {
+    document.getElementById('statusText').textContent = message;
+}
+
+/**
+ * Menu Button Functions
+ */
+function changeInputSource() {
+    // Stop current video
+    if (videoElement) {
+        if (videoElement.srcObject) {
+            videoElement.srcObject.getTracks().forEach(track => track.stop());
+        }
+        videoElement.src = '';
+    }
+    
+    // Hide main interface
+    document.getElementById('menuFrame').style.display = 'none';
+    document.getElementById('displayFrame').style.display = 'none';
+    
+    // Reset variables
+    inputSource = null;
+    
+    // Show input selection
+    showInputSelection();
+}
+
+function toggleControlPoints() {
+    showControlPoints = !showControlPoints;
+    const button = event.target;
+    button.textContent = showControlPoints ? '🎛️ Hide Curves' : '🎛️ Show Curves';
+    drawRoi();
+    updateRoiInfo();
+    updateStatus(showControlPoints ? 'Curve controls visible' : 'Curve controls hidden');
+}
+
+function resetRoi() {
+    // Reset ROI based on current video dimensions
+    initializeRoiPoints();
+    drawRoi();
+    updateRoiInfo();
+    updateStatus('ROI reset to default');
+}
+
+function startMusicGeneration() {
+    const message = `Music generation will be implemented here!\nROI Points: ${JSON.stringify(roiPoints)}\nInput Source: ${inputSource}`;
+    alert(message);
+    updateStatus('Music generation started');
+}
+
+function togglePause() {
+    isPaused = !isPaused;
+    updateStatus(isPaused ? 'Paused' : 'Resumed');
+    
+    if (videoElement) {
+        if (isPaused) {
+            videoElement.pause();
+        } else {
+            videoElement.play();
+        }
+    }
+}
+
+function takeScreenshot() {
+    if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+        
+        ctx.drawImage(videoElement, 0, 0);
+        
+        // Convert to blob and download
+        canvas.toBlob(function(blob) {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `screenshot_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
+            link.click();
+            URL.revokeObjectURL(url);
+            
+            updateStatus('Screenshot saved');
+        }, 'image/jpeg', 0.95);
+    } else {
+        updateStatus('No video frame available for screenshot');
+    }
+}
