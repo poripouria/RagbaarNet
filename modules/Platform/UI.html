@@ -205,7 +205,7 @@
         }
 
         .music-gen-btn {
-            background: linear-gradient(135deg, #ff6b6b, #ee5a52, #ff6b6b);
+            background: linear-gradient(135deg, #00b8d4, #00e5ff, #00e5ff);
             color: #ffffff;
             border: none;
             padding: 16px 12px;
@@ -216,7 +216,7 @@
             margin: 15px 0;
             transition: all 0.3s ease;
             text-align: center;
-            box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+            box-shadow: 0 4px 8px rgba(67, 255, 246, 0.3);
             position: relative;
             overflow: hidden;
             touch-action: manipulation; /* Improve touch responsiveness */
@@ -224,14 +224,14 @@
         }
 
         .music-gen-btn:hover {
-            background: linear-gradient(135deg, #ff5252, #d32f2f, #ff5252);
+            background: linear-gradient(135deg, #00e5ff, #00b8d4, #00e5ff);
             transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(255, 107, 107, 0.4);
+            box-shadow: 0 6px 12px rgba(67, 255, 246, 0.4);
         }
 
         .music-gen-btn:active {
             transform: translateY(0);
-            box-shadow: 0 3px 6px rgba(255, 107, 107, 0.3);
+            box-shadow: 0 3px 6px rgba(67, 255, 246, 0.3);
         }
 
         .music-gen-btn::before {
@@ -843,7 +843,7 @@
                 const controlRadius = isMobile ? 10 : 6; // Larger on mobile
                 
                 canvasControlPoints.forEach((control, index) => {
-                    ctx.fillStyle = '#ff6b6b'; // Red color for control points
+                    ctx.fillStyle = '#00ffff'; // Cyan color for control points
                     ctx.beginPath();
                     ctx.arc(control.x, control.y, controlRadius, 0, 2 * Math.PI);
                     ctx.fill();
@@ -856,7 +856,7 @@
                     const current = canvasPoints[index];
                     const next = canvasPoints[(index + 1) % canvasPoints.length];
                     
-                    ctx.strokeStyle = '#ff6b6b50'; // Semi-transparent red
+                    ctx.strokeStyle = '#00ffff60'; // Semi-transparent red
                     ctx.lineWidth = 1;
                     ctx.setLineDash([3, 3]);
                     ctx.beginPath();
