@@ -8,6 +8,8 @@ let inputSource = null;
 let videoElement = null;
 let canvas = null;
 let ctx = null;
+let segmentationCanvas = null;
+let segmentationCtx = null;
 let roiPoints = []; // Will be initialized based on video dimensions
 let controlPoints = []; // Bézier control points for curves
 let draggingPoint = null;
@@ -19,7 +21,7 @@ let settings = {};
 let showControlPoints = true;
 
 // Frame processing variables
-let frameProcessingEnabled = true;
+let frameProcessingEnabled = false; // Start with segmentation OFF
 let processorUrl = 'http://127.0.0.1:5000';
 let frameCounter = 0;
 let lastFrameSentTime = 0;
@@ -27,7 +29,7 @@ let frameSendInterval = 200; // Send frames every 200ms for better performance
 let processingCanvas = null;
 let processingCtx = null;
 let segmentationSocket = null;
-let segmentationDisplay = null;
+let currentSegmentationOverlay = null;
 
 // Color scheme
 const colors = {
@@ -92,7 +94,7 @@ function setupMobileButtons() {
 
 function setupSegmentationButtonMobile() {
     if (isMobileDevice()) {
-        const segButton = document.getElementById('toggleProcessingBtn');
+        const segButton = document.getElementById('toggleSegmentationBtn');
         if (segButton) {
             console.log('Setting up mobile touch events for segmentation button');
             
@@ -357,72 +359,114 @@ async function sendFrameToProcessor(frameInfo) {
 }
 
 function updateSegmentationStatus(status) {
-    const statusElement = document.getElementById('segProcessorStatus');
-    if (statusElement) {
-        statusElement.textContent = status;
-    }
+    // Log status for debugging
+    console.log('🔗 Segmentation status:', status);
     
-    // Update container border color based on status
-    const container = document.getElementById('segmentationContainer');
-    if (container) {
-        if (status === 'Connected') {
-            container.style.borderColor = '#00ff88';
-        } else if (status.includes('Error') || status.includes('Failed')) {
-            container.style.borderColor = '#ff4444';
-        } else {
-            container.style.borderColor = '#ffaa00';
-        }
+    // Update main status if it's important
+    if (status === 'Connected') {
+        updateStatus('Segmentation processor connected');
+    } else if (status.includes('Error') || status.includes('Failed')) {
+        updateStatus('Segmentation error: ' + status);
+    } else if (status === 'Offline') {
+        updateStatus('Segmentation processor offline');
     }
 }
 
 function updateSegmentationDisplay(data) {
     // Update frame counter
-    if (data.frame_counter !== undefined) {
-        updateFrameCounter(data.frame_counter);
-    }
+    frameCounter = data.frame_counter || frameCounter;
     
-    // Update segmentation image
-    if (data.segmentation_overlay) {
-        const segImg = document.getElementById('segmentationImage');
-        const statusDiv = document.getElementById('segmentationStatus');
+    // Update segmentation overlay if available and enabled
+    if (data.segmentation_overlay && frameProcessingEnabled) {
+        console.log('🔍 Updating segmentation overlay');
         
-        if (segImg && statusDiv) {
-            segImg.src = data.segmentation_overlay;
-            segImg.style.display = 'block';
-            statusDiv.style.display = 'none';
-            
-            // Update segmentation info
-            if (data.segmentation_info) {
-                const framesSince = data.segmentation_info.frames_since_segmentation || 0;
-                const framesSinceElement = document.getElementById('segFramesSince');
-                if (framesSinceElement) {
-                    framesSinceElement.textContent = framesSince;
-                }
-                
-                // Log successful segmentation
-                console.log('🔍 Segmentation updated:', data.segmentation_info);
-            }
-            
-            updateSegmentationStatus('Processing');
-        }
-    } else {
-        // No segmentation available
-        const segImg = document.getElementById('segmentationImage');
-        const statusDiv = document.getElementById('segmentationStatus');
+        // Store the segmentation overlay data
+        currentSegmentationOverlay = data.segmentation_overlay;
         
-        if (segImg && statusDiv) {
-            segImg.style.display = 'none';
-            statusDiv.style.display = 'block';
-            statusDiv.textContent = 'Processing...';
+        // Draw the overlay on the segmentation canvas
+        drawSegmentationOverlay();
+        
+        // Log successful segmentation
+        if (data.segmentation_info) {
+            console.log('🔍 Segmentation updated:', data.segmentation_info);
         }
+    } else if (!frameProcessingEnabled) {
+        // Clear segmentation overlay when disabled
+        clearSegmentationOverlay();
     }
 }
 
 function updateFrameCounter(count) {
-    const frameCountElement = document.getElementById('segFrameCount');
-    if (frameCountElement) {
-        frameCountElement.textContent = count;
+    // This function is kept for backward compatibility
+    // Frame counter is now updated directly in updateSegmentationDisplay
+}
+
+/**
+ * Draw segmentation overlay on the segmentation canvas
+ */
+function drawSegmentationOverlay() {
+    if (!segmentationCanvas || !segmentationCtx || !currentSegmentationOverlay) {
+        return;
     }
+    
+    try {
+        // Create an image element to load the base64 segmentation data
+        const img = new Image();
+        img.onload = function() {
+            // Clear the segmentation canvas
+            segmentationCtx.clearRect(0, 0, segmentationCanvas.width, segmentationCanvas.height);
+            
+            // Calculate scaling to fit the canvas while maintaining aspect ratio
+            const canvasAspect = segmentationCanvas.width / segmentationCanvas.height;
+            const imgAspect = img.width / img.height;
+            
+            let drawWidth, drawHeight, drawX, drawY;
+            
+            if (imgAspect > canvasAspect) {
+                // Image is wider, fit to width
+                drawWidth = segmentationCanvas.width;
+                drawHeight = segmentationCanvas.width / imgAspect;
+                drawX = 0;
+                drawY = (segmentationCanvas.height - drawHeight) / 2;
+            } else {
+                // Image is taller, fit to height
+                drawHeight = segmentationCanvas.height;
+                drawWidth = segmentationCanvas.height * imgAspect;
+                drawX = (segmentationCanvas.width - drawWidth) / 2;
+                drawY = 0;
+            }
+            
+            // Set global alpha for overlay blending
+            segmentationCtx.globalAlpha = 0.6;
+            segmentationCtx.globalCompositeOperation = 'source-over';
+            
+            // Draw the segmentation overlay
+            segmentationCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+            
+            // Reset global alpha
+            segmentationCtx.globalAlpha = 1.0;
+        };
+        
+        img.onerror = function() {
+            console.error('❌ Failed to load segmentation overlay image');
+        };
+        
+        // Load the base64 image
+        img.src = currentSegmentationOverlay;
+        
+    } catch (error) {
+        console.error('❌ Error drawing segmentation overlay:', error);
+    }
+}
+
+/**
+ * Clear the segmentation overlay
+ */
+function clearSegmentationOverlay() {
+    if (segmentationCanvas && segmentationCtx) {
+        segmentationCtx.clearRect(0, 0, segmentationCanvas.width, segmentationCanvas.height);
+    }
+    currentSegmentationOverlay = null;
 }
 
 function toggleFrameProcessing() {
@@ -434,6 +478,12 @@ function toggleFrameProcessing() {
     
     // Update button state immediately
     updateSegmentationButtonState();
+    
+    // Show or hide segmentation canvas
+    const segCanvas = document.getElementById('segmentationCanvas');
+    if (segCanvas) {
+        segCanvas.style.display = frameProcessingEnabled ? 'block' : 'none';
+    }
     
     if (frameProcessingEnabled) {
         updateStatus('Frame processing enabled');
@@ -447,19 +497,13 @@ function toggleFrameProcessing() {
         updateStatus('Frame processing disabled');
         console.log('❌ Segmentation turned OFF');
         
-        // Clear segmentation display
-        const segImg = document.getElementById('segmentationImage');
-        const statusDiv = document.getElementById('segmentationStatus');
-        if (segImg && statusDiv) {
-            segImg.style.display = 'none';
-            statusDiv.style.display = 'block';
-            statusDiv.textContent = 'Processing disabled';
-        }
+        // Clear segmentation overlay
+        clearSegmentationOverlay();
     }
 }
 
 function updateSegmentationButtonState() {
-    const button = document.getElementById('toggleProcessingBtn');
+    const button = document.getElementById('toggleSegmentationBtn');
     
     if (button) {
         console.log('🎯 Updating button state. frameProcessingEnabled:', frameProcessingEnabled);
@@ -470,22 +514,9 @@ function updateSegmentationButtonState() {
             button.style.color = 'black';
         } else {
             button.textContent = '🔍 Segmentation: OFF';
-            button.style.background = '#666';
+            button.style.background = '#4a4a4a';
             button.style.color = 'white';
         }
-        
-        // Preserve mobile-friendly styles
-        button.style.padding = '8px 16px';
-        button.style.borderRadius = '6px';
-        button.style.minHeight = '44px';
-        button.style.minWidth = '120px';
-        button.style.border = 'none';
-        button.style.cursor = 'pointer';
-        button.style.fontSize = '12px';
-        button.style.fontWeight = 'bold';
-        button.style.touchAction = 'manipulation';
-        button.style.userSelect = 'none';
-        button.style.webkitTapHighlightColor = 'transparent';
         
         console.log('🎯 Button updated to:', button.textContent);
         
@@ -508,7 +539,7 @@ function startButtonStateMonitoring() {
     
     // Check button state every 100ms to ensure it doesn't revert
     buttonStateCheckInterval = setInterval(() => {
-        const button = document.getElementById('toggleProcessingBtn');
+        const button = document.getElementById('toggleSegmentationBtn');
         if (button) {
             const expectedText = frameProcessingEnabled ? '🔍 Segmentation: ON' : '🔍 Segmentation: OFF';
             if (button.textContent !== expectedText) {
@@ -603,7 +634,7 @@ function selectInputSource(source) {
  * URL Input Modal Functions
  */
 function showUrlInput() {
-    document.getElementById('urlModal').style.display = 'block';
+    document.getElementById('urlModal').style.display = 'flex';
 }
 
 function confirmUrl() {
@@ -745,16 +776,25 @@ function setupRoiCanvas() {
     canvas = document.getElementById('roiCanvas');
     ctx = canvas.getContext('2d');
     
+    // Setup segmentation canvas
+    segmentationCanvas = document.getElementById('segmentationCanvas');
+    segmentationCtx = segmentationCanvas.getContext('2d');
+    
     // Set canvas size to match container
     const container = document.getElementById('videoContainer');
     canvas.width = container.offsetWidth;
     canvas.height = container.offsetHeight;
+    segmentationCanvas.width = container.offsetWidth;
+    segmentationCanvas.height = container.offsetHeight;
     
     // Initialize ROI points based on video/canvas dimensions
     initializeRoiPoints();
     
     // Start drawing ROI
     drawRoi();
+    
+    // Update segmentation button state
+    updateSegmentationButtonState();
 }
 
 /**
@@ -1253,6 +1293,18 @@ function onWindowResize() {
         const container = document.getElementById('videoContainer');
         canvas.width = container.offsetWidth;
         canvas.height = container.offsetHeight;
+        
+        // Also resize segmentation canvas
+        if (segmentationCanvas) {
+            segmentationCanvas.width = container.offsetWidth;
+            segmentationCanvas.height = container.offsetHeight;
+            
+            // Redraw segmentation overlay if it exists
+            if (currentSegmentationOverlay) {
+                drawSegmentationOverlay();
+            }
+        }
+        
         drawRoi();
     }
 }
@@ -1353,6 +1405,12 @@ function startMusicGeneration() {
 function togglePause() {
     isPaused = !isPaused;
     updateStatus(isPaused ? 'Paused' : 'Resumed');
+    
+    // Update button text and icon
+    const pauseBtn = document.getElementById('pauseBtn');
+    if (pauseBtn) {
+        pauseBtn.textContent = isPaused ? '▶️ Play' : '⏸️ Pause';
+    }
     
     if (videoElement) {
         if (isPaused) {
