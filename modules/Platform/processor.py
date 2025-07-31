@@ -37,6 +37,9 @@ class VideoProcessor:
         self.current_segmentation = None
         self.is_processing = False
         
+        # Create consistent color mapping for segmentation classes
+        self.color_map = self._create_consistent_color_map()
+        
         # Initialize segmentation models
         print("🔄 Initializing segmentation models...")
         try:
@@ -55,6 +58,47 @@ class VideoProcessor:
         # Start processing thread
         self.processing_thread = threading.Thread(target=self._processing_loop, daemon=True)
         self.processing_thread.start()
+    
+    def _create_consistent_color_map(self):
+        """Create a consistent color mapping for segmentation classes"""
+        # Standard color palette for common segmentation classes
+        # These colors are designed to be visually distinct and meaningful
+        color_map = {
+            0: [50, 50, 50],      # Background - dark gray
+            1: [128, 64, 128],    # Road - purple
+            2: [244, 35, 232],    # Sidewalk - magenta
+            3: [70, 70, 70],      # Building - gray
+            4: [102, 102, 156],   # Wall - blue-gray
+            5: [190, 153, 153],   # Fence - pink-gray
+            6: [153, 153, 153],   # Pole - light gray
+            7: [250, 170, 30],    # Traffic light - orange
+            8: [220, 220, 0],     # Traffic sign - yellow
+            9: [107, 142, 35],    # Vegetation - olive green
+            10: [152, 251, 152],  # Terrain - light green
+            11: [70, 130, 180],   # Sky - sky blue
+            12: [220, 20, 60],    # Person - red
+            13: [255, 0, 0],      # Rider - bright red
+            14: [0, 0, 142],      # Car - dark blue
+            15: [0, 0, 70],       # Truck - darker blue
+            16: [0, 60, 100],     # Bus - blue
+            17: [0, 80, 100],     # Train - teal
+            18: [0, 0, 230],      # Motorcycle - blue
+            19: [119, 11, 32],    # Bicycle - dark red
+        }
+        
+        # Extend with additional colors for more classes if needed
+        for i in range(20, 256):
+            # Generate consistent colors using HSV color space
+            hue = (i * 137.5) % 360  # Golden angle for good distribution
+            saturation = 70 + (i % 3) * 15  # Vary saturation
+            value = 180 + (i % 4) * 20       # Vary brightness
+            
+            # Convert HSV to RGB
+            import colorsys
+            r, g, b = colorsys.hsv_to_rgb(hue/360, saturation/100, value/255)
+            color_map[i] = [int(r*255), int(g*255), int(b*255)]
+        
+        return color_map
         
     def _processing_loop(self):
         """Main processing loop that runs in a separate thread"""
@@ -125,26 +169,26 @@ class VideoProcessor:
             # Create a colored segmentation map
             segmentation_map = result.segmentation_map
             
-            # Generate colors for different classes
-            num_classes = len(result.class_labels) if result.class_labels else segmentation_map.max() + 1
-            colors = np.random.randint(0, 255, size=(num_classes, 3), dtype=np.uint8)
-            
-            # Create colored overlay
+            # Create colored overlay using consistent color mapping
             overlay = np.zeros((segmentation_map.shape[0], segmentation_map.shape[1], 3), dtype=np.uint8)
             
-            for class_id in range(num_classes):
+            # Get unique classes in the segmentation map
+            unique_classes = np.unique(segmentation_map)
+            
+            for class_id in unique_classes:
                 mask = segmentation_map == class_id
-                if class_id == 0:  # Background - make it semi-transparent
-                    overlay[mask] = [50, 50, 50]  # Dark gray for background
+                if class_id in self.color_map:
+                    overlay[mask] = self.color_map[class_id]
                 else:
-                    overlay[mask] = colors[class_id]
+                    # Fallback for unexpected class IDs
+                    overlay[mask] = [128, 128, 128]  # Gray
             
             # Resize overlay to match original frame size
             if overlay.shape[:2] != frame.shape[:2]:
                 overlay = cv2.resize(overlay, (frame.shape[1], frame.shape[0]))
             
-            # Blend with original frame
-            blended = cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)
+            # Blend with original frame (adjust alpha for better visibility)
+            blended = cv2.addWeighted(frame, 0.6, overlay, 0.4, 0)
             
             # Convert back to BGR for encoding
             blended = cv2.cvtColor(blended, cv2.COLOR_RGB2BGR)

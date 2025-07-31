@@ -530,7 +530,9 @@ function stopButtonStateMonitoring() {
  * Input Source Selection
  */
 function showInputSelection() {
-    document.getElementById('inputModal').style.display = 'block';
+    const modal = document.getElementById('inputModal');
+    modal.style.display = 'flex'; // Use flex instead of block for centering
+    modal.classList.add('show'); // Add show class for better styling
     
     // Add mobile-specific event listeners for input buttons
     if (isMobileDevice()) {
@@ -564,10 +566,32 @@ function handleInputButtonTouch(event) {
 
 function selectInputSource(source) {
     inputSource = source;
-    document.getElementById('inputModal').style.display = 'none';
+    const modal = document.getElementById('inputModal');
+    modal.style.display = 'none';
+    modal.classList.remove('show');
     
     if (source === 'video_file') {
-        document.getElementById('videoFileInput').click();
+        // Clear any previous file selection to ensure change event fires
+        const fileInput = document.getElementById('videoFileInput');
+        fileInput.value = '';
+        
+        // Add a one-time event listener to handle file selection
+        const handleFileSelection = (event) => {
+            fileInput.removeEventListener('change', handleFileSelection);
+            
+            if (event.target.files.length === 0) {
+                // User cancelled file selection, show input selection again
+                console.log('File selection cancelled, showing input selection again');
+                inputSource = null;
+                showInputSelection();
+            } else {
+                // File was selected, proceed with normal handling
+                handleVideoFile(event);
+            }
+        };
+        
+        fileInput.addEventListener('change', handleFileSelection);
+        fileInput.click();
     } else if (source === 'network_stream') {
         showUrlInput();
     } else {
@@ -604,9 +628,12 @@ function cancelUrl() {
 function handleVideoFile(event) {
     const file = event.target.files[0];
     if (file) {
+        console.log('Video file selected:', file.name);
         const url = URL.createObjectURL(file);
+        
         // Setup main interface first
         setupMainInterface();
+        
         // Then set the video source after interface is ready
         setTimeout(() => {
             videoElement = document.getElementById('videoElement');
@@ -619,10 +646,12 @@ function handleVideoFile(event) {
             
             videoElement.src = url;
             videoElement.load(); // Force video to load
+            
+            console.log('Video source set to:', url);
         }, 100);
     } else {
-        inputSource = null;
-        showInputSelection();
+        console.log('No file selected in handleVideoFile');
+        // Don't automatically show input selection here - it's handled in selectInputSource
     }
 }
 
