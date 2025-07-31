@@ -28,9 +28,15 @@ body {
     margin: 0;
     padding: 0;
     height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile browsers */
+    height: calc(var(--vh, 1vh) * 100); /* Fallback for older browsers */
     display: flex;
     flex-direction: row;
     overflow: hidden;
+    position: fixed;
+    width: 100%;
+    width: 100dvw; /* Dynamic viewport width */
+    width: 100vw; /* Fallback */
 }
 
 /* Input Source Selection Modal */
@@ -41,7 +47,11 @@ body {
     left: 0;
     top: 0;
     width: 100%;
+    width: 100dvw;
+    width: 100vw; /* Fallback */
     height: 100%;
+    height: 100dvh;
+    height: calc(var(--vh, 1vh) * 100); /* Fallback for older browsers */
     background-color: var(--modal-overlay);
     justify-content: center;
     align-items: center;
@@ -211,6 +221,9 @@ body {
     box-shadow: 2px 0 5px var(--shadow-color);
     overflow-y: auto;
     z-index: 100;
+    height: 100vh;
+    height: 100dvh;
+    height: calc(var(--vh, 1vh) * 100); /* Fallback for older browsers */
 }
 
 .title {
@@ -230,7 +243,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 15px;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
     width: 100%;
 }
 
@@ -266,7 +279,7 @@ body {
 }
 
 #changeSourceBtn {
-    margin-bottom: 30px;
+    margin-bottom: 15px;
 }
 
 .music-gen-btn {
@@ -278,7 +291,7 @@ body {
     cursor: pointer;
     font-size: 16px;
     font-weight: bold;
-    margin: 20px 0;
+    margin: 15px 0;
     transition: all 0.3s ease;
     width: 100%;
     box-shadow: 0 4px 8px var(--shadow-color);
@@ -359,6 +372,9 @@ body {
     background: var(--bg-primary);
     position: relative;
     overflow: hidden;
+    height: 100vh;
+    height: 100dvh;
+    height: calc(var(--vh, 1vh) * 100); /* Fallback for older browsers */
 }
 
 .video-container {
@@ -376,7 +392,7 @@ body {
     max-height: 100%;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     background: black;
 }
 
@@ -390,6 +406,18 @@ body {
     z-index: 10;
 }
 
+/* Specific z-index for segmentation canvas (background layer) */
+#segmentationCanvas {
+    z-index: 10;
+    pointer-events: none;
+}
+
+/* Specific z-index for ROI canvas (interactive foreground layer) */
+#roiCanvas {
+    z-index: 15;
+    pointer-events: auto;
+}
+
 /* Instructions */
 .instructions {
     position: absolute;
@@ -398,13 +426,18 @@ body {
     transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.8);
     color: var(--text-primary);
-    padding: 10px 20px;
-    border-radius: 20px;
-    font-size: 12px;
+    padding: 12px 30px;
+    border-radius: 25px;
+    font-size: 13px;
     text-align: center;
     border: 1px solid var(--border-color);
     backdrop-filter: blur(5px);
     z-index: 20;
+    min-width: 400px;
+    max-width: 80%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Hidden Elements */
@@ -478,8 +511,11 @@ body {
     }
     
     .instructions {
-        font-size: 8px;
-        padding: 2px;
+        font-size: 10px;
+        padding: 8px 16px;
+        min-width: 250px;
+        max-width: 90%;
+        border-radius: 15px;
     }
 }
 
@@ -554,10 +590,12 @@ body {
     }
     
     .instructions {
-        font-size: 9px;
-        padding: 3px 6px;
-        bottom: 5px;
-        max-width: 95%;
+        font-size: 11px;
+        padding: 8px 16px;
+        bottom: 10px;
+        max-width: 90%;
+        min-width: 280px;
+        border-radius: 18px;
     }
     
     .url-modal-content {
@@ -664,11 +702,13 @@ body {
     }
     
     .instructions {
-        font-size: 10px;
-        padding: 4px 8px;
-        bottom: 10px;
-        max-width: 90%;
+        font-size: 12px;
+        padding: 10px 20px;
+        bottom: 15px;
+        max-width: 85%;
+        min-width: 320px;
         z-index: 30;
+        border-radius: 20px;
     }
     
     .url-modal-content {
@@ -723,8 +763,10 @@ body {
     }
     
     .instructions {
-        font-size: 11px;
-        padding: 8px 15px;
+        font-size: 12px;
+        padding: 10px 24px;
+        min-width: 350px;
+        border-radius: 22px;
     }
 }
 
@@ -744,7 +786,10 @@ body {
     }
     
     .instructions {
-        font-size: 12px;
+        font-size: 13px;
+        min-width: 420px;
+        padding: 12px 32px;
+        border-radius: 25px;
     }
 }
 
@@ -779,6 +824,8 @@ body {
     
     .instructions {
         font-size: 14px;
-        padding: 12px 25px;
+        padding: 15px 35px;
+        min-width: 500px;
+        border-radius: 30px;
     }
 }

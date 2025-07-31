@@ -61,33 +61,35 @@ class VideoProcessor:
     
     def _create_consistent_color_map(self):
         """Create a consistent color mapping for segmentation classes"""
-        # Standard color palette for common segmentation classes
-        # These colors are designed to be visually distinct and meaningful
+        # Cityscapes color palette (SegFormer model classes)
+        # These colors match the standard Cityscapes dataset visualization
         color_map = {
-            0: [50, 50, 50],      # Background - dark gray
-            1: [128, 64, 128],    # Road - purple
-            2: [244, 35, 232],    # Sidewalk - magenta
-            3: [70, 70, 70],      # Building - gray
-            4: [102, 102, 156],   # Wall - blue-gray
-            5: [190, 153, 153],   # Fence - pink-gray
-            6: [153, 153, 153],   # Pole - light gray
-            7: [250, 170, 30],    # Traffic light - orange
-            8: [220, 220, 0],     # Traffic sign - yellow
-            9: [107, 142, 35],    # Vegetation - olive green
-            10: [152, 251, 152],  # Terrain - light green
-            11: [70, 130, 180],   # Sky - sky blue
-            12: [220, 20, 60],    # Person - red
-            13: [255, 0, 0],      # Rider - bright red
-            14: [0, 0, 142],      # Car - dark blue
-            15: [0, 0, 70],       # Truck - darker blue
-            16: [0, 60, 100],     # Bus - blue
-            17: [0, 80, 100],     # Train - teal
-            18: [0, 0, 230],      # Motorcycle - blue
-            19: [119, 11, 32],    # Bicycle - dark red
+            0: [128, 64, 128],    # Road - purple (THIS IS THE CORRECT ROAD CLASS!)
+            1: [244, 35, 232],    # Sidewalk - magenta  
+            2: [70, 70, 70],      # Building - gray
+            3: [102, 102, 156],   # Wall - blue-gray
+            4: [190, 153, 153],   # Fence - pink-gray
+            5: [153, 153, 153],   # Pole - light gray
+            6: [250, 170, 30],    # Traffic light - orange
+            7: [220, 220, 0],     # Traffic sign - yellow
+            8: [107, 142, 35],    # Vegetation - olive green
+            9: [152, 251, 152],   # Terrain - light green
+            10: [70, 130, 180],   # Sky - sky blue
+            11: [220, 20, 60],    # Person - red
+            12: [255, 0, 0],      # Rider - bright red
+            13: [0, 0, 142],      # Car - dark blue
+            14: [0, 0, 70],       # Truck - darker blue
+            15: [0, 60, 100],     # Bus - blue
+            16: [0, 80, 100],     # Train - teal
+            17: [0, 0, 230],      # Motorcycle - blue
+            18: [119, 11, 32],    # Bicycle - dark red
         }
         
+        # Add a background/unlabeled class
+        color_map[255] = [0, 0, 0]  # Black for unlabeled regions
+        
         # Extend with additional colors for more classes if needed
-        for i in range(20, 256):
+        for i in range(19, 255):
             # Generate consistent colors using HSV color space
             hue = (i * 137.5) % 360  # Golden angle for good distribution
             saturation = 70 + (i % 3) * 15  # Vary saturation
@@ -97,6 +99,15 @@ class VideoProcessor:
             import colorsys
             r, g, b = colorsys.hsv_to_rgb(hue/360, saturation/100, value/255)
             color_map[i] = [int(r*255), int(g*255), int(b*255)]
+        
+        print("🎨 Color mapping for Cityscapes classes:")
+        cityscapes_labels = [
+            "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
+            "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
+            "truck", "bus", "train", "motorcycle", "bicycle"
+        ]
+        for i, label in enumerate(cityscapes_labels):
+            print(f"   Class {i}: {label} → RGB{color_map[i]}")
         
         return color_map
         
@@ -169,26 +180,64 @@ class VideoProcessor:
             # Create a colored segmentation map
             segmentation_map = result.segmentation_map
             
+            # Debug: Print segmentation info
+            unique_classes = np.unique(segmentation_map)
+            print(f"🔍 Detected classes: {unique_classes}")
+            print(f"📊 Segmentation map shape: {segmentation_map.shape}")
+            print(f"📊 Segmentation map min/max: {segmentation_map.min()}/{segmentation_map.max()}")
+            
+            # Debug: Print class distribution
+            road_pixels = np.sum(segmentation_map == 0)  # Road should be class 0
+            total_pixels = segmentation_map.size
+            road_percentage = (road_pixels / total_pixels) * 100
+            
+            print(f"🛣️ ROAD DETECTION DEBUG:")
+            print(f"   Road pixels (class 0): {road_pixels}/{total_pixels} ({road_percentage:.1f}%)")
+            
+            for class_id in unique_classes:
+                pixel_count = np.sum(segmentation_map == class_id)
+                percentage = (pixel_count / segmentation_map.size) * 100
+                class_name = "Unknown"
+                if hasattr(result, 'class_labels') and result.class_labels and class_id < len(result.class_labels):
+                    class_name = result.class_labels[class_id]
+                
+                # Highlight road detection specifically
+                if class_id == 0:
+                    print(f"   🛣️ Class {class_id} ({class_name}): {pixel_count} pixels ({percentage:.1f}%) - ROAD!")
+                else:
+                    print(f"   Class {class_id} ({class_name}): {pixel_count} pixels ({percentage:.1f}%)")
+            
+            # Check if there are any road pixels at all
+            if road_pixels == 0:
+                print("⚠️ WARNING: NO ROAD PIXELS DETECTED!")
+                print("   This could mean:")
+                print("   1. The image doesn't contain roads")
+                print("   2. The model confidence is too low")
+                print("   3. The model needs better preprocessing")
+            elif road_percentage < 5:
+                print(f"⚠️ WARNING: Very few road pixels detected ({road_percentage:.1f}%)")
+            else:
+                print(f"✅ Road detection looks good ({road_percentage:.1f}% of image)")
+            
             # Create colored overlay using consistent color mapping
             overlay = np.zeros((segmentation_map.shape[0], segmentation_map.shape[1], 3), dtype=np.uint8)
-            
-            # Get unique classes in the segmentation map
-            unique_classes = np.unique(segmentation_map)
             
             for class_id in unique_classes:
                 mask = segmentation_map == class_id
                 if class_id in self.color_map:
                     overlay[mask] = self.color_map[class_id]
+                    print(f"   ✅ Class {class_id} mapped to color {self.color_map[class_id]}")
                 else:
                     # Fallback for unexpected class IDs
                     overlay[mask] = [128, 128, 128]  # Gray
+                    print(f"   ⚠️ Class {class_id} using fallback gray color")
             
             # Resize overlay to match original frame size
             if overlay.shape[:2] != frame.shape[:2]:
                 overlay = cv2.resize(overlay, (frame.shape[1], frame.shape[0]))
             
-            # Blend with original frame (adjust alpha for better visibility)
-            blended = cv2.addWeighted(frame, 0.6, overlay, 0.4, 0)
+            # Blend with original frame (higher opacity for better visibility)
+            blended = cv2.addWeighted(frame, 0.4, overlay, 0.6, 0)
             
             # Convert back to BGR for encoding
             blended = cv2.cvtColor(blended, cv2.COLOR_RGB2BGR)

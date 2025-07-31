@@ -21,7 +21,8 @@ let settings = {};
 let showControlPoints = true;
 
 // Frame processing variables
-let frameProcessingEnabled = false; // Start with segmentation OFF
+let frameProcessingEnabled = true; // Always keep processing enabled
+let segmentationDisplayEnabled = false; // Only control display - Start with segmentation display OFF
 let processorUrl = 'http://127.0.0.1:5000';
 let frameCounter = 0;
 let lastFrameSentTime = 0;
@@ -179,10 +180,10 @@ function initializeFrameProcessing() {
     processingCanvas = document.createElement('canvas');
     processingCtx = processingCanvas.getContext('2d');
     
-    // Try to connect to segmentation processor
+    // Always start processing automatically in the background
     connectToProcessor();
     
-    console.log('✅ Frame processing initialized');
+    console.log('✅ Frame processing initialized - background processing will start automatically');
 }
 
 function connectToProcessor() {
@@ -224,7 +225,7 @@ function initializeSocketConnection() {
         
         segmentationSocket.on('connect', function() {
             console.log('✅ Connected to segmentation processor');
-            updateStatus('Processor connected - Ready for segmentation');
+            updateStatus('Processor connected - Background segmentation processing active');
             updateSegmentationStatus('Connected');
             
             // Maintain button state after connection
@@ -275,7 +276,8 @@ async function checkProcessorStatus() {
 }
 
 function captureAndSendFrame() {
-    if (!frameProcessingEnabled || !videoElement || !videoElement.videoWidth) {
+    // Always process frames in the background (removed frameProcessingEnabled check)
+    if (!videoElement || !videoElement.videoWidth) {
         return;
     }
     
@@ -376,8 +378,8 @@ function updateSegmentationDisplay(data) {
     // Update frame counter
     frameCounter = data.frame_counter || frameCounter;
     
-    // Update segmentation overlay if available and enabled
-    if (data.segmentation_overlay && frameProcessingEnabled) {
+    // Update segmentation overlay if available and display is enabled
+    if (data.segmentation_overlay && segmentationDisplayEnabled) {
         console.log('🔍 Updating segmentation overlay');
         
         // Store the segmentation overlay data
@@ -390,8 +392,8 @@ function updateSegmentationDisplay(data) {
         if (data.segmentation_info) {
             console.log('🔍 Segmentation updated:', data.segmentation_info);
         }
-    } else if (!frameProcessingEnabled) {
-        // Clear segmentation overlay when disabled
+    } else if (!segmentationDisplayEnabled) {
+        // Clear segmentation overlay when display is disabled (but processing continues)
         clearSegmentationOverlay();
     }
 }
@@ -403,6 +405,7 @@ function updateFrameCounter(count) {
 
 /**
  * Draw segmentation overlay on the segmentation canvas
+ * Now displays ONLY the segmentation data (like processor.py)
  */
 function drawSegmentationOverlay() {
     if (!segmentationCanvas || !segmentationCtx || !currentSegmentationOverlay) {
@@ -436,15 +439,13 @@ function drawSegmentationOverlay() {
                 drawY = 0;
             }
             
-            // Set global alpha for overlay blending
-            segmentationCtx.globalAlpha = 0.6;
+            // Display the segmentation overlay at full opacity (not blended)
+            // This shows ONLY the segmentation data, similar to processor.py
+            segmentationCtx.globalAlpha = 1.0;
             segmentationCtx.globalCompositeOperation = 'source-over';
             
             // Draw the segmentation overlay
             segmentationCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-            
-            // Reset global alpha
-            segmentationCtx.globalAlpha = 1.0;
         };
         
         img.onerror = function() {
@@ -470,34 +471,53 @@ function clearSegmentationOverlay() {
 }
 
 function toggleFrameProcessing() {
-    console.log('🎯 toggleFrameProcessing called, current state:', frameProcessingEnabled);
+    console.log('🎯 toggleSegmentationDisplay called, current state:', segmentationDisplayEnabled);
     
-    frameProcessingEnabled = !frameProcessingEnabled;
+    segmentationDisplayEnabled = !segmentationDisplayEnabled;
     
-    console.log('🎯 New state:', frameProcessingEnabled);
+    console.log('🎯 New display state:', segmentationDisplayEnabled);
     
     // Update button state immediately
     updateSegmentationButtonState();
     
-    // Show or hide segmentation canvas
+    // Show/hide elements based on segmentation display state
+    const videoElement = document.getElementById('videoElement');
+    const roiCanvas = document.getElementById('roiCanvas');
     const segCanvas = document.getElementById('segmentationCanvas');
-    if (segCanvas) {
-        segCanvas.style.display = frameProcessingEnabled ? 'block' : 'none';
-    }
+    const instructions = document.querySelector('.instructions');
     
-    if (frameProcessingEnabled) {
-        updateStatus('Frame processing enabled');
-        console.log('✅ Segmentation turned ON');
+    if (segmentationDisplayEnabled) {
+        // Show segmentation overlay with ROI (hide video but keep ROI visible)
+        if (videoElement) videoElement.style.display = 'none';
+        if (roiCanvas) roiCanvas.style.display = 'block'; // Keep ROI visible
+        if (segCanvas) {
+            segCanvas.style.display = 'block';
+            segCanvas.style.pointerEvents = 'none'; // Keep it non-interactive
+        }
+        if (instructions) {
+            instructions.textContent = 'Displaying AI Segmentation Overlay with ROI • Drag points to adjust ROI • Toggle off to return to original video';
+        }
         
-        // Reconnect if disconnected
+        updateStatus('Showing segmentation overlay with ROI (processing continues)');
+        console.log('✅ Segmentation DISPLAY: Overlay with ROI (background processing continues)');
+        
+        // Ensure processor connection (processing was already running)
         if (!segmentationSocket || !segmentationSocket.connected) {
             connectToProcessor();
         }
     } else {
-        updateStatus('Frame processing disabled');
-        console.log('❌ Segmentation turned OFF');
+        // Show original video with ROI (hide segmentation display, but processing continues)
+        if (videoElement) videoElement.style.display = 'block';
+        if (roiCanvas) roiCanvas.style.display = 'block';
+        if (segCanvas) segCanvas.style.display = 'none';
+        if (instructions) {
+            instructions.textContent = 'Drag green points to adjust ROI corners • Drag red points to control edge curves (segmentation processing continues in background)';
+        }
         
-        // Clear segmentation overlay
+        updateStatus('Showing original video with ROI (segmentation processing continues in background)');
+        console.log('❌ Segmentation DISPLAY: Hidden (background processing continues)');
+        
+        // Clear segmentation overlay display but keep processing
         clearSegmentationOverlay();
     }
 }
@@ -506,14 +526,14 @@ function updateSegmentationButtonState() {
     const button = document.getElementById('toggleSegmentationBtn');
     
     if (button) {
-        console.log('🎯 Updating button state. frameProcessingEnabled:', frameProcessingEnabled);
+        console.log('🎯 Updating button state. segmentationDisplayEnabled:', segmentationDisplayEnabled);
         
-        if (frameProcessingEnabled) {
-            button.textContent = '🔍 Segmentation: ON';
+        if (segmentationDisplayEnabled) {
+            button.textContent = '🔍 Segmentation View: ON';
             button.style.background = '#00ff88';
             button.style.color = 'black';
         } else {
-            button.textContent = '🔍 Segmentation: OFF';
+            button.textContent = '🔍 Segmentation View: OFF';
             button.style.background = '#4a4a4a';
             button.style.color = 'white';
         }
@@ -541,7 +561,7 @@ function startButtonStateMonitoring() {
     buttonStateCheckInterval = setInterval(() => {
         const button = document.getElementById('toggleSegmentationBtn');
         if (button) {
-            const expectedText = frameProcessingEnabled ? '🔍 Segmentation: ON' : '🔍 Segmentation: OFF';
+            const expectedText = segmentationDisplayEnabled ? '🔍 Segmentation View: ON' : '🔍 Segmentation View: OFF';
             if (button.textContent !== expectedText) {
                 console.log('🔄 Button state reverted! Fixing it. Expected:', expectedText, 'Actual:', button.textContent);
                 updateSegmentationButtonState();
@@ -1446,3 +1466,49 @@ function takeScreenshot() {
         updateStatus('No video frame available for screenshot');
     }
 }
+
+/**
+ * Mobile Viewport Height Fix
+ * Handles the mobile browser navigation bar issue
+ */
+function handleMobileViewportHeight() {
+    // Set CSS custom properties for viewport height handling
+    const setViewportHeight = () => {
+        const vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+        
+        // Also set dvh fallback for older browsers
+        document.documentElement.style.setProperty('--dvh', `${window.innerHeight}px`);
+    };
+    
+    // Set initial height
+    setViewportHeight();
+    
+    // Update on resize and orientation change
+    window.addEventListener('resize', setViewportHeight);
+    window.addEventListener('orientationchange', () => {
+        // Add delay for orientation change to complete
+        setTimeout(setViewportHeight, 300);
+    });
+    
+    // Handle iOS Safari specifically
+    if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+        // Listen for scroll events to detect when address bar hides/shows
+        let initialViewportHeight = window.innerHeight;
+        
+        window.addEventListener('scroll', () => {
+            if (window.innerHeight !== initialViewportHeight) {
+                setViewportHeight();
+                initialViewportHeight = window.innerHeight;
+            }
+        });
+        
+        // Force layout recalculation on iOS
+        document.addEventListener('touchstart', () => {
+            setTimeout(setViewportHeight, 100);
+        });
+    }
+}
+
+// Call the mobile viewport fix on page load
+document.addEventListener('DOMContentLoaded', handleMobileViewportHeight);
