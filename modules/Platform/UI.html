@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>AI Music Generation Platform</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -39,17 +42,11 @@
         <button class="menu-btn" id="changeSourceBtn" onclick="changeInputSource()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); changeInputSource();}">📂 Change Source</button>
         
         <div class="button-group">
-            <button class="menu-btn" onclick="toggleControlPoints()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleControlPoints();}">🎛️ Toggle Curves</button>
             <button class="menu-btn" onclick="resetRoi()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); resetRoi();}">🔄 Reset ROI</button>
         </div>
         
         <div class="button-group">
-            <button class="menu-btn" id="pauseBtn" onclick="togglePause()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); togglePause();}">⏸️ Pause</button>
-            <button class="menu-btn" onclick="takeScreenshot()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); takeScreenshot();}">📸 Screenshot</button>
-        </div>
-        
-        <div class="button-group">
-            <button class="menu-btn" id="toggleSegmentationBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}">🔍 Segmentation: OFF</button>
+            <button class="menu-btn" id="toggleSegmentationBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}">🔍 Segmentation View: OFF</button>
         </div>
         
         <button class="music-gen-btn" onclick="startMusicGeneration()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); startMusicGeneration();}">🎵 Generate Music</button>
@@ -65,7 +62,7 @@
 
     <div class="display-frame" id="displayFrame" style="display: none;">
         <div class="video-container" id="videoContainer">
-            <video id="videoElement" class="video-element" autoplay playsinline muted></video>
+            <video id="videoElement" class="video-element" autoplay playsinline muted loop></video>
             <canvas id="roiCanvas" class="canvas-overlay"></canvas>
             <canvas id="segmentationCanvas" class="canvas-overlay" style="display: none; pointer-events: none;"></canvas>
         </div>
