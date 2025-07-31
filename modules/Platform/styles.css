@@ -13,6 +13,7 @@ body {
     height: 100vh;
     overflow: hidden;
     display: flex;
+    min-width: 320px; /* Prevent layout breaking on very small screens */
 }
 
 /* Input Source Selection Modal */
@@ -24,28 +25,45 @@ body {
     top: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(0, 0, 0, 0.8);
+    align-items: center;
+    justify-content: center;
+}
+
+.modal.show {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
 }
 
 .modal-content {
     background-color: #2b2b2b;
-    margin: 15% auto;
     padding: 20px;
     border-radius: 10px;
-    width: 400px;
+    width: 90%;
+    max-width: 400px;
+    min-width: 280px;
     text-align: center;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+    position: relative;
+    border: 2px solid #4a4a4a;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
 }
 
 .modal h2 {
     color: #00ff88;
     margin-bottom: 30px;
     font-size: 24px;
+    line-height: 1.2;
 }
 
 .input-buttons {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    width: 100%;
 }
 
 .input-btn {
@@ -57,8 +75,16 @@ body {
     cursor: pointer;
     font-size: 16px;
     transition: all 0.3s ease;
-    touch-action: manipulation; /* Improve touch responsiveness */
-    -webkit-tap-highlight-color: transparent; /* Remove tap highlight */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 44px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .input-btn:hover {
@@ -69,7 +95,21 @@ body {
 .input-btn:active {
     background-color: #00ff88;
     color: black;
-    transform: scale(0.98); /* Visual feedback for touch */
+    transform: scale(0.98);
+}
+
+/* Better touch feedback for mobile */
+@media (hover: none) and (pointer: coarse) {
+    .input-btn:hover {
+        background-color: #4a4a4a;
+        color: #ffffff;
+    }
+    
+    .input-btn:active {
+        background-color: #00ff88;
+        color: black;
+        transform: scale(0.95);
+    }
 }
 
 /* URL Input Modal */
@@ -84,13 +124,31 @@ body {
     background-color: rgba(0, 0, 0, 0.5);
 }
 
+.url-modal.show {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .url-modal-content {
     background-color: #2b2b2b;
-    margin: 20% auto;
     padding: 20px;
     border-radius: 10px;
-    width: 400px;
+    width: 90%;
+    max-width: 400px;
+    min-width: 280px;
     text-align: center;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+    position: relative;
+}
+
+.url-modal-content h3 {
+    color: #00ff88;
+    margin-bottom: 20px;
+    font-size: 18px;
+    line-height: 1.2;
 }
 
 .url-input {
@@ -102,6 +160,8 @@ body {
     border-radius: 5px;
     color: white;
     font-size: 14px;
+    box-sizing: border-box;
+    min-height: 44px;
 }
 
 .url-buttons {
@@ -109,6 +169,7 @@ body {
     gap: 10px;
     justify-content: center;
     margin-top: 15px;
+    flex-wrap: wrap;
 }
 
 .url-btn {
@@ -117,6 +178,13 @@ body {
     border-radius: 5px;
     cursor: pointer;
     font-size: 14px;
+    min-height: 44px;
+    min-width: 80px;
+    flex: 1;
+    max-width: 120px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: all 0.3s ease;
 }
 
 .confirm-btn {
@@ -124,9 +192,27 @@ body {
     color: black;
 }
 
+.confirm-btn:hover {
+    background-color: #00cc6f;
+}
+
+.confirm-btn:active {
+    background-color: #00b85e;
+    transform: scale(0.98);
+}
+
 .cancel-btn {
     background-color: #4a4a4a;
     color: white;
+}
+
+.cancel-btn:hover {
+    background-color: #5a5a5a;
+}
+
+.cancel-btn:active {
+    background-color: #3a3a3a;
+    transform: scale(0.98);
 }
 
 /* Main Interface */
@@ -282,6 +368,8 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    max-width: 100%;
+    max-height: 100%;
 }
 
 .canvas-overlay {
@@ -309,8 +397,359 @@ body {
     display: none;
 }
 
+/* Segmentation Container Styles */
+.segmentation-container {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 300px;
+    background: rgba(30, 30, 30, 0.95);
+    border-radius: 10px;
+    padding: 15px;
+    border: 2px solid #00ff88;
+    z-index: 1000;
+    font-family: Arial, sans-serif;
+    color: white;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.segmentation-container h3 {
+    margin: 0 0 10px 0;
+    color: #00ff88;
+    font-size: 16px;
+}
+
+.segmentation-display {
+    width: 100%;
+    height: 160px;
+    background: #1e1e1e;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+    margin-bottom: 10px;
+    position: relative;
+}
+
+.segmentation-image {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 5px;
+    display: none;
+}
+
+.segmentation-info {
+    font-size: 12px;
+    color: #ccc;
+    line-height: 1.4;
+}
+
+.segmentation-controls {
+    margin-top: 10px;
+}
+
+.toggle-processing-btn {
+    background: #00ff88;
+    color: black;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    min-height: 44px;
+    min-width: 120px;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.toggle-processing-btn:hover {
+    background: #00cc6f;
+}
+
+.toggle-processing-btn:active {
+    background: #00b85e;
+    transform: scale(0.98);
+}
+
 /* Responsive design */
-@media (max-width: 768px) {
+
+/* Very small devices (less than 320px) */
+@media (max-width: 319px) {
+    body {
+        min-width: 280px;
+        flex-direction: column;
+        height: auto;
+        overflow-y: auto;
+    }
+    
+    .menu-frame {
+        width: 100%;
+        min-width: auto;
+        flex-direction: column;
+        padding: 5px;
+        order: 1;
+        height: auto;
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+    
+    .display-frame {
+        width: 100%;
+        flex: 1;
+        order: 2;
+        min-height: 40vh;
+    }
+    
+    .title {
+        font-size: 12px;
+        margin-bottom: 10px;
+    }
+    
+    .menu-btn {
+        font-size: 9px;
+        padding: 6px 4px;
+        margin: 1px 0;
+    }
+    
+    .button-group .menu-btn {
+        font-size: 8px;
+        padding: 4px 2px;
+    }
+    
+    .music-gen-btn {
+        font-size: 10px;
+        padding: 8px 6px;
+        margin: 6px 0;
+    }
+    
+/* Additional mobile modal positioning fix */
+@media (max-width: 768px) and (orientation: portrait) {
+    .modal {
+        padding: 10px;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        padding: 15px;
+        width: 95%;
+        max-width: none;
+        min-width: 300px;
+        margin: 20px;
+        border-radius: 15px;
+        transform: none !important;
+        position: relative !important;
+        left: auto !important;
+        top: auto !important;
+    }
+    
+    .modal h2 {
+        font-size: 18px;
+        margin-bottom: 20px;
+        color: #00ff88;
+    }
+}
+    
+    .input-btn {
+        font-size: 12px;
+        padding: 10px 12px;
+        min-height: 40px;
+    }
+    
+    .url-modal-content {
+        padding: 10px;
+        width: 98%;
+        max-width: none;
+    }
+    
+    .url-modal-content h3 {
+        font-size: 14px;
+        margin-bottom: 15px;
+    }
+    
+    .url-input {
+        font-size: 12px;
+        min-height: 40px;
+    }
+    
+    .url-btn {
+        font-size: 12px;
+        padding: 8px 12px;
+        min-height: 40px;
+        min-width: 70px;
+    }
+    
+    .segmentation-container {
+        position: relative !important;
+        top: auto !important;
+        right: auto !important;
+        left: auto !important;
+        width: 100% !important;
+        max-width: none !important;
+        margin: 5px !important;
+        padding: 8px !important;
+        font-size: 9px !important;
+    }
+    
+    .segmentation-container h3 {
+        font-size: 11px !important;
+        margin-bottom: 6px !important;
+    }
+    
+    #segmentationDisplay {
+        height: 100px !important;
+        margin-bottom: 6px !important;
+    }
+    
+    #toggleProcessingBtn {
+        font-size: 9px !important;
+        padding: 4px 8px !important;
+        min-height: 32px !important;
+        min-width: 80px !important;
+    }
+    
+    .instructions {
+        font-size: 8px;
+        padding: 2px;
+    }
+}
+
+/* Extra small devices (phones, 320px and up) */
+@media (max-width: 480px) {
+    body {
+        flex-direction: column;
+        height: auto;
+        overflow-y: auto;
+    }
+    
+    .menu-frame {
+        width: 100%;
+        min-width: auto;
+        flex-direction: column;
+        padding: 8px;
+        order: 1;
+        height: auto;
+        max-height: 50vh;
+        overflow-y: auto;
+    }
+    
+    .display-frame {
+        width: 100%;
+        flex: 1;
+        order: 2;
+        min-height: 50vh;
+    }
+    
+    .title {
+        font-size: 14px;
+        margin-bottom: 15px;
+    }
+    
+    .menu-btn {
+        font-size: 10px;
+        padding: 8px 6px;
+        margin: 1px 0;
+    }
+    
+    .button-group .menu-btn {
+        font-size: 9px;
+        padding: 6px 3px;
+    }
+    
+    .music-gen-btn {
+        font-size: 11px;
+        padding: 10px 8px;
+        margin: 8px 0;
+    }
+    
+    .status-text {
+        font-size: 9px;
+    }
+    
+    .roi-info {
+        font-size: 8px;
+    }
+    
+    .modal-content {
+        padding: 15px;
+        width: 95%;
+        max-width: none;
+    }
+    
+    .modal h2 {
+        font-size: 18px;
+        margin-bottom: 20px;
+    }
+    
+    .input-btn {
+        font-size: 14px;
+        padding: 12px 15px;
+        min-height: 44px;
+    }
+    
+    .url-modal-content {
+        padding: 15px;
+        width: 95%;
+        max-width: none;
+    }
+    
+    .url-modal-content h3 {
+        font-size: 16px;
+        margin-bottom: 18px;
+    }
+    
+    .url-input {
+        font-size: 14px;
+        min-height: 44px;
+    }
+    
+    .url-btn {
+        font-size: 13px;
+        padding: 10px 15px;
+        min-height: 44px;
+        min-width: 80px;
+    }
+    
+    .segmentation-container {
+        position: absolute !important;
+        top: 5px !important;
+        right: 5px !important;
+        left: 5px !important;
+        width: auto !important;
+        max-width: 280px !important;
+        margin: 0 auto !important;
+        padding: 10px !important;
+        font-size: 10px !important;
+    }
+    
+    .segmentation-container h3 {
+        font-size: 12px !important;
+        margin-bottom: 8px !important;
+    }
+    
+    #segmentationDisplay {
+        height: 120px !important;
+        margin-bottom: 8px !important;
+    }
+    
+    #toggleProcessingBtn {
+        font-size: 10px !important;
+        padding: 6px 12px !important;
+        min-height: 36px !important;
+        min-width: 100px !important;
+    }
+    
+    .instructions {
+        font-size: 10px;
+        padding: 3px;
+    }
+}
+
+/* Small devices (landscape phones, tablets, 481px and up) */
+@media (min-width: 481px) and (max-width: 768px) {
     body {
         flex-direction: column;
     }
@@ -321,10 +760,345 @@ body {
         flex-direction: row;
         flex-wrap: wrap;
         padding: 10px;
+        order: 1;
+        height: auto;
+        max-height: 40vh;
+        overflow-y: auto;
     }
     
     .display-frame {
         width: 100%;
         flex: 1;
+        order: 2;
+    }
+    
+    .title {
+        width: 100%;
+        font-size: 16px;
+        margin-bottom: 20px;
+    }
+    
+    .menu-btn {
+        font-size: 11px;
+        padding: 10px 7px;
+    }
+    
+    .button-group .menu-btn {
+        font-size: 10px;
+        padding: 8px 4px;
+    }
+    
+    .music-gen-btn {
+        width: 100%;
+        font-size: 12px;
+        padding: 12px 10px;
+        margin: 10px 0;
+    }
+    
+    .segmentation-container {
+        position: absolute !important;
+        top: 8px !important;
+        right: 8px !important;
+        width: 250px !important;
+        padding: 12px !important;
+    }
+    
+    .segmentation-container h3 {
+        font-size: 14px !important;
+    }
+    
+    #segmentationDisplay {
+        height: 140px !important;
+    }
+    
+    #toggleProcessingBtn {
+        font-size: 11px !important;
+        padding: 7px 14px !important;
+        min-height: 40px !important;
+        min-width: 110px !important;
+    }
+}
+
+/* Medium devices (tablets, 769px and up) */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .menu-frame {
+        width: 25%;
+        min-width: 200px;
+        padding: 15px 8px;
+    }
+    
+    .display-frame {
+        width: 75%;
+    }
+    
+    .title {
+        font-size: 16px;
+        margin-bottom: 25px;
+    }
+    
+    .menu-btn {
+        font-size: 11px;
+        padding: 10px 7px;
+    }
+    
+    .button-group .menu-btn {
+        font-size: 10px;
+        padding: 8px 3px;
+    }
+    
+    .music-gen-btn {
+        font-size: 12px;
+        padding: 14px 10px;
+    }
+    
+    .segmentation-container {
+        position: absolute !important;
+        top: 10px !important;
+        right: 10px !important;
+        width: 280px !important;
+        padding: 12px !important;
+    }
+    
+    .segmentation-container h3 {
+        font-size: 15px !important;
+    }
+    
+    #segmentationDisplay {
+        height: 150px !important;
+    }
+    
+    #toggleProcessingBtn {
+        font-size: 11px !important;
+        padding: 7px 15px !important;
+        min-height: 42px !important;
+        min-width: 115px !important;
+    }
+}
+
+/* Large devices (desktops, 1025px and up) */
+@media (min-width: 1025px) and (max-width: 1440px) {
+    .menu-frame {
+        width: 22%;
+        min-width: 240px;
+    }
+    
+    .display-frame {
+        width: 78%;
+    }
+    
+    .segmentation-container {
+        position: absolute !important;
+        top: 10px !important;
+        right: 10px !important;
+        width: 300px !important;
+    }
+}
+
+/* Extra large devices (large desktops, 1441px and up) */
+@media (min-width: 1441px) {
+    .menu-frame {
+        width: 18%;
+        min-width: 280px;
+        padding: 25px 12px;
+    }
+    
+    .display-frame {
+        width: 82%;
+    }
+    
+    .title {
+        font-size: 20px;
+        margin-bottom: 35px;
+    }
+    
+    .menu-btn {
+        font-size: 13px;
+        padding: 14px 10px;
+    }
+    
+    .button-group .menu-btn {
+        font-size: 12px;
+        padding: 12px 6px;
+    }
+    
+    .music-gen-btn {
+        font-size: 15px;
+        padding: 18px 14px;
+        margin: 20px 0;
+    }
+    
+    .segmentation-container {
+        position: absolute !important;
+        top: 15px !important;
+        right: 15px !important;
+        width: 320px !important;
+        padding: 18px !important;
+    }
+    
+    .segmentation-container h3 {
+        font-size: 17px !important;
+    }
+    
+    #segmentationDisplay {
+        height: 180px !important;
+    }
+    
+    #toggleProcessingBtn {
+        font-size: 13px !important;
+        padding: 9px 18px !important;
+        min-height: 46px !important;
+        min-width: 130px !important;
+    }
+    
+    .status-text {
+        font-size: 12px;
+    }
+    
+    .roi-info {
+        font-size: 11px;
+    }
+    
+    .instructions {
+        font-size: 13px;
+        padding: 6px;
+    }
+}
+
+/* Landscape orientation adjustments for mobile devices */
+@media (max-height: 500px) and (orientation: landscape) {
+    body {
+        flex-direction: row;
+        overflow: hidden;
+    }
+    
+    .menu-frame {
+        width: 30%;
+        min-width: 200px;
+        flex-direction: column;
+        padding: 5px;
+        order: 1;
+        height: 100vh;
+        overflow-y: auto;
+    }
+    
+    .display-frame {
+        width: 70%;
+        order: 2;
+        height: 100vh;
+    }
+    
+    .title {
+        font-size: 12px;
+        margin-bottom: 10px;
+    }
+    
+    .menu-btn {
+        font-size: 9px;
+        padding: 6px 4px;
+        margin: 1px 0;
+    }
+    
+    .button-group .menu-btn {
+        font-size: 8px;
+        padding: 4px 2px;
+    }
+    
+    .music-gen-btn {
+        font-size: 10px;
+        padding: 8px 6px;
+        margin: 5px 0;
+    }
+    
+    .segmentation-container {
+        position: absolute !important;
+        top: 5px !important;
+        right: 5px !important;
+        width: 200px !important;
+        padding: 8px !important;
+        font-size: 9px !important;
+    }
+    
+    .segmentation-container h3 {
+        font-size: 11px !important;
+        margin-bottom: 6px !important;
+    }
+    
+    #segmentationDisplay {
+        height: 100px !important;
+        margin-bottom: 6px !important;
+    }
+    
+    #toggleProcessingBtn {
+        font-size: 9px !important;
+        padding: 4px 8px !important;
+        min-height: 28px !important;
+        min-width: 80px !important;
+    }
+    
+    .instructions {
+        font-size: 8px;
+        padding: 2px;
+    }
+}
+
+/* High DPI displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .menu-btn, .input-btn {
+        border: 0.5px solid transparent;
+    }
+    
+    .segmentation-container {
+        border-width: 1px !important;
+    }
+}
+
+/* Print styles */
+@media print {
+    body {
+        background: white;
+        color: black;
+    }
+    
+    .segmentation-container {
+        display: none !important;
+    }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Dark mode preference (additional support) */
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #1a1a1a;
+    }
+    
+    .menu-frame {
+        background-color: #141414;
+    }
+    
+    .modal-content, .url-modal-content {
+        background-color: #1a1a1a;
+    }
+}
+
+/* Container queries support for modern browsers */
+@supports (container-type: inline-size) {
+    .video-container {
+        container-type: inline-size;
+    }
+    
+    @container (max-width: 400px) {
+        .segmentation-container {
+            position: relative !important;
+            width: 100% !important;
+            margin: 5px 0 !important;
+        }
     }
 }
