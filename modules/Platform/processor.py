@@ -260,10 +260,6 @@ class VideoProcessor:
             print(f"❌ Error creating segmentation overlay: {e}")
             return frame
     
-    def _create_segmentation_overlay(self, frame, result):
-        """Legacy function - redirects to optimized version"""
-        return self._create_segmentation_overlay_optimized(frame, result)
-    
     def add_frame(self, frame, frame_id=None, timestamp=None):
         """Add a frame to the processing queue"""
         if timestamp is None:
@@ -473,45 +469,6 @@ def index():
             setInterval(() => {
                 socket.emit('request_update');
             }, 100);
-            
-            // Show status message when main UI is active
-            socket.on('frame_update', function(data) {
-                // Update status
-                document.getElementById('frameCounter').textContent = data.frame_counter;
-                document.getElementById('queueSize').textContent = data.queue_size || 0;
-                
-                // Check if segmentation data is being sent to main UI
-                if (!data.segmentation_overlay) {
-                    document.getElementById('noSegmentation').innerHTML = 
-                        '<strong>🎯 Main UI Priority Mode</strong><br>Segmentation data is being sent to the main AI platform interface.<br>Close the main UI to see segmentation data here.';
-                    document.getElementById('noOriginal').innerHTML = 
-                        '<strong>📱 Monitoring Mode</strong><br>Video processing active for main interface.';
-                } else {
-                    // Original behavior for when main UI is not connected
-                    if (data.original_frame) {
-                        const originalImg = document.getElementById('originalFrame');
-                        originalImg.src = data.original_frame;
-                        originalImg.style.display = 'block';
-                        document.getElementById('noOriginal').style.display = 'none';
-                    }
-                    
-                    if (data.segmentation_overlay) {
-                        const segImg = document.getElementById('segmentationFrame');
-                        segImg.src = data.segmentation_overlay;
-                        segImg.style.display = 'block';
-                        document.getElementById('noSegmentation').style.display = 'none';
-                        
-                        if (data.segmentation_info) {
-                            document.getElementById('segmentationInfo').style.display = 'block';
-                            document.getElementById('segFrameId').textContent = data.segmentation_info.frame_id;
-                            document.getElementById('framesSince').textContent = data.segmentation_info.frames_since_segmentation;
-                            
-                            const classes = data.segmentation_info.class_labels || [];
-                            document.getElementById('detectedClasses').textContent = classes.join(', ') || 'None';
-                        }
-                    }
-                }
-            });
         </script>
     </body>
     </html>
