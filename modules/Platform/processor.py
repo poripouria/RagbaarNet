@@ -11,6 +11,8 @@ import numpy as np
 import base64
 import time
 import threading
+import colorsys
+import argparse
 from queue import Queue, Empty
 from flask import Flask, request, jsonify, render_template_string
 from flask_socketio import SocketIO, emit
@@ -27,18 +29,35 @@ class VideoProcessor:
     Video Processing Class that handles frame reception, segmentation, and synchronization
     """
     
-    def __init__(self):
+    def __init__(self, socketio_instance=None):
         """Initialize the video processor with segmentation models"""
+        self.socketio = socketio_instance  # Store socketio instance for broadcasting
         self.frame_counter = 0
-        self.segmentation_interval = 5  # Process every 5 frames for faster computation
-        self.frame_queue = Queue(maxsize=30)  # Buffer for incoming frames
-        self.segmentation_queue = Queue(maxsize=10)  # Buffer for segmentation results
+        self.segmentation_interval = 2  # Reduced from 3 to 2 for smoother updates
+        self.frame_queue = Queue(maxsize=10)  # Reduced buffer size for lower latency
+        self.segmentation_queue = Queue(maxsize=5)  # Smaller queue for faster updates
         self.current_frame = None
         self.current_segmentation = None
         self.is_processing = False
         
+        # Performance optimization flags
+        self.debug_mode = False  # Turn off debug prints for production
+        self.last_debug_time = 0
+        self.debug_interval = 5.0  # Only print debug info every 5 seconds
+        
+        # Connection management to avoid dual streaming conflicts
+        self.main_ui_connected = False  # Track if main UI is connected
+        self.status_page_clients = set()  # Track status page connections
+        
+        # Pre-compute color mapping arrays for faster lookup
+        self.color_mapping_array = None
+        
         # Create consistent color mapping for segmentation classes
         self.color_map = self._create_consistent_color_map()
+        self._prepare_color_mapping_array()
+        
+        # Cache for image encoding to avoid repeated allocations
+        self.encode_params = [cv2.IMWRITE_JPEG_QUALITY, 75]  # Reduced quality for speed
         
         # Initialize segmentation models
         print("🔄 Initializing segmentation models...")
@@ -110,6 +129,13 @@ class VideoProcessor:
             print(f"   Class {i}: {label} → RGB{color_map[i]}")
         
         return color_map
+    
+    def _prepare_color_mapping_array(self):
+        """Pre-compute color mapping array for vectorized operations"""
+        # Create a lookup table for all possible class IDs (0-255)
+        self.color_mapping_array = np.zeros((256, 3), dtype=np.uint8)
+        for class_id, color in self.color_map.items():
+            self.color_mapping_array[class_id] = color
         
     def _processing_loop(self):
         """Main processing loop that runs in a separate thread"""
@@ -131,14 +157,17 @@ class VideoProcessor:
                 
                 # Process segmentation every N frames
                 if self.frame_counter % self.segmentation_interval == 0 and self.segmentor is not None:
-                    print(f"🔍 Processing segmentation for frame {self.frame_counter}")
+                    # Reduced logging for performance
+                    if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+                        print(f"🔍 Processing segmentation for frame {self.frame_counter}")
+                        self.last_debug_time = time.time()
                     
                     try:
                         # Perform segmentation
                         result = self.segmentor(frame)
                         
-                        # Create segmentation visualization
-                        segmentation_overlay = self._create_segmentation_overlay(frame, result)
+                        # Create segmentation visualization (optimized)
+                        segmentation_overlay = self._create_segmentation_overlay_optimized(frame, result)
                         
                         # Store result
                         segmentation_data = {
@@ -161,7 +190,11 @@ class VideoProcessor:
                         self.segmentation_queue.put(segmentation_data)
                         self.current_segmentation = segmentation_data
                         
-                        print(f"✅ Segmentation completed for frame {self.frame_counter}")
+                        # Immediately broadcast to connected WebSocket clients for smooth display
+                        self._broadcast_segmentation_update(segmentation_data)
+                        
+                        if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+                            print(f"✅ Segmentation completed for frame {self.frame_counter}")
                         
                     except Exception as e:
                         print(f"❌ Error processing segmentation: {e}")
@@ -174,70 +207,49 @@ class VideoProcessor:
             except Exception as e:
                 print(f"❌ Error in processing loop: {e}")
                 
-    def _create_segmentation_overlay(self, frame, result):
-        """Create a visualization overlay for the segmentation result"""
+    def _broadcast_segmentation_update(self, segmentation_data):
+        """Immediately broadcast segmentation update to connected WebSocket clients"""
         try:
-            # Create a colored segmentation map
+            # Only broadcast to main UI for smooth display
+            if self.main_ui_connected and self.socketio:
+                display_data = self.get_synchronized_display(for_main_ui=True)
+                state = self.get_current_state()
+                response_data = {**display_data, 'queue_size': state['queue_size']}
+                
+                # Use socketio to broadcast to all connected clients
+                self.socketio.emit('frame_update', response_data)
+                
+                if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+                    print(f"📡 Broadcasted segmentation update for frame {self.frame_counter}")
+        except Exception as e:
+            if self.debug_mode:
+                print(f"❌ Error broadcasting update: {e}")
+    
+    def _create_segmentation_overlay_optimized(self, frame, result):
+        """Create an optimized visualization overlay for the segmentation result"""
+        try:
             segmentation_map = result.segmentation_map
             
-            # Debug: Print segmentation info
-            unique_classes = np.unique(segmentation_map)
-            print(f"🔍 Detected classes: {unique_classes}")
-            print(f"📊 Segmentation map shape: {segmentation_map.shape}")
-            print(f"📊 Segmentation map min/max: {segmentation_map.min()}/{segmentation_map.max()}")
-            
-            # Debug: Print class distribution
-            road_pixels = np.sum(segmentation_map == 0)  # Road should be class 0
-            total_pixels = segmentation_map.size
-            road_percentage = (road_pixels / total_pixels) * 100
-            
-            print(f"🛣️ ROAD DETECTION DEBUG:")
-            print(f"   Road pixels (class 0): {road_pixels}/{total_pixels} ({road_percentage:.1f}%)")
-            
-            for class_id in unique_classes:
-                pixel_count = np.sum(segmentation_map == class_id)
-                percentage = (pixel_count / segmentation_map.size) * 100
-                class_name = "Unknown"
-                if hasattr(result, 'class_labels') and result.class_labels and class_id < len(result.class_labels):
-                    class_name = result.class_labels[class_id]
+            # Occasional debug info (not every frame)
+            if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+                unique_classes = np.unique(segmentation_map)
+                print(f"🔍 Classes: {unique_classes}, Shape: {segmentation_map.shape}")
                 
-                # Highlight road detection specifically
-                if class_id == 0:
-                    print(f"   🛣️ Class {class_id} ({class_name}): {pixel_count} pixels ({percentage:.1f}%) - ROAD!")
-                else:
-                    print(f"   Class {class_id} ({class_name}): {pixel_count} pixels ({percentage:.1f}%)")
+                # Quick road detection check
+                road_pixels = np.sum(segmentation_map == 0)
+                road_percentage = (road_pixels / segmentation_map.size) * 100
+                print(f"🛣️ Road: {road_percentage:.1f}% of image")
             
-            # Check if there are any road pixels at all
-            if road_pixels == 0:
-                print("⚠️ WARNING: NO ROAD PIXELS DETECTED!")
-                print("   This could mean:")
-                print("   1. The image doesn't contain roads")
-                print("   2. The model confidence is too low")
-                print("   3. The model needs better preprocessing")
-            elif road_percentage < 5:
-                print(f"⚠️ WARNING: Very few road pixels detected ({road_percentage:.1f}%)")
-            else:
-                print(f"✅ Road detection looks good ({road_percentage:.1f}% of image)")
+            # Vectorized color mapping using pre-computed lookup table
+            overlay = self.color_mapping_array[segmentation_map]
             
-            # Create colored overlay using consistent color mapping
-            overlay = np.zeros((segmentation_map.shape[0], segmentation_map.shape[1], 3), dtype=np.uint8)
-            
-            for class_id in unique_classes:
-                mask = segmentation_map == class_id
-                if class_id in self.color_map:
-                    overlay[mask] = self.color_map[class_id]
-                    print(f"   ✅ Class {class_id} mapped to color {self.color_map[class_id]}")
-                else:
-                    # Fallback for unexpected class IDs
-                    overlay[mask] = [128, 128, 128]  # Gray
-                    print(f"   ⚠️ Class {class_id} using fallback gray color")
-            
-            # Resize overlay to match original frame size
+            # Resize overlay to match original frame size if needed
             if overlay.shape[:2] != frame.shape[:2]:
-                overlay = cv2.resize(overlay, (frame.shape[1], frame.shape[0]))
+                overlay = cv2.resize(overlay, (frame.shape[1], frame.shape[0]), 
+                                   interpolation=cv2.INTER_NEAREST)  # Use nearest neighbor for segmentation
             
-            # Blend with original frame (higher opacity for better visibility)
-            blended = cv2.addWeighted(frame, 0.4, overlay, 0.6, 0)
+            # Optimized blending (reduced alpha for better performance)
+            blended = cv2.addWeighted(frame, 0.5, overlay, 0.5, 0)
             
             # Convert back to BGR for encoding
             blended = cv2.cvtColor(blended, cv2.COLOR_RGB2BGR)
@@ -247,6 +259,10 @@ class VideoProcessor:
         except Exception as e:
             print(f"❌ Error creating segmentation overlay: {e}")
             return frame
+    
+    def _create_segmentation_overlay(self, frame, result):
+        """Legacy function - redirects to optimized version"""
+        return self._create_segmentation_overlay_optimized(frame, result)
     
     def add_frame(self, frame, frame_id=None, timestamp=None):
         """Add a frame to the processing queue"""
@@ -281,8 +297,8 @@ class VideoProcessor:
             'queue_size': self.frame_queue.qsize()
         }
     
-    def get_synchronized_display(self):
-        """Get synchronized frame and segmentation data for display"""
+    def get_synchronized_display(self, for_main_ui=True):
+        """Get synchronized frame and segmentation data for display - OPTIMIZED"""
         display_data = {
             'original_frame': None,
             'segmentation_overlay': None,
@@ -291,31 +307,34 @@ class VideoProcessor:
             'timestamp': time.time()
         }
         
-        # Encode current frame
-        if self.current_frame is not None:
-            # Convert RGB to BGR for JPEG encoding
-            frame_bgr = cv2.cvtColor(self.current_frame, cv2.COLOR_RGB2BGR)
-            _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            frame_b64 = base64.b64encode(buffer).decode('utf-8')
-            display_data['original_frame'] = f"data:image/jpeg;base64,{frame_b64}"
-        
-        # Encode segmentation overlay if available
-        if self.current_segmentation is not None:
+        # Only provide segmentation overlay to main UI to avoid conflicts
+        if self.current_segmentation is not None and for_main_ui:
             seg_data = self.current_segmentation
             
             # Check if this segmentation is recent enough (within last 10 frames)
             frame_diff = self.frame_counter - seg_data['frame_counter']
-            if frame_diff <= 10:
-                _, buffer = cv2.imencode('.jpg', seg_data['overlay'], [cv2.IMWRITE_JPEG_QUALITY, 85])
-                seg_b64 = base64.b64encode(buffer).decode('utf-8')
-                display_data['segmentation_overlay'] = f"data:image/jpeg;base64,{seg_b64}"
+            
+            if frame_diff <= 10:  # Only send if recent
+                # Fast encoding with optimized parameters
+                _, buffer = cv2.imencode('.jpg', seg_data['overlay'], self.encode_params)
+                overlay_b64 = base64.b64encode(buffer).decode('utf-8')
+                display_data['segmentation_overlay'] = f"data:image/jpeg;base64,{overlay_b64}"
                 
+                # Minimal segmentation info
                 display_data['segmentation_info'] = {
                     'frame_id': seg_data['frame_id'],
-                    'frame_counter': seg_data['frame_counter'],
-                    'class_labels': seg_data['class_labels'],
-                    'frames_since_segmentation': frame_diff
+                    'timestamp': seg_data['timestamp'],
+                    'frame_counter': seg_data['frame_counter']
                 }
+        
+        # For status page, provide basic info without heavy data
+        elif not for_main_ui and self.current_segmentation is not None:
+            seg_data = self.current_segmentation
+            display_data['segmentation_info'] = {
+                'frame_id': seg_data['frame_id'],
+                'frame_counter': seg_data['frame_counter'],
+                'frames_since_segmentation': self.frame_counter - seg_data['frame_counter']
+            }
         
         return display_data
     
@@ -325,6 +344,22 @@ class VideoProcessor:
         self.frame_queue.put(None)  # Shutdown signal
         if self.processing_thread.is_alive():
             self.processing_thread.join(timeout=2.0)
+    
+    def enable_debug_mode(self, enable=True):
+        """Enable or disable debug mode for verbose logging"""
+        self.debug_mode = enable
+        if enable:
+            print("🐛 Debug mode enabled - verbose logging activated")
+        else:
+            print("🔇 Debug mode disabled - minimal logging activated")
+    
+    def set_main_ui_connected(self, connected=True):
+        """Mark main UI as connected/disconnected to prioritize it over status page"""
+        self.main_ui_connected = connected
+        if connected:
+            print("🎯 Main UI connected - prioritizing segmentation data for main interface")
+        else:
+            print("📄 Main UI disconnected - status page can receive data")
 
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
@@ -340,8 +375,8 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 
-# Global processor instance
-processor = VideoProcessor()
+# Global processor instance - pass socketio for real-time broadcasting
+processor = VideoProcessor(socketio_instance=socketio)
 
 @app.route('/')
 def index():
@@ -438,6 +473,45 @@ def index():
             setInterval(() => {
                 socket.emit('request_update');
             }, 100);
+            
+            // Show status message when main UI is active
+            socket.on('frame_update', function(data) {
+                // Update status
+                document.getElementById('frameCounter').textContent = data.frame_counter;
+                document.getElementById('queueSize').textContent = data.queue_size || 0;
+                
+                // Check if segmentation data is being sent to main UI
+                if (!data.segmentation_overlay) {
+                    document.getElementById('noSegmentation').innerHTML = 
+                        '<strong>🎯 Main UI Priority Mode</strong><br>Segmentation data is being sent to the main AI platform interface.<br>Close the main UI to see segmentation data here.';
+                    document.getElementById('noOriginal').innerHTML = 
+                        '<strong>📱 Monitoring Mode</strong><br>Video processing active for main interface.';
+                } else {
+                    // Original behavior for when main UI is not connected
+                    if (data.original_frame) {
+                        const originalImg = document.getElementById('originalFrame');
+                        originalImg.src = data.original_frame;
+                        originalImg.style.display = 'block';
+                        document.getElementById('noOriginal').style.display = 'none';
+                    }
+                    
+                    if (data.segmentation_overlay) {
+                        const segImg = document.getElementById('segmentationFrame');
+                        segImg.src = data.segmentation_overlay;
+                        segImg.style.display = 'block';
+                        document.getElementById('noSegmentation').style.display = 'none';
+                        
+                        if (data.segmentation_info) {
+                            document.getElementById('segmentationInfo').style.display = 'block';
+                            document.getElementById('segFrameId').textContent = data.segmentation_info.frame_id;
+                            document.getElementById('framesSince').textContent = data.segmentation_info.frames_since_segmentation;
+                            
+                            const classes = data.segmentation_info.class_labels || [];
+                            document.getElementById('detectedClasses').textContent = classes.join(', ') || 'None';
+                        }
+                    }
+                }
+            });
         </script>
     </body>
     </html>
@@ -491,9 +565,11 @@ def process_frame():
 
 @app.route('/api/get_display', methods=['GET'])
 def get_display():
-    """Get synchronized display data"""
+    """Get synchronized display data - prioritized for main UI"""
     try:
-        display_data = processor.get_synchronized_display()
+        # Mark main UI as connected when it requests data
+        processor.set_main_ui_connected(True)
+        display_data = processor.get_synchronized_display(for_main_ui=True)
         return jsonify(display_data)
     except Exception as e:
         print(f"❌ Error getting display data: {e}")
@@ -509,21 +585,80 @@ def get_status():
         print(f"❌ Error getting status: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/debug/<action>', methods=['POST'])
+def toggle_debug(action):
+    """Toggle debug mode for performance monitoring"""
+    try:
+        if action == 'enable':
+            processor.enable_debug_mode(True)
+            return jsonify({'success': True, 'debug_mode': True})
+        elif action == 'disable':
+            processor.enable_debug_mode(False)
+            return jsonify({'success': True, 'debug_mode': False})
+        else:
+            return jsonify({'error': 'Invalid action. Use enable or disable'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @socketio.on('request_update')
 def handle_update_request():
-    """Handle real-time update requests via WebSocket"""
+    """Handle real-time update requests via WebSocket - PRIORITIZED FOR MAIN UI"""
     try:
-        display_data = processor.get_synchronized_display()
+        # Check if this is from main UI or status page
+        is_main_ui = request.sid not in processor.status_page_clients
+        
+        if is_main_ui:
+            # Mark main UI as connected and get full data
+            processor.set_main_ui_connected(True)
+            display_data = processor.get_synchronized_display(for_main_ui=True)
+        else:
+            # Status page gets limited data to avoid conflicts
+            display_data = processor.get_synchronized_display(for_main_ui=False)
+        
         state = processor.get_current_state()
         
         # Combine display data with state
         response_data = {**display_data, 'queue_size': state['queue_size']}
         
+        # Always emit, even if no new segmentation data - client decides what to display
         emit('frame_update', response_data)
+        
+        # Debug logging (only when enabled)
+        if processor.debug_mode:
+            has_overlay = 'segmentation_overlay' in response_data and response_data['segmentation_overlay'] is not None
+            client_type = "Main UI" if is_main_ui else "Status Page"
+            print(f"📡 Update sent to {client_type} - Frame: {response_data.get('frame_counter', 0)}, "
+                  f"Has overlay: {has_overlay}, Queue: {response_data.get('queue_size', 0)}")
         
     except Exception as e:
         print(f"❌ Error handling update request: {e}")
         emit('error', {'message': str(e)})
+
+@socketio.on('connect')
+def handle_connect():
+    """Handle client connection"""
+    # Determine if this is status page or main UI based on referrer
+    referrer = request.headers.get('Referer', '')
+    if '127.0.0.1:5000' in referrer and 'modules/Platform' not in referrer:
+        # This is the status page
+        processor.status_page_clients.add(request.sid)
+        print(f"📄 Status page connected: {request.sid}")
+    else:
+        # This is the main UI
+        print(f"🎯 Main UI connected: {request.sid}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnection"""
+    if request.sid in processor.status_page_clients:
+        processor.status_page_clients.remove(request.sid)
+        print(f"📄 Status page disconnected: {request.sid}")
+    else:
+        # Check if any main UI clients are still connected
+        # If not, mark main UI as disconnected
+        print(f"🎯 Main UI disconnected: {request.sid}")
+        # In a simple case, assume main UI is disconnected
+        processor.set_main_ui_connected(False)
 
 def run_processor_server(host='127.0.0.1', port=5000, debug=False):
     """Run the processor server"""
@@ -534,6 +669,10 @@ def run_processor_server(host='127.0.0.1', port=5000, debug=False):
     print(f"   - POST /api/process_frame - Send frame data")
     print(f"   - GET  /api/get_display  - Get synchronized display")
     print(f"   - GET  /api/status       - Get processor status")
+    print(f"   - POST /api/debug/enable - Enable verbose debug logging")
+    print(f"   - POST /api/debug/disable - Disable debug logging for performance")
+    print(f"🚀 Performance Mode: Debug logging {'ON' if processor.debug_mode else 'OFF'}")
+    print(f"⚡ Optimizations: Reduced queues, vectorized color mapping, throttled updates")
     
     try:
         socketio.run(app, host=host, port=port, debug=debug)
@@ -559,5 +698,12 @@ if __name__ == '__main__':
     if args.interval != 5:
         processor.segmentation_interval = args.interval
         print(f"🔄 Updated segmentation interval to {args.interval} frames")
+    
+    # Set debug mode based on argument
+    if args.debug:
+        processor.enable_debug_mode(True)
+        print("🐛 Debug mode enabled via command line")
+    
+    run_processor_server(args.host, args.port, args.debug)
     
     run_processor_server(args.host, args.port, args.debug)
