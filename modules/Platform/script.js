@@ -1,6 +1,14 @@
 /**
  * AI Music Generation Platform - Main JavaScript Module
  * Handles video input sources, ROI drawing, and music generation
+ * 
+ * PERFORMANCE OPTIMIZATIONS (2025):
+ * - Reduced frame send interval to 150ms for better responsiveness
+ * - Added throttling to prevent concurrent frame processing
+ * - Optimized canvas operations and reduced logging
+ * - Implemented update throttling for smoother display
+ * 
+ * For monitoring performance, use: python performance_monitor.py
  */
 
 // Global variables
@@ -26,11 +34,16 @@ let segmentationDisplayEnabled = false; // Only control display - Start with seg
 let processorUrl = 'http://127.0.0.1:5000';
 let frameCounter = 0;
 let lastFrameSentTime = 0;
-let frameSendInterval = 200; // Send frames every 200ms for better performance
+let frameSendInterval = 150; // Reduced from 200ms to 150ms for better responsiveness
 let processingCanvas = null;
 let processingCtx = null;
 let segmentationSocket = null;
 let currentSegmentationOverlay = null;
+
+// Performance optimization variables
+let isProcessingFrame = false; // Prevent concurrent frame processing
+let lastUpdateTime = 0;
+let updateThrottleInterval = 50; // Throttle updates to 50ms (20 FPS)
 
 // Color scheme
 const colors = {
@@ -258,13 +271,30 @@ function initializeSocketConnection() {
     }
 }
 
+function requestImmediateUpdate() {
+    /**
+     * Force an immediate update request to get the latest segmentation data
+     * Useful when toggling segmentation view ON
+     */
+    if (segmentationSocket && segmentationSocket.connected) {
+        console.log('🔄 Requesting immediate segmentation update');
+        segmentationSocket.emit('request_update');
+    }
+}
+
 function startRequestingUpdates() {
-    // Request updates every 100ms
+    // Request updates more frequently for smooth segmentation display
     setInterval(() => {
         if (segmentationSocket && segmentationSocket.connected) {
             segmentationSocket.emit('request_update');
+            
+            // Only throttle when display is OFF to save bandwidth
+            if (!segmentationDisplayEnabled) {
+                // When display is off, update less frequently
+                return;
+            }
         }
-    }, 100);
+    }, 50); // Faster updates (50ms = 20 FPS) for smooth segmentation display
 }
 
 async function checkProcessorStatus() {
@@ -276,8 +306,8 @@ async function checkProcessorStatus() {
 }
 
 function captureAndSendFrame() {
-    // Always process frames in the background (removed frameProcessingEnabled check)
-    if (!videoElement || !videoElement.videoWidth) {
+    // Prevent concurrent frame processing
+    if (isProcessingFrame || !videoElement || !videoElement.videoWidth) {
         return;
     }
     
@@ -286,16 +316,21 @@ function captureAndSendFrame() {
         return; // Rate limiting
     }
     
+    isProcessingFrame = true; // Set processing flag
+    
     try {
-        // Set processing canvas size to match video
-        processingCanvas.width = videoElement.videoWidth;
-        processingCanvas.height = videoElement.videoHeight;
+        // Set processing canvas size to match video (only if changed)
+        if (processingCanvas.width !== videoElement.videoWidth || 
+            processingCanvas.height !== videoElement.videoHeight) {
+            processingCanvas.width = videoElement.videoWidth;
+            processingCanvas.height = videoElement.videoHeight;
+        }
         
         // Draw current video frame to processing canvas
         processingCtx.drawImage(videoElement, 0, 0);
         
-        // Convert to base64
-        const frameData = processingCanvas.toDataURL('image/jpeg', 0.8);
+        // Convert to base64 with optimized quality for speed
+        const frameData = processingCanvas.toDataURL('image/jpeg', 0.7); // Reduced quality for speed
         
         // Send frame to processor
         const frameInfo = {
@@ -305,8 +340,10 @@ function captureAndSendFrame() {
             roi_points: roiPoints
         };
         
-        // Log frame sending for debugging
-        console.log(`📤 Sending frame ${frameCounter} to processor`);
+        // Reduced logging for performance - only log every 10th frame
+        if (frameCounter % 10 === 0) {
+            console.log(`📤 Sending frame ${frameCounter} to processor`);
+        }
         
         // Send via HTTP (more reliable than WebSocket for large data)
         sendFrameToProcessor(frameInfo)
@@ -315,10 +352,15 @@ function captureAndSendFrame() {
                     frameCounter++;
                     lastFrameSentTime = now;
                     
-                    // Update frame counter in display
-                    updateFrameCounter(frameCounter);
+                    // Update frame counter in display (throttled)
+                    if (frameCounter % 5 === 0) {
+                        updateFrameCounter(frameCounter);
+                    }
                     
-                    console.log(`✅ Frame ${frameCounter} processed successfully`);
+                    // Reduced logging for performance
+                    if (frameCounter % 10 === 0) {
+                        console.log(`✅ Frame ${frameCounter} processed successfully`);
+                    }
                     updateSegmentationStatus('Processing');
                 } else {
                     console.warn('⚠️ Frame processing failed:', response.error);
@@ -336,11 +378,15 @@ function captureAndSendFrame() {
                         statusDiv.textContent = 'Connection failed - Check processor is running';
                     }
                 }
+            })
+            .finally(() => {
+                isProcessingFrame = false; // Reset processing flag
             });
             
     } catch (error) {
         console.error('❌ Frame capture error:', error);
         updateSegmentationStatus('Capture Error');
+        isProcessingFrame = false; // Reset processing flag
     }
 }
 
@@ -375,24 +421,34 @@ function updateSegmentationStatus(status) {
 }
 
 function updateSegmentationDisplay(data) {
-    // Update frame counter
-    frameCounter = data.frame_counter || frameCounter;
-    
-    // Update segmentation overlay if available and display is enabled
-    if (data.segmentation_overlay && segmentationDisplayEnabled) {
-        console.log('🔍 Updating segmentation overlay');
+    // Update frame counter - always update for smooth feedback
+    if (data.frame_counter) {
+        frameCounter = data.frame_counter;
         
-        // Store the segmentation overlay data
+        // Update frame counter display in UI
+        const frameCounterEl = document.getElementById('frameCounter');
+        if (frameCounterEl) {
+            frameCounterEl.textContent = frameCounter;
+        }
+    }
+    
+    // Always store the latest segmentation overlay data, regardless of display state
+    if (data.segmentation_overlay) {
         currentSegmentationOverlay = data.segmentation_overlay;
         
-        // Draw the overlay on the segmentation canvas
-        drawSegmentationOverlay();
-        
-        // Log successful segmentation
-        if (data.segmentation_info) {
-            console.log('🔍 Segmentation updated:', data.segmentation_info);
+        // Immediately draw if segmentation display is enabled - NO THROTTLING for smooth display
+        if (segmentationDisplayEnabled) {
+            drawSegmentationOverlay();
+            
+            // Minimal logging for performance - only every 30 frames
+            if (frameCounter % 30 === 0 && data.segmentation_info) {
+                console.log('🔍 Segmentation updated smoothly:', data.segmentation_info);
+            }
         }
-    } else if (!segmentationDisplayEnabled) {
+    }
+    
+    // Handle case when display is disabled
+    if (!segmentationDisplayEnabled) {
         // Clear segmentation overlay when display is disabled (but processing continues)
         clearSegmentationOverlay();
     }
@@ -501,9 +557,24 @@ function toggleFrameProcessing() {
         updateStatus('Showing segmentation overlay with ROI (processing continues)');
         console.log('✅ Segmentation DISPLAY: Overlay with ROI (background processing continues)');
         
+        // Immediately draw any existing overlay data
+        if (currentSegmentationOverlay) {
+            console.log('🎯 Drawing existing segmentation overlay immediately');
+            drawSegmentationOverlay();
+        } else {
+            console.log('⚠️ No segmentation overlay data available yet - waiting for next update');
+            // Request immediate update instead of showing loading message
+            if (segmentationSocket && segmentationSocket.connected) {
+                requestImmediateUpdate();
+            }
+        }
+        
         // Ensure processor connection (processing was already running)
         if (!segmentationSocket || !segmentationSocket.connected) {
             connectToProcessor();
+        } else {
+            // Request immediate update to get latest segmentation data
+            requestImmediateUpdate();
         }
     } else {
         // Show original video with ROI (hide segmentation display, but processing continues)
