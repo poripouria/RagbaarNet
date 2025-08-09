@@ -36,11 +36,16 @@ let segmentationDisplayEnabled = false; // Only control display - Start with seg
 let processorUrl = detectProcessorUrl();
 let frameCounter = 0;
 let lastFrameSentTime = 0;
-let frameSendInterval = 150; // Reduced from 200ms to 150ms for better responsiveness
+// Adapt frame send rate on mobile to reduce bandwidth/CPU contention
+let frameSendInterval = isMobileDevice() ? 250 : 150; // ms
 let processingCanvas = null;
 let processingCtx = null;
 let segmentationSocket = null;
 let currentSegmentationOverlay = null;
+let currentSegmentationInfo = null;
+// Prevent stale/out-of-order overlays from replacing newer ones on mobile
+let latestOverlayFrameCounter = -1;
+let drawToken = 0;
 
 // Performance optimization variables
 let isProcessingFrame = false; // Prevent concurrent frame processing
@@ -351,18 +356,19 @@ function requestImmediateUpdate() {
 }
 
 function startRequestingUpdates() {
-    // Request updates more frequently for smooth segmentation display
+    const FAST = 100; // base interval
+    const SLOW = 300; // when display is OFF
+    let lastSlowEmit = 0;
     setInterval(() => {
-        if (segmentationSocket && segmentationSocket.connected) {
+        if (!(segmentationSocket && segmentationSocket.connected)) return;
+        const now = Date.now();
+        if (segmentationDisplayEnabled) {
             segmentationSocket.emit('request_update');
-            
-            // Only throttle when display is OFF to save bandwidth
-            if (!segmentationDisplayEnabled) {
-                // When display is off, update less frequently
-                return;
-            }
+        } else if (now - lastSlowEmit >= SLOW) {
+            segmentationSocket.emit('request_update');
+            lastSlowEmit = now;
         }
-    }, 50); // Faster updates (50ms = 20 FPS) for smooth segmentation display
+    }, FAST);
 }
 
 async function checkProcessorStatus() {
@@ -387,18 +393,25 @@ function captureAndSendFrame() {
     isProcessingFrame = true; // Set processing flag
     
     try {
-        // Set processing canvas size to match video (only if changed)
-        if (processingCanvas.width !== videoElement.videoWidth || 
-            processingCanvas.height !== videoElement.videoHeight) {
-            processingCanvas.width = videoElement.videoWidth;
-            processingCanvas.height = videoElement.videoHeight;
+        const srcW = videoElement.videoWidth;
+        const srcH = videoElement.videoHeight;
+        const maxW = isMobileDevice() ? 640 : srcW;
+        const scale = Math.min(1, maxW / Math.max(1, srcW));
+        const targetW = Math.max(1, Math.round(srcW * scale));
+        const targetH = Math.max(1, Math.round(srcH * scale));
+        
+        if (processingCanvas.width !== targetW || processingCanvas.height !== targetH) {
+            processingCanvas.width = targetW;
+            processingCanvas.height = targetH;
         }
         
         // Draw current video frame to processing canvas
-        processingCtx.drawImage(videoElement, 0, 0);
+        processingCtx.imageSmoothingEnabled = false;
+        processingCtx.drawImage(videoElement, 0, 0, targetW, targetH);
         
         // Convert to base64 with optimized quality for speed
-        const frameData = processingCanvas.toDataURL('image/jpeg', 0.7); // Reduced quality for speed
+        const jpegQuality = isMobileDevice() ? 0.6 : 0.7;
+        const frameData = processingCanvas.toDataURL('image/jpeg', jpegQuality);
         
         // Send frame to processor
         const frameInfo = {
@@ -501,18 +514,24 @@ function updateSegmentationDisplay(data) {
         }
     }
     
-    // Always store the latest segmentation overlay data, regardless of display state
+    // Only accept newer overlays to avoid showing old frames later (out-of-order loads)
     if (data.segmentation_overlay) {
-        currentSegmentationOverlay = data.segmentation_overlay;
-        
-        // Immediately draw if segmentation display is enabled - NO THROTTLING for smooth display
-        if (segmentationDisplayEnabled) {
-            drawSegmentationOverlay();
+        const infoCounter = (data.segmentation_info && typeof data.segmentation_info.frame_counter === 'number')
+            ? data.segmentation_info.frame_counter
+            : (typeof data.frame_counter === 'number' ? data.frame_counter : 0);
+        if (infoCounter > latestOverlayFrameCounter) {
+            latestOverlayFrameCounter = infoCounter;
+            currentSegmentationOverlay = data.segmentation_overlay;
+            currentSegmentationInfo = data.segmentation_info || null;
             
-            // Minimal logging for performance - only every 30 frames
-            if (frameCounter % 30 === 0 && data.segmentation_info) {
-                console.log('🔍 Segmentation updated smoothly:', data.segmentation_info);
+            if (segmentationDisplayEnabled) {
+                drawSegmentationOverlay();
+                if (frameCounter % 30 === 0 && currentSegmentationInfo) {
+                    console.log('🔍 Segmentation updated (frame', latestOverlayFrameCounter, ')');
+                }
             }
+        } else {
+            // Ignore stale overlays arriving late
         }
     }
     
@@ -538,9 +557,13 @@ function drawSegmentationOverlay() {
     }
     
     try {
+        const thisToken = ++drawToken;
+        const thisCounter = latestOverlayFrameCounter;
         // Create an image element to load the base64 segmentation data
         const img = new Image();
         img.onload = function() {
+            // Drop if a newer image was queued after this started loading
+            if (thisToken !== drawToken || thisCounter !== latestOverlayFrameCounter) return;
             // Clear the segmentation canvas
             segmentationCtx.clearRect(0, 0, segmentationCanvas.width, segmentationCanvas.height);
             
@@ -570,6 +593,7 @@ function drawSegmentationOverlay() {
             segmentationCtx.globalCompositeOperation = 'source-over';
             
             // Draw the segmentation overlay
+            segmentationCtx.imageSmoothingEnabled = false;
             segmentationCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
         };
         
