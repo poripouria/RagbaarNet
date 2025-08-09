@@ -31,7 +31,9 @@ let showControlPoints = true;
 // Frame processing variables
 let frameProcessingEnabled = true; // Always keep processing enabled
 let segmentationDisplayEnabled = false; // Only control display - Start with segmentation display OFF
-let processorUrl = 'http://127.0.0.1:5000';
+
+// Dynamic processor URL detection for mobile/desktop compatibility
+let processorUrl = detectProcessorUrl();
 let frameCounter = 0;
 let lastFrameSentTime = 0;
 let frameSendInterval = 150; // Reduced from 200ms to 150ms for better responsiveness
@@ -60,6 +62,20 @@ const colors = {
 function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
            (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+}
+
+/**
+ * Processor URL Detection for Mobile/Desktop Compatibility
+ */
+function detectProcessorUrl() {
+    // Resolve backend URL based on where UI is loaded from.
+    const currentHost = window.location.hostname;
+    // If UI is opened via file:// or without a hostname, fall back to localhost.
+    const isLocalhost = currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '';
+    const baseHost = isLocalhost ? '127.0.0.1' : currentHost;
+    const url = `http://${baseHost}:5000`;
+    console.log(`🌐 Using processor URL: ${url} (page host: ${currentHost || 'file://'})`);
+    return url;
 }
 
 /**
@@ -234,7 +250,14 @@ function connectToProcessor() {
 
 function initializeSocketConnection() {
     try {
-        segmentationSocket = io(processorUrl);
+        console.log(`🔄 Attempting to connect to processor at: ${processorUrl}`);
+        segmentationSocket = io(processorUrl, {
+            timeout: 10000,
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 2000,
+            transports: ['websocket', 'polling'] // Allow fallback to polling
+        });
         
         segmentationSocket.on('connect', function() {
             console.log('✅ Connected to segmentation processor');
@@ -258,6 +281,15 @@ function initializeSocketConnection() {
             updateSegmentationDisplay(data);
         });
         
+        segmentationSocket.on('connect_error', function(error) {
+            console.error('❌ Connection error:', error);
+            updateStatus('Segmentation Error: Connection Error - Check CORS');
+            updateSegmentationStatus('Connection Error - Check CORS');
+            
+            // Try alternative URLs if available
+            tryAlternativeConnections();
+        });
+        
         segmentationSocket.on('error', function(error) {
             console.error('❌ Socket error:', error);
             updateStatus('Processor error: ' + error.message);
@@ -269,6 +301,42 @@ function initializeSocketConnection() {
         updateStatus('Connection failed');
         updateSegmentationStatus('Connection Failed');
     }
+}
+
+function tryAlternativeConnections() {
+    const host = window.location.hostname;
+    const candidates = new Set([
+        processorUrl,
+        'http://127.0.0.1:5000',
+        'http://localhost:5000',
+        host ? `http://${host}:5000` : null
+    ].filter(Boolean));
+    const alternativeUrls = Array.from(candidates).filter(url => url !== processorUrl);
+    
+    console.log('🔄 Trying alternative processor URLs:', alternativeUrls);
+    
+    // Try each alternative URL
+    alternativeUrls.forEach((url, index) => {
+        setTimeout(() => {
+            console.log(`🔄 Trying alternative URL: ${url}`);
+            fetch(`${url}/api/status`, { mode: 'cors' })
+                .then(response => {
+                    if (response.ok) {
+                        console.log(`✅ Found working processor at: ${url}`);
+                        processorUrl = url;
+                        
+                        // Disconnect current socket and reconnect to working URL
+                        if (segmentationSocket) {
+                            segmentationSocket.disconnect();
+                        }
+                        initializeSocketConnection();
+                    }
+                })
+                .catch(err => {
+                    console.log(`❌ ${url} not reachable:`, err.message);
+                });
+        }, index * 1000);
+    });
 }
 
 function requestImmediateUpdate() {
@@ -298,7 +366,7 @@ function startRequestingUpdates() {
 }
 
 async function checkProcessorStatus() {
-    const response = await fetch(`${processorUrl}/api/status`);
+    const response = await fetch(`${processorUrl}/api/status`, { mode: 'cors' });
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
     }
@@ -396,6 +464,7 @@ async function sendFrameToProcessor(frameInfo) {
         headers: {
             'Content-Type': 'application/json',
         },
+        mode: 'cors',
         body: JSON.stringify(frameInfo)
     });
     
