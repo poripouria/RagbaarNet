@@ -42,12 +42,12 @@ Pre-trained Models
    ```
 
 3. **Open Web Interface**
-   
+
    Open `modules/Platform/UI.html` in your browser
 
 4. **Select Input Source**
    - � Camera
-   - 🎥 Video File  
+   - 🎥 Video File
    - � Screen Record
    - 🌐 Network Stream
 
