@@ -2,3 +2,4 @@ Dataset/
 ragbaarnet-env/
 modules/Segmentation/__pycache__/
 modules/Platform/__pycache__/
+modules/utils/__pycache__/
