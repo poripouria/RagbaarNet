@@ -11,18 +11,22 @@ import numpy as np
 import base64
 import time
 import threading
-import colorsys
 import argparse
 from queue import Queue, Empty
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import os
 import sys
+import logging
 
 # Add the modules directory to the path to import Segmentor
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from Segmentation.Segmentor import Segmentor
+from utils.logging_setup import setup_logging, set_level
+
+# Initialize project-wide logging
+logger = setup_logging("INFO", name="platform.processor")
 
 class VideoProcessor:
     """
@@ -39,41 +43,44 @@ class VideoProcessor:
         self.current_frame = None
         self.current_segmentation = None
         self.is_processing = False
-        
+        # Cache for last encoded overlay to avoid re-encoding on every websocket tick
+        self._last_overlay_b64 = None
+        self._last_overlay_counter = -1
+
         # Performance optimization flags
         self.debug_mode = False  # Turn off debug prints for production
         self.last_debug_time = 0
         self.debug_interval = 5.0  # Only print debug info every 5 seconds
-        
+
         # Connection management to avoid dual streaming conflicts
         self.main_ui_connected = False  # Track if main UI is connected
         self.status_page_clients = set()  # Track status page connections
-        
+
         # Pre-compute color mapping arrays for faster lookup
         self.color_mapping_array = None
-        
+
         # Create consistent color mapping for segmentation classes
         self.color_map = self._create_consistent_color_map()
         self._prepare_color_mapping_array()
-        
+
         # Cache for image encoding to avoid repeated allocations
         self.encode_params = [cv2.IMWRITE_JPEG_QUALITY, 75]  # Reduced quality for speed
-        
+
         # Initialize segmentation models
-        print("🔄 Initializing segmentation models...")
+        logger.info("🔄 Initializing segmentation models...")
         try:
-            # YOLO model
+            # YOLO model (example wiring left commented to keep current behavior)
             # model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolov8m-seg.pt')
             # self.segmentor = Segmentor('yolo', model_path)
-            # print("✅ YOLO Segmentor initialized successfully")
-            
+            # logger.info("✅ YOLO Segmentor initialized successfully")
+
             # SegFormer model
             self.segmentor = Segmentor('segformer')
-            print("✅ SegFormer Segmentor initialized successfully")
+            logger.info("✅ SegFormer Segmentor initialized successfully")
         except Exception as e:
-            print(f"❌ Error initializing segmentor: {e}")
+            logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
-        
+
         # Start processing thread
         self.processing_thread = threading.Thread(target=self._processing_loop, daemon=True)
         self.processing_thread.start()
@@ -118,15 +125,18 @@ class VideoProcessor:
             import colorsys
             r, g, b = colorsys.hsv_to_rgb(hue/360, saturation/100, value/255)
             color_map[i] = [int(r*255), int(g*255), int(b*255)]
-        
-        print("🎨 Color mapping for Cityscapes classes:")
+
+        # Optional verbose logging for color mapping (debug mode only)
+        if self.debug_mode:
+            logger.debug("🎨 Color mapping for Cityscapes classes:")
         cityscapes_labels = [
             "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
             "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
             "truck", "bus", "train", "motorcycle", "bicycle"
         ]
-        for i, label in enumerate(cityscapes_labels):
-            print(f"   Class {i}: {label} → RGB{color_map[i]}")
+        if self.debug_mode:
+            for i, label in enumerate(cityscapes_labels):
+                logger.debug("   Class %s: %s → RGB%s", i, label, color_map[i])
         
         return color_map
     
@@ -139,36 +149,47 @@ class VideoProcessor:
         
     def _processing_loop(self):
         """Main processing loop that runs in a separate thread"""
-        print("🚀 Processing loop started")
-        
+        logger.info("🚀 Processing loop started")
+
         while True:
             try:
                 # Get frame from queue (timeout prevents blocking)
                 frame_data = self.frame_queue.get(timeout=1.0)
-                
+
                 if frame_data is None:  # Shutdown signal
                     break
-                    
+
                 frame = frame_data['frame']
                 frame_id = frame_data['frame_id']
                 timestamp = frame_data['timestamp']
-                
+
                 self.current_frame = frame
-                
+
                 # Process segmentation every N frames
                 if self.frame_counter % self.segmentation_interval == 0 and self.segmentor is not None:
                     # Reduced logging for performance
                     if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
-                        print(f"🔍 Processing segmentation for frame {self.frame_counter}")
+                        logger.debug("🔍 Processing segmentation for frame %s", self.frame_counter)
                         self.last_debug_time = time.time()
-                    
+
                     try:
                         # Perform segmentation
                         result = self.segmentor(frame)
-                        
+
                         # Create segmentation visualization (optimized)
                         segmentation_overlay = self._create_segmentation_overlay_optimized(frame, result)
-                        
+                        # Encode overlay once per segmentation result and cache
+                        try:
+                            _, buffer = cv2.imencode('.jpg', segmentation_overlay, self.encode_params)
+                            overlay_b64 = base64.b64encode(buffer).decode('utf-8')
+                            self._last_overlay_b64 = f"data:image/jpeg;base64,{overlay_b64}"
+                            self._last_overlay_counter = self.frame_counter
+                        except Exception as enc_err:
+                            if self.debug_mode:
+                                logger.warning("❌ JPEG encode failed: %s", enc_err)
+                            self._last_overlay_b64 = None
+                            self._last_overlay_counter = -1
+
                         # Store result
                         segmentation_data = {
                             'frame_id': frame_id,
@@ -176,36 +197,37 @@ class VideoProcessor:
                             'frame_counter': self.frame_counter,
                             'segmentation_map': result.segmentation_map,
                             'overlay': segmentation_overlay,
+                            'overlay_b64': self._last_overlay_b64,
                             'class_labels': result.class_labels,
-                            'metadata': result.metadata
+                            'metadata': result.metadata,
                         }
-                        
+
                         # Add to segmentation queue (remove old ones if full)
                         if self.segmentation_queue.full():
                             try:
                                 self.segmentation_queue.get_nowait()
                             except Empty:
                                 pass
-                                
+
                         self.segmentation_queue.put(segmentation_data)
                         self.current_segmentation = segmentation_data
-                        
+
                         # Immediately broadcast to connected WebSocket clients for smooth display
                         self._broadcast_segmentation_update(segmentation_data)
-                        
+
                         if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
-                            print(f"✅ Segmentation completed for frame {self.frame_counter}")
-                        
+                            logger.debug("✅ Segmentation completed for frame %s", self.frame_counter)
+
                     except Exception as e:
-                        print(f"❌ Error processing segmentation: {e}")
-                
+                        logger.exception("❌ Error processing segmentation: %s", e)
+
                 self.frame_counter += 1
-                
+
             except Empty:
                 # No frame available, continue loop
                 continue
             except Exception as e:
-                print(f"❌ Error in processing loop: {e}")
+                logger.exception("❌ Error in processing loop: %s", e)
                 
     def _broadcast_segmentation_update(self, segmentation_data):
         """Immediately broadcast segmentation update to connected WebSocket clients"""
@@ -220,10 +242,10 @@ class VideoProcessor:
                 self.socketio.emit('frame_update', response_data)
                 
                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
-                    print(f"📡 Broadcasted segmentation update for frame {self.frame_counter}")
+                    logger.debug("📡 Broadcasted segmentation update for frame %s", self.frame_counter)
         except Exception as e:
             if self.debug_mode:
-                print(f"❌ Error broadcasting update: {e}")
+                logger.warning("❌ Error broadcasting update: %s", e)
     
     def _create_segmentation_overlay_optimized(self, frame, result):
         """Create an optimized visualization overlay for the segmentation result"""
@@ -233,12 +255,12 @@ class VideoProcessor:
             # Occasional debug info (not every frame)
             if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                 unique_classes = np.unique(segmentation_map)
-                print(f"🔍 Classes: {unique_classes}, Shape: {segmentation_map.shape}")
+                logger.debug("🔍 Classes: %s, Shape: %s", unique_classes, segmentation_map.shape)
                 
                 # Quick road detection check
                 road_pixels = np.sum(segmentation_map == 0)
                 road_percentage = (road_pixels / segmentation_map.size) * 100
-                print(f"🛣️ Road: {road_percentage:.1f}% of image")
+                logger.debug("🛣️ Road: %.1f%% of image", road_percentage)
             
             # Vectorized color mapping using pre-computed lookup table
             overlay = self.color_mapping_array[segmentation_map]
@@ -257,7 +279,7 @@ class VideoProcessor:
             return blended
             
         except Exception as e:
-            print(f"❌ Error creating segmentation overlay: {e}")
+            logger.exception("❌ Error creating segmentation overlay: %s", e)
             return frame
     
     def add_frame(self, frame, frame_id=None, timestamp=None):
@@ -311,16 +333,21 @@ class VideoProcessor:
             frame_diff = self.frame_counter - seg_data['frame_counter']
             
             if frame_diff <= 10:  # Only send if recent
-                # Fast encoding with optimized parameters
-                _, buffer = cv2.imencode('.jpg', seg_data['overlay'], self.encode_params)
-                overlay_b64 = base64.b64encode(buffer).decode('utf-8')
-                display_data['segmentation_overlay'] = f"data:image/jpeg;base64,{overlay_b64}"
+                # Use cached encoded overlay when available to avoid re-encoding
+                if seg_data.get('overlay_b64'):
+                    display_data['segmentation_overlay'] = seg_data['overlay_b64']
+                else:
+                    # Fallback to encoding if cache unavailable
+                    _, buffer = cv2.imencode('.jpg', seg_data['overlay'], self.encode_params)
+                    overlay_b64 = base64.b64encode(buffer).decode('utf-8')
+                    display_data['segmentation_overlay'] = f"data:image/jpeg;base64,{overlay_b64}"
                 
                 # Minimal segmentation info
                 display_data['segmentation_info'] = {
                     'frame_id': seg_data['frame_id'],
                     'timestamp': seg_data['timestamp'],
-                    'frame_counter': seg_data['frame_counter']
+                    'frame_counter': seg_data['frame_counter'],
+                    'frames_since_segmentation': frame_diff
                 }
         
         # For status page, provide basic info without heavy data
@@ -336,7 +363,7 @@ class VideoProcessor:
     
     def shutdown(self):
         """Shutdown the processor"""
-        print("🛑 Shutting down video processor...")
+        logger.info("🛑 Shutting down video processor...")
         self.frame_queue.put(None)  # Shutdown signal
         if self.processing_thread.is_alive():
             self.processing_thread.join(timeout=2.0)
@@ -345,23 +372,26 @@ class VideoProcessor:
         """Enable or disable debug mode for verbose logging"""
         self.debug_mode = enable
         if enable:
-            print("🐛 Debug mode enabled - verbose logging activated")
+            set_level(logger, "DEBUG")
+            logger.info("🐛 Debug mode enabled - verbose logging activated")
         else:
-            print("🔇 Debug mode disabled - minimal logging activated")
+            set_level(logger, "INFO")
+            logger.info("🔇 Debug mode disabled - minimal logging activated")
     
     def set_main_ui_connected(self, connected=True):
         """Mark main UI as connected/disconnected to prioritize it over status page"""
         self.main_ui_connected = connected
         if connected:
-            print("🎯 Main UI connected - prioritizing segmentation data for main interface")
+            logger.info("🎯 Main UI connected - prioritizing segmentation data for main interface")
         else:
-            print("📄 Main UI disconnected - status page can receive data")
+            logger.info("📄 Main UI disconnected - status page can receive data")
 
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'video_processing_secret'
 CORS(app)  # Enable CORS for all routes
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Reduce Socket.IO/engineio log noise in production
+socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
 
 # Additional CORS headers for all routes
 @app.after_request
@@ -517,7 +547,7 @@ def process_frame():
         })
         
     except Exception as e:
-        print(f"❌ Error processing frame: {e}")
+        logger.exception("❌ Error processing frame: %s", e)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/get_display', methods=['GET'])
@@ -529,7 +559,7 @@ def get_display():
         display_data = processor.get_synchronized_display(for_main_ui=True)
         return jsonify(display_data)
     except Exception as e:
-        print(f"❌ Error getting display data: {e}")
+        logger.exception("❌ Error getting display data: %s", e)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/status', methods=['GET'])
@@ -539,7 +569,7 @@ def get_status():
         state = processor.get_current_state()
         return jsonify(state)
     except Exception as e:
-        print(f"❌ Error getting status: {e}")
+        logger.exception("❌ Error getting status: %s", e)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/debug/<action>', methods=['POST'])
@@ -584,11 +614,11 @@ def handle_update_request():
         if processor.debug_mode:
             has_overlay = 'segmentation_overlay' in response_data and response_data['segmentation_overlay'] is not None
             client_type = "Main UI" if is_main_ui else "Status Page"
-            print(f"📡 Update sent to {client_type} - Frame: {response_data.get('frame_counter', 0)}, "
-                  f"Has overlay: {has_overlay}, Queue: {response_data.get('queue_size', 0)}")
+            logger.debug("📡 Update sent to %s - Frame: %s, Has overlay: %s, Queue: %s",
+                         client_type, response_data.get('frame_counter', 0), has_overlay, response_data.get('queue_size', 0))
         
     except Exception as e:
-        print(f"❌ Error handling update request: {e}")
+        logger.exception("❌ Error handling update request: %s", e)
         emit('error', {'message': str(e)})
 
 @socketio.on('connect')
@@ -599,45 +629,45 @@ def handle_connect():
     if '127.0.0.1:5000' in referrer and 'modules/Platform' not in referrer:
         # This is the status page
         processor.status_page_clients.add(request.sid)
-        print(f"📄 Status page connected: {request.sid}")
+        logger.info("📄 Status page connected: %s", request.sid)
     else:
         # This is the main UI
-        print(f"🎯 Main UI connected: {request.sid}")
+        logger.info("🎯 Main UI connected: %s", request.sid)
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle client disconnection"""
     if request.sid in processor.status_page_clients:
         processor.status_page_clients.remove(request.sid)
-        print(f"📄 Status page disconnected: {request.sid}")
+        logger.info("📄 Status page disconnected: %s", request.sid)
     else:
         # Check if any main UI clients are still connected
         # If not, mark main UI as disconnected
-        print(f"🎯 Main UI disconnected: {request.sid}")
+        logger.info("🎯 Main UI disconnected: %s", request.sid)
         # In a simple case, assume main UI is disconnected
         processor.set_main_ui_connected(False)
 
 def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     """Run the processor server"""
-    print(f"🚀 Starting Video Processor Server on {host}:{port}")
-    print(f"📊 Processing every {processor.segmentation_interval} frames for optimal performance")
-    print(f"🌐 Web interface available at: http://{host}:{port}")
-    print(f"📡 API endpoints:")
-    print(f"   - POST /api/process_frame - Send frame data")
-    print(f"   - GET  /api/get_display  - Get synchronized display")
-    print(f"   - GET  /api/status       - Get processor status")
-    print(f"   - POST /api/debug/enable - Enable verbose debug logging")
-    print(f"   - POST /api/debug/disable - Disable debug logging for performance")
-    print(f"🚀 Performance Mode: Debug logging {'ON' if processor.debug_mode else 'OFF'}")
-    print(f"⚡ Optimizations: Reduced queues, vectorized color mapping, throttled updates")
+    logger.info("🚀 Starting Video Processor Server on %s:%s", host, port)
+    logger.info("📊 Processing every %s frames for optimal performance", processor.segmentation_interval)
+    logger.info("🌐 Web interface available at: http://%s:%s", host, port)
+    logger.info("📡 API endpoints:")
+    logger.info("   - POST /api/process_frame - Send frame data")
+    logger.info("   - GET  /api/get_display  - Get synchronized display")
+    logger.info("   - GET  /api/status       - Get processor status")
+    logger.info("   - POST /api/debug/enable - Enable verbose debug logging")
+    logger.info("   - POST /api/debug/disable - Disable debug logging for performance")
+    logger.info("🚀 Performance Mode: Debug logging %s", "ON" if processor.debug_mode else "OFF")
+    logger.info("⚡ Optimizations: Reduced queues, vectorized color mapping, throttled updates")
     
     try:
         socketio.run(app, host=host, port=port, debug=debug)
     except KeyboardInterrupt:
-        print("\n🛑 Shutting down server...")
+        logger.info("\n🛑 Shutting down server...")
         processor.shutdown()
     except Exception as e:
-        print(f"❌ Server error: {e}")
+        logger.exception("❌ Server error: %s", e)
         processor.shutdown()
 
 if __name__ == '__main__':
@@ -654,11 +684,11 @@ if __name__ == '__main__':
     # Update processing interval if specified
     if args.interval != 5:
         processor.segmentation_interval = args.interval
-        print(f"🔄 Updated segmentation interval to {args.interval} frames")
+        logger.info("🔄 Updated segmentation interval to %s frames", args.interval)
     
     # Set debug mode based on argument
     if args.debug:
         processor.enable_debug_mode(True)
-        print("🐛 Debug mode enabled via command line")
+        logger.info("🐛 Debug mode enabled via command line")
     
     run_processor_server(args.host, args.port, args.debug)

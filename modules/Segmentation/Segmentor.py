@@ -9,8 +9,6 @@ It supports YOLO and Segformer models with easy integration for additional model
 import torch
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Union, Optional, Any
 from dataclasses import dataclass
@@ -149,6 +147,7 @@ class YOLOSegmentor(BaseSegmentor):
             
             self.model = YOLO(self.model_path)
             self.model.to(self.device)
+            self.model.eval()
             self.is_loaded = True
             print(f"✅ YOLO model loaded on {self.device}")
             
@@ -182,7 +181,9 @@ class YOLOSegmentor(BaseSegmentor):
             self.load_model()
             
         # Get YOLO results
-        results = self.model(image)[0]
+        # Ensure evaluation/inference context
+        with torch.inference_mode():
+            results = self.model(image)[0]
         
         # Create segmentation map
         segmentation_map = np.zeros(image.shape[:2], dtype=np.uint8)
@@ -229,8 +230,7 @@ class YOLOSegmentor(BaseSegmentor):
             metadata={
                 'model_type': 'YOLO',
                 'model_path': self.model_path,
-                'device': self.device,
-                'raw_results': results
+                'device': self.device
             }
         )
     
@@ -275,6 +275,7 @@ class SegformerSegmentor(BaseSegmentor):
             
             self.model.to(self.device)
             self.processor = SegformerImageProcessor()
+            self.model.eval()
             self.is_loaded = True
             print(f"✅ Segformer model loaded on: {self.device}")
             
@@ -312,9 +313,15 @@ class SegformerSegmentor(BaseSegmentor):
         # Preprocess the image
         inputs = self.preprocess_image(image)
         
-        # Perform inference
-        with torch.no_grad():
-            outputs = self.model(**inputs)
+        # Perform inference (optimized: inference_mode + autocast on CUDA)
+        use_cuda = self.device.startswith('cuda') and torch.cuda.is_available()
+        if use_cuda:
+            with torch.inference_mode():
+                with torch.cuda.amp.autocast(True):
+                    outputs = self.model(**inputs)
+        else:
+            with torch.inference_mode():
+                outputs = self.model(**inputs)
         
         logits = outputs.logits  # [1, num_classes, height, width]
         
@@ -330,7 +337,7 @@ class SegformerSegmentor(BaseSegmentor):
         # Get predictions and confidence
         softmax_probs = torch.softmax(upsampled_logits, dim=1)
         confidence_map = torch.max(softmax_probs, dim=1)[0].cpu().numpy()[0]
-        segmentation_map = torch.argmax(upsampled_logits, dim=1).cpu().numpy()[0]
+        segmentation_map = torch.argmax(upsampled_logits, dim=1).cpu().numpy()[0].astype(np.uint8)
         
         return SegmentationResult(
             segmentation_map=segmentation_map,
@@ -341,8 +348,7 @@ class SegformerSegmentor(BaseSegmentor):
             metadata={
                 'model_type': 'Segformer',
                 'model_path': self.model_path,
-                'device': self.device,
-                'raw_logits': upsampled_logits.cpu()
+                'device': self.device
             }
         )
     
@@ -422,6 +428,10 @@ class Segmentor:
             show_confidence: Whether to show confidence map
             figsize: Figure size for matplotlib
         """
+        # Lazy import heavy plotting libs to avoid startup/runtime overhead when not used
+        import matplotlib.pyplot as plt
+        import matplotlib.colors as mcolors
+
         num_plots = 3 if show_confidence else 2
         fig, axes = plt.subplots(1, num_plots, figsize=figsize)
         
