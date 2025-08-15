@@ -330,6 +330,22 @@ body {
     box-shadow: 0 2px 4px var(--shadow-color);
 }
 
+.music-gen-btn.playing {
+    background: #ff4444;
+    animation: musicPulse 2s ease-in-out infinite;
+    border-color: #ff6666;
+}
+
+.music-gen-btn.playing:hover {
+    background: #ff6666;
+}
+
+@keyframes musicPulse {
+    0% { box-shadow: 0 4px 8px var(--shadow-color), 0 0 0 0 rgba(255, 68, 68, 0.7); }
+    50% { box-shadow: 0 6px 12px var(--shadow-color), 0 0 0 10px rgba(255, 68, 68, 0); }
+    100% { box-shadow: 0 4px 8px var(--shadow-color), 0 0 0 0 rgba(255, 68, 68, 0); }
+}
+
 .status-section {
     background: var(--bg-tertiary);
     padding: 15px;
