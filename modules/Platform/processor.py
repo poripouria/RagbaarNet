@@ -23,6 +23,7 @@ import logging
 # Add the modules directory to the path to import Segmentor
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from Segmentation.Segmentor import Segmentor
+from Music_Generator.Musician import Musician
 from utils.logging_setup import setup_logging, set_level
 
 # Initialize project-wide logging
@@ -80,6 +81,19 @@ class VideoProcessor:
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
+
+        # Initialize music generation
+        logger.info("🔄 Initializing music generation...")
+        try:
+            self.musician = Musician('test', tempo=120, key_signature="C_major")
+            self.music_queue = Queue(maxsize=5)
+            self.current_music = None
+            self.music_enabled = True  # Flag to enable/disable music generation
+            logger.info("✅ Music Generator initialized successfully")
+        except Exception as e:
+            logger.exception("❌ Error initializing musician: %s", e)
+            self.musician = None
+            self.music_enabled = False
 
         # Start processing thread
         self.processing_thread = threading.Thread(target=self._processing_loop, daemon=True)
@@ -229,6 +243,41 @@ class VideoProcessor:
                         # Immediately broadcast to connected WebSocket clients for smooth display
                         self._broadcast_segmentation_update(segmentation_data)
 
+                        # Generate music based on segmentation data
+                        if self.music_enabled and self.musician is not None:
+                            try:
+                                music_frame = self.musician(result.segmentation_map, frame_id=self.frame_counter)
+                                
+                                # Store music data
+                                music_data = {
+                                    'frame_id': frame_id,
+                                    'timestamp': timestamp,
+                                    'frame_counter': self.frame_counter,
+                                    'music_frame': music_frame,
+                                    'events_count': len(music_frame.events),
+                                    'tempo': music_frame.tempo,
+                                    'key_signature': music_frame.key_signature
+                                }
+                                
+                                # Add to music queue (remove old ones if full)
+                                if self.music_queue.full():
+                                    try:
+                                        self.music_queue.get_nowait()
+                                    except Empty:
+                                        pass
+                                
+                                self.music_queue.put(music_data)
+                                self.current_music = music_data
+                                
+                                # Broadcast music events to connected clients
+                                self._broadcast_music_update(music_data)
+                                
+                                if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+                                    logger.debug("🎵 Generated %s music events for frame %s", len(music_frame.events), self.frame_counter)
+                                    
+                            except Exception as music_err:
+                                logger.warning("❌ Error generating music: %s", music_err)
+
                         if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                             logger.debug("✅ Segmentation completed for frame %s", self.frame_counter)
 
@@ -260,6 +309,47 @@ class VideoProcessor:
         except Exception as e:
             if self.debug_mode:
                 logger.warning("❌ Error broadcasting update: %s", e)
+    
+    def _broadcast_music_update(self, music_data):
+        """Broadcast music events to connected WebSocket clients"""
+        try:
+            if self.main_ui_connected and self.socketio:
+                # Prepare music events data for transmission
+                music_frame = music_data['music_frame']
+                events_data = []
+                
+                for event in music_frame.events:
+                    event_data = {
+                        'note': event.note,
+                        'velocity': event.velocity,
+                        'duration': event.duration,
+                        'channel': event.channel,
+                        'timestamp': event.timestamp,
+                        'class_name': event.metadata.get('class_name', 'unknown'),
+                        'instrument': event.metadata.get('instrument', 'unknown'),
+                        'presence_ratio': event.metadata.get('presence_ratio', 0.0)
+                    }
+                    events_data.append(event_data)
+                
+                music_response = {
+                    'frame_id': music_data['frame_id'],
+                    'frame_counter': music_data['frame_counter'],
+                    'events': events_data,
+                    'events_count': music_data['events_count'],
+                    'tempo': music_data['tempo'],
+                    'key_signature': music_data['key_signature'],
+                    'timestamp': music_data['timestamp']
+                }
+                
+                # Emit music events to connected clients
+                self.socketio.emit('music_update', music_response)
+                
+                if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+                    logger.debug("🎵 Broadcasted music update: %s events for frame %s", 
+                               len(events_data), music_data['frame_counter'])
+        except Exception as e:
+            if self.debug_mode:
+                logger.warning("❌ Error broadcasting music update: %s", e)
     
     def _create_segmentation_overlay_optimized(self, frame, result):
         """Create an optimized visualization overlay for the segmentation result"""
@@ -325,8 +415,11 @@ class VideoProcessor:
             'frame_counter': self.frame_counter,
             'current_frame_available': self.current_frame is not None,
             'current_segmentation_available': self.current_segmentation is not None,
+            'current_music_available': self.current_music is not None if hasattr(self, 'current_music') else False,
+            'music_enabled': self.music_enabled if hasattr(self, 'music_enabled') else False,
             'processing_interval': self.segmentation_interval,
-            'queue_size': self.frame_queue.qsize()
+            'queue_size': self.frame_queue.qsize(),
+            'music_queue_size': self.music_queue.qsize() if hasattr(self, 'music_queue') else 0
         }
     
     def get_synchronized_display(self, for_main_ui=True):
@@ -335,6 +428,7 @@ class VideoProcessor:
             'original_frame': None,
             'segmentation_overlay': None,
             'segmentation_info': None,
+            'music_info': None,
             'frame_counter': self.frame_counter,
             'timestamp': time.time()
         }
@@ -373,7 +467,64 @@ class VideoProcessor:
                 'frames_since_segmentation': self.frame_counter - seg_data['frame_counter']
             }
         
+        # Add music information if available
+        if hasattr(self, 'current_music') and self.current_music is not None:
+            music_data = self.current_music
+            frame_diff = self.frame_counter - music_data['frame_counter']
+            
+            if frame_diff <= 10:  # Only include recent music data
+                display_data['music_info'] = {
+                    'frame_id': music_data['frame_id'],
+                    'frame_counter': music_data['frame_counter'],
+                    'events_count': music_data['events_count'],
+                    'tempo': music_data['tempo'],
+                    'key_signature': music_data['key_signature'],
+                    'frames_since_music': frame_diff,
+                    'timestamp': music_data['timestamp']
+                }
+        
         return display_data
+    
+    def toggle_music_generation(self, enable: bool = None):
+        """Enable or disable music generation"""
+        if hasattr(self, 'music_enabled'):
+            if enable is None:
+                self.music_enabled = not self.music_enabled
+            else:
+                self.music_enabled = enable
+            
+            status = "enabled" if self.music_enabled else "disabled"
+            logger.info(f"🎵 Music generation {status}")
+            return self.music_enabled
+        return False
+    
+    def set_music_tempo(self, tempo: int):
+        """Set music tempo (BPM)"""
+        if hasattr(self, 'musician') and self.musician is not None:
+            self.musician.tempo = tempo
+            logger.info(f"🎵 Music tempo set to {tempo} BPM")
+            return True
+        return False
+    
+    def set_music_key(self, key_signature: str):
+        """Set music key signature"""
+        if hasattr(self, 'musician') and self.musician is not None:
+            self.musician.key_signature = key_signature
+            logger.info(f"🎵 Music key signature set to {key_signature}")
+            return True
+        return False
+    
+    def get_music_status(self):
+        """Get current music generation status"""
+        if hasattr(self, 'musician') and self.musician is not None:
+            return {
+                'enabled': getattr(self, 'music_enabled', False),
+                'tempo': self.musician.tempo,
+                'key_signature': self.musician.key_signature,
+                'musician_type': self.musician.musician_type,
+                'queue_size': self.music_queue.qsize() if hasattr(self, 'music_queue') else 0
+            }
+        return {'enabled': False, 'musician_available': False}
     
     def shutdown(self):
         """Shutdown the processor"""
@@ -660,6 +811,52 @@ def handle_disconnect():
         logger.info("🎯 Main UI disconnected: %s", request.sid)
         # In a simple case, assume main UI is disconnected
         processor.set_main_ui_connected(False)
+
+@socketio.on('toggle_music')
+def handle_toggle_music(data):
+    """Handle music generation toggle from client"""
+    try:
+        enabled = data.get('enabled', True)
+        result = processor.toggle_music_generation(enabled)
+        emit('music_status', {'enabled': result, 'success': True})
+        logger.info("🎵 Music generation toggled: %s", enabled)
+    except Exception as e:
+        emit('music_status', {'error': str(e), 'success': False})
+        logger.error("❌ Error toggling music: %s", e)
+
+@socketio.on('set_music_tempo')
+def handle_set_music_tempo(data):
+    """Handle music tempo change from client"""
+    try:
+        tempo = data.get('tempo', 120)
+        result = processor.set_music_tempo(tempo)
+        emit('music_status', {'tempo': tempo, 'success': result})
+        logger.info("🎵 Music tempo set to: %s BPM", tempo)
+    except Exception as e:
+        emit('music_status', {'error': str(e), 'success': False})
+        logger.error("❌ Error setting music tempo: %s", e)
+
+@socketio.on('set_music_key')
+def handle_set_music_key(data):
+    """Handle music key change from client"""
+    try:
+        key_signature = data.get('key_signature', 'C_major')
+        result = processor.set_music_key(key_signature)
+        emit('music_status', {'key_signature': key_signature, 'success': result})
+        logger.info("🎵 Music key set to: %s", key_signature)
+    except Exception as e:
+        emit('music_status', {'error': str(e), 'success': False})
+        logger.error("❌ Error setting music key: %s", e)
+
+@socketio.on('get_music_status')
+def handle_get_music_status():
+    """Get current music generation status"""
+    try:
+        status = processor.get_music_status()
+        emit('music_status', status)
+    except Exception as e:
+        emit('music_status', {'error': str(e), 'success': False})
+        logger.error("❌ Error getting music status: %s", e)
 
 def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     """Run the processor server"""

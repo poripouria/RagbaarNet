@@ -52,6 +52,15 @@ let isProcessingFrame = false; // Prevent concurrent frame processing
 let lastUpdateTime = 0;
 let updateThrottleInterval = 50; // Throttle updates to 50ms (20 FPS)
 
+// Audio system variables
+let audioContext = null;
+let masterGain = null;
+let isMusicGenerationActive = false;
+let activeNotes = new Map(); // Track currently playing notes
+let instrumentVoices = {}; // Store instrument voice settings
+let musicEventQueue = []; // Queue for scheduling music events
+let lastMusicEventTime = 0;
+
 // Color scheme
 const colors = {
     bg: '#2b2b2b',
@@ -286,6 +295,12 @@ function initializeSocketConnection() {
             updateSegmentationDisplay(data);
         });
         
+        segmentationSocket.on('music_update', function(musicData) {
+            if (isMusicGenerationActive) {
+                handleMusicEvents(musicData);
+            }
+        });
+        
         segmentationSocket.on('connect_error', function(error) {
             console.error('❌ Connection error:', error);
             updateStatus('Segmentation Error: Connection Error - Check CORS');
@@ -377,6 +392,306 @@ async function checkProcessorStatus() {
         throw new Error(`HTTP ${response.status}`);
     }
     return response.json();
+}
+
+/**
+ * Audio System Functions
+ */
+function initializeAudioSystem() {
+    try {
+        // Create audio context
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContextClass();
+        
+        // Create master gain node
+        masterGain = audioContext.createGain();
+        masterGain.gain.setValueAtTime(0.3, audioContext.currentTime); // Set volume to 30%
+        masterGain.connect(audioContext.destination);
+        
+        // Initialize instrument voices
+        initializeInstrumentVoices();
+        
+        console.log('🎵 Audio system initialized successfully');
+        updateStatus('Audio system ready');
+        
+    } catch (error) {
+        console.error('❌ Failed to initialize audio system:', error);
+        updateStatus('Audio initialization failed');
+    }
+}
+
+function initializeInstrumentVoices() {
+    instrumentVoices = {
+        piano: {
+            waveform: 'sawtooth',
+            attack: 0.01,
+            decay: 0.3,
+            sustain: 0.3,
+            release: 1.0,
+            filterFreq: 2000
+        },
+        electric_piano: {
+            waveform: 'square',
+            attack: 0.01,
+            decay: 0.2,
+            sustain: 0.4,
+            release: 0.8,
+            filterFreq: 1500
+        },
+        drums: {
+            waveform: 'noise',
+            attack: 0.001,
+            decay: 0.1,
+            sustain: 0.0,
+            release: 0.2,
+            filterFreq: 100
+        },
+        bass: {
+            waveform: 'triangle',
+            attack: 0.02,
+            decay: 0.4,
+            sustain: 0.6,
+            release: 1.2,
+            filterFreq: 400
+        },
+        strings: {
+            waveform: 'sawtooth',
+            attack: 0.1,
+            decay: 0.2,
+            sustain: 0.8,
+            release: 1.5,
+            filterFreq: 3000
+        },
+        electric_guitar: {
+            waveform: 'square',
+            attack: 0.005,
+            decay: 0.1,
+            sustain: 0.5,
+            release: 0.6,
+            filterFreq: 2500
+        },
+        acoustic_guitar: {
+            waveform: 'sawtooth',
+            attack: 0.01,
+            decay: 0.3,
+            sustain: 0.4,
+            release: 1.0,
+            filterFreq: 2000
+        },
+        pad: {
+            waveform: 'sine',
+            attack: 0.3,
+            decay: 0.5,
+            sustain: 0.7,
+            release: 2.0,
+            filterFreq: 1000
+        },
+        synth: {
+            waveform: 'square',
+            attack: 0.01,
+            decay: 0.2,
+            sustain: 0.3,
+            release: 0.5,
+            filterFreq: 1800
+        }
+    };
+}
+
+function handleMusicEvents(musicData) {
+    try {
+        if (!musicData || !musicData.events) {
+            return;
+        }
+        
+        console.log(`🎵 Received ${musicData.events.length} music events for frame ${musicData.frame_counter}`);
+        
+        // Schedule each music event
+        musicData.events.forEach((event, index) => {
+            // Slight delay between events to avoid overwhelming
+            const scheduleTime = audioContext.currentTime + (index * 0.01);
+            playMusicEvent(event, scheduleTime);
+        });
+        
+        // Update UI with music info
+        updateMusicInfo(musicData);
+        
+    } catch (error) {
+        console.error('❌ Error handling music events:', error);
+    }
+}
+
+function playMusicEvent(event, scheduleTime) {
+    try {
+        const frequency = midiNoteToFrequency(event.note);
+        const instrument = event.instrument || 'synth';
+        const voice = instrumentVoices[instrument] || instrumentVoices.synth;
+        
+        // Create oscillator and envelope for the note
+        if (instrument === 'drums') {
+            playDrumSound(event, scheduleTime);
+        } else {
+            playTonalInstrument(event, frequency, voice, scheduleTime);
+        }
+        
+    } catch (error) {
+        console.error('❌ Error playing music event:', error);
+    }
+}
+
+function playTonalInstrument(event, frequency, voice, scheduleTime) {
+    // Create oscillator
+    const osc = audioContext.createOscillator();
+    osc.type = voice.waveform;
+    osc.frequency.setValueAtTime(frequency, scheduleTime);
+    
+    // Create gain envelope
+    const gainNode = audioContext.createGain();
+    const velocity = event.velocity / 127; // Convert MIDI velocity to 0-1
+    const duration = Math.min(event.duration, 3.0); // Cap duration at 3 seconds
+    
+    // ADSR envelope
+    gainNode.gain.setValueAtTime(0, scheduleTime);
+    gainNode.gain.linearRampToValueAtTime(velocity * 0.8, scheduleTime + voice.attack);
+    gainNode.gain.linearRampToValueAtTime(velocity * voice.sustain, scheduleTime + voice.attack + voice.decay);
+    gainNode.gain.linearRampToValueAtTime(0, scheduleTime + duration);
+    
+    // Create filter for timbre
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(voice.filterFreq, scheduleTime);
+    
+    // Connect audio graph
+    osc.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(masterGain);
+    
+    // Schedule playback
+    osc.start(scheduleTime);
+    osc.stop(scheduleTime + duration);
+    
+    // Track active note for cleanup
+    const noteKey = `${event.note}-${scheduleTime}`;
+    activeNotes.set(noteKey, { osc, gainNode, filter });
+    
+    // Clean up after playback
+    setTimeout(() => {
+        activeNotes.delete(noteKey);
+    }, (duration + 0.1) * 1000);
+}
+
+function playDrumSound(event, scheduleTime) {
+    // Create noise buffer for drum sounds
+    const bufferSize = 2 * audioContext.sampleRate;
+    const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    
+    // Generate noise
+    for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+    }
+    
+    // Create buffer source
+    const noise = audioContext.createBufferSource();
+    noise.buffer = noiseBuffer;
+    
+    // Create gain and filter for drum character
+    const gainNode = audioContext.createGain();
+    const filter = audioContext.createBiquadFilter();
+    
+    // Configure based on drum type (kick, snare, etc.)
+    const velocity = event.velocity / 127;
+    const drumType = getDrumType(event.note);
+    
+    switch (drumType) {
+        case 'kick':
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(100, scheduleTime);
+            break;
+        case 'snare':
+            filter.type = 'highpass';
+            filter.frequency.setValueAtTime(200, scheduleTime);
+            break;
+        default:
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(1000, scheduleTime);
+    }
+    
+    // Envelope
+    gainNode.gain.setValueAtTime(0, scheduleTime);
+    gainNode.gain.linearRampToValueAtTime(velocity * 0.6, scheduleTime + 0.001);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, scheduleTime + 0.2);
+    
+    // Connect and play
+    noise.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(masterGain);
+    
+    noise.start(scheduleTime);
+    noise.stop(scheduleTime + 0.2);
+}
+
+function midiNoteToFrequency(note) {
+    // Convert MIDI note number to frequency
+    return 440 * Math.pow(2, (note - 69) / 12);
+}
+
+function getDrumType(midiNote) {
+    // Standard MIDI drum mapping
+    switch (midiNote) {
+        case 36: return 'kick';
+        case 38: case 40: return 'snare';
+        case 42: case 44: return 'hihat';
+        case 49: case 57: return 'crash';
+        default: return 'generic';
+    }
+}
+
+function stopAllActiveNotes() {
+    try {
+        activeNotes.forEach((noteData, key) => {
+            try {
+                if (noteData.gainNode) {
+                    noteData.gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+                }
+            } catch (e) {
+                // Note may have already ended
+            }
+        });
+        activeNotes.clear();
+        console.log('🔇 Stopped all active notes');
+    } catch (error) {
+        console.error('❌ Error stopping notes:', error);
+    }
+}
+
+function updateMusicInfo(musicData) {
+    // Update status with music information
+    const eventCount = musicData.events.length;
+    const tempo = musicData.tempo;
+    const key = musicData.key_signature;
+    
+    updateStatus(`🎵 Playing: ${eventCount} events | ${tempo} BPM | ${key}`);
+    
+    // Update ROI info section with music data
+    const roiInfo = document.getElementById('roiInfo');
+    if (roiInfo && eventCount > 0) {
+        const instruments = {};
+        musicData.events.forEach(event => {
+            const instr = event.instrument || 'unknown';
+            instruments[instr] = (instruments[instr] || 0) + 1;
+        });
+        
+        const instrText = Object.entries(instruments)
+            .map(([instr, count]) => `${instr}: ${count}`)
+            .join(', ');
+        
+        roiInfo.innerHTML = `
+            <div style="color: #00ff88; font-size: 12px; margin-top: 5px;">
+                <div>🎵 Music: ${eventCount} events</div>
+                <div>${instrText}</div>
+            </div>
+        `;
+    }
 }
 
 function captureAndSendFrame() {
@@ -1581,9 +1896,60 @@ function resetRoi() {
 }
 
 function startMusicGeneration() {
-    const message = `Music generation will be implemented here!\nROI Points: ${JSON.stringify(roiPoints)}\nInput Source: ${inputSource}`;
-    alert(message);
-    updateStatus('Music generation started');
+    if (!audioContext) {
+        initializeAudioSystem();
+    }
+    
+    // Resume audio context if suspended (required by browser)
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+            console.log('🎵 Audio context resumed');
+        });
+    }
+    
+    if (isMusicGenerationActive) {
+        stopMusicGeneration();
+    } else {
+        isMusicGenerationActive = true;
+        updateMusicButton();
+        updateStatus('🎵 Music generation started - listening for events...');
+        
+        // Request music generation from server
+        if (segmentationSocket && segmentationSocket.connected) {
+            segmentationSocket.emit('toggle_music', { enabled: true });
+        } else {
+            console.warn('⚠️ Socket not connected, music will start when connection is established');
+        }
+    }
+}
+
+function stopMusicGeneration() {
+    isMusicGenerationActive = false;
+    updateMusicButton();
+    updateStatus('🎵 Music generation stopped');
+    
+    // Stop any currently playing notes
+    stopAllActiveNotes();
+    
+    // Disable music generation on server
+    if (segmentationSocket && segmentationSocket.connected) {
+        segmentationSocket.emit('toggle_music', { enabled: false });
+    }
+}
+
+function updateMusicButton() {
+    const musicBtn = document.querySelector('.music-gen-btn');
+    if (musicBtn) {
+        if (isMusicGenerationActive) {
+            musicBtn.textContent = '🔇 Stop Music';
+            musicBtn.style.backgroundColor = '#ff4444';
+            musicBtn.classList.add('playing');
+        } else {
+            musicBtn.textContent = '🎵 Generate Music';
+            musicBtn.style.backgroundColor = '#4a9eff';
+            musicBtn.classList.remove('playing');
+        }
+    }
 }
 
 function togglePause() {
