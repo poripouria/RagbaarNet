@@ -87,7 +87,7 @@ class VideoProcessor:
     
     def _create_consistent_color_map(self):
         """Create a consistent color mapping for segmentation classes"""
-        # Cityscapes color palette (SegFormer model classes)
+        # Cityscapes color palette (SegFormer model classes) - Updated to 30 classes
         # These colors match the standard Cityscapes dataset visualization
         color_map = {
             0: [128, 64, 128],    # Road - purple
@@ -109,13 +109,25 @@ class VideoProcessor:
             16: [0, 80, 100],     # Train - teal
             17: [0, 0, 230],      # Motorcycle - blue
             18: [119, 11, 32],    # Bicycle - dark red
+            19: [160, 160, 160],  # Parking - light gray
+            20: [230, 150, 140],  # Rail track - light red
+            21: [128, 128, 128],  # On rails - gray
+            22: [0, 0, 90],       # Caravan - dark blue
+            23: [0, 0, 110],      # Trailer - medium blue
+            24: [180, 165, 180],  # Guard rail - light purple
+            25: [150, 100, 100],  # Bridge - brown
+            26: [150, 120, 90],   # Tunnel - brown-orange
+            27: [153, 153, 153],  # Pole group - light gray (same as pole)
+            28: [81, 0, 81],      # Ground - dark purple
+            29: [111, 74, 0],     # Dynamic - brown
+            30: [81, 81, 81],     # Static - dark gray
         }
         
         # Add a background/unlabeled class
         color_map[255] = [0, 0, 0]  # Black for unlabeled regions
         
         # Extend with additional colors for more classes if needed
-        for i in range(19, 255):
+        for i in range(31, 255):
             # Generate consistent colors using HSV color space
             hue = (i * 137.5) % 360  # Golden angle for good distribution
             saturation = 70 + (i % 3) * 15  # Vary saturation
@@ -128,11 +140,13 @@ class VideoProcessor:
 
         # Optional verbose logging for color mapping (debug mode only)
         if self.debug_mode:
-            logger.debug("🎨 Color mapping for Cityscapes classes:")
+            logger.debug("🎨 Color mapping for Cityscapes classes (30 classes):")
         cityscapes_labels = [
             "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
             "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
-            "truck", "bus", "train", "motorcycle", "bicycle"
+            "truck", "bus", "train", "motorcycle", "bicycle", "parking", "rail track",
+            "on rails", "caravan", "trailer", "guard rail", "bridge", "tunnel",
+            "pole group", "ground", "dynamic", "static"
         ]
         if self.debug_mode:
             for i, label in enumerate(cityscapes_labels):
