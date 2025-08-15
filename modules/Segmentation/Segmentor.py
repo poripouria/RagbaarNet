@@ -262,7 +262,9 @@ class SegformerSegmentor(BaseSegmentor):
         self.cityscapes_labels = [
             "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
             "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
-            "truck", "bus", "train", "motorcycle", "bicycle"
+            "truck", "bus", "train", "motorcycle", "bicycle", "parking", "rail track",
+            "on rails", "caravan", "trailer", "guard rail", "bridge", "tunnel",
+            "pole group", "ground", "dynamic", "static"
         ]
         
     def load_model(self) -> None:
