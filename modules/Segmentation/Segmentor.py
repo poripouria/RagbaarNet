@@ -13,7 +13,6 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Union, Optional, Any
 from dataclasses import dataclass
 import os
-
 # Model-specific imports
 from ultralytics import YOLO
 from transformers import SegformerImageProcessor, SegformerForSemanticSegmentation
@@ -295,7 +294,6 @@ class SegformerSegmentor(BaseSegmentor):
             Preprocessed inputs ready for Segformer
         """
         inputs = self.processor(images=image, return_tensors="pt")
-        # Move inputs to the same device as the model
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         return inputs
     
