@@ -38,9 +38,9 @@ class VideoProcessor:
         """Initialize the video processor with segmentation models"""
         self.socketio = socketio_instance  # Store socketio instance for broadcasting
         self.frame_counter = 0
-        self.segmentation_interval = 2  # Reduced from 3 to 2 for smoother updates
-        self.frame_queue = Queue(maxsize=10)  # Reduced buffer size for lower latency
-        self.segmentation_queue = Queue(maxsize=5)  # Smaller queue for faster updates
+        self.segmentation_interval = 2
+        self.frame_queue = Queue(maxsize=10)
+        self.segmentation_queue = Queue(maxsize=5)
         self.current_frame = None
         self.current_segmentation = None
         self.is_processing = False
@@ -49,13 +49,13 @@ class VideoProcessor:
         self._last_overlay_counter = -1
 
         # Performance optimization flags
-        self.debug_mode = False  # Turn off debug prints for production
+        self.debug_mode = False
         self.last_debug_time = 0
-        self.debug_interval = 5.0  # Only print debug info every 5 seconds
+        self.debug_interval = 5.0
 
         # Connection management to avoid dual streaming conflicts
-        self.main_ui_connected = False  # Track if main UI is connected
-        self.status_page_clients = set()  # Track status page connections
+        self.main_ui_connected = False
+        self.status_page_clients = set()
 
         # Pre-compute color mapping arrays for faster lookup
         self.color_mapping_array = None
@@ -65,12 +65,12 @@ class VideoProcessor:
         self._prepare_color_mapping_array()
 
         # Cache for image encoding to avoid repeated allocations
-        self.encode_params = [cv2.IMWRITE_JPEG_QUALITY, 75]  # Reduced quality for speed
+        self.encode_params = [cv2.IMWRITE_JPEG_QUALITY, 75]
 
         # Initialize segmentation models
         logger.info("🔄 Initializing segmentation models...")
         try:
-            # YOLO model (example wiring left commented to keep current behavior)
+            # YOLO model
             # model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolov8m-seg.pt')
             # self.segmentor = Segmentor('yolo', model_path)
             # logger.info("✅ YOLO Segmentor initialized successfully")
@@ -85,10 +85,10 @@ class VideoProcessor:
         # Initialize music generation
         logger.info("🔄 Initializing music generation...")
         try:
-            self.musician = Musician('test', tempo=120, key_signature="C_major")
+            self.musician = Musician('pianist', tempo=120, key_signature="C_major")
             self.music_queue = Queue(maxsize=5)
             self.current_music = None
-            self.music_enabled = True  # Flag to enable/disable music generation
+            self.music_enabled = True
             logger.info("✅ Music Generator initialized successfully")
         except Exception as e:
             logger.exception("❌ Error initializing musician: %s", e)

@@ -9,18 +9,14 @@ generation strategies with easy integration for additional models.
 
 import numpy as np
 import time
-import threading
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Union, Optional, Any
+from typing import Dict, List, Union, Any
 from dataclasses import dataclass
 import os
 import sys
-
-# Add modules directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.logging_setup import setup_logging
 
-# Initialize logging
 logger = setup_logging("INFO", name="music_generator.musician")
 
 
@@ -125,6 +121,227 @@ class BaseMusician(ABC):
         if not self.is_initialized:
             self.initialize()
         return self.generate_music(segmentation_data, frame_id)
+
+
+class PianistTestMusician(BaseMusician):
+    """
+    Simplified pianist musician that maps all segmentation classes to piano notes only.
+    
+    Maps segmentation classes to piano notes using different scales and patterns:
+    - All objects get piano sounds with different note ranges
+    - Uses C major, D minor, and pentatonic scales for variety
+    - Velocity and duration vary based on object type and presence
+    """
+    
+    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
+        """
+        Initialize Pianist Test Musician.
+        
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+        """
+        super().__init__(tempo, key_signature)
+        
+        # Cityscapes class labels (matching Segformer model)
+        self.cityscapes_labels = [
+            "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
+            "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
+            "truck", "bus", "train", "motorcycle", "bicycle"
+        ]
+        
+        # Piano-only musical mappings
+        self.class_to_piano = {}
+        self._setup_piano_mappings()
+        
+    def initialize(self) -> None:
+        """Initialize the Pianist Test Musician."""
+        try:
+            logger.info("🎹 Initializing Pianist Test Musician...")
+            self.is_initialized = True
+            logger.info("✅ Pianist Test Musician initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Pianist Test Musician: {e}")
+            raise
+    
+    def _setup_piano_mappings(self) -> None:
+        """Setup piano-only mappings from segmentation classes to piano notes."""
+        
+        # Different piano note ranges and patterns
+        c_major_scale = [60, 62, 64, 65, 67, 69, 71]  # C4, D4, E4, F4, G4, A4, B4
+        d_minor_scale = [62, 64, 65, 67, 69, 70, 72]  # D4, E4, F4, G4, A4, Bb4, C5
+        pentatonic_scale = [60, 62, 65, 67, 69]       # C4, D4, F4, G4, A4
+        bass_notes = [36, 38, 40, 43, 45, 47, 48]     # Bass octave
+        high_notes = [72, 74, 76, 77, 79, 81, 83]     # High octave
+        
+        # Map each class to specific piano elements
+        for i, class_name in enumerate(self.cityscapes_labels):
+            if class_name in ["car", "truck", "bus"]:
+                # Vehicles get C major scale - mid range
+                note_idx = i % len(c_major_scale)
+                self.class_to_piano[i] = {
+                    "note": c_major_scale[note_idx],
+                    "velocity": 80,
+                    "duration": 0.6,
+                    "scale_type": "C_major"
+                }
+            
+            elif class_name in ["person", "rider"]:
+                # People get high piano notes - more delicate
+                note_idx = i % len(high_notes)
+                self.class_to_piano[i] = {
+                    "note": high_notes[note_idx],
+                    "velocity": 65,
+                    "duration": 0.8,
+                    "scale_type": "high_range"
+                }
+            
+            elif class_name in ["road", "sidewalk"]:
+                # Infrastructure gets bass notes - foundation
+                note_idx = i % len(bass_notes)
+                self.class_to_piano[i] = {
+                    "note": bass_notes[note_idx],
+                    "velocity": 90,
+                    "duration": 1.2,
+                    "scale_type": "bass_range"
+                }
+            
+            elif class_name in ["building", "wall", "fence"]:
+                # Structures get D minor scale - more complex
+                note_idx = i % len(d_minor_scale)
+                self.class_to_piano[i] = {
+                    "note": d_minor_scale[note_idx],
+                    "velocity": 70,
+                    "duration": 1.0,
+                    "scale_type": "D_minor"
+                }
+            
+            elif class_name in ["traffic light", "traffic sign", "pole"]:
+                # Traffic elements get pentatonic - pleasant
+                note_idx = i % len(pentatonic_scale)
+                self.class_to_piano[i] = {
+                    "note": pentatonic_scale[note_idx] + 12,  # One octave higher
+                    "velocity": 75,
+                    "duration": 0.5,
+                    "scale_type": "pentatonic"
+                }
+            
+            elif class_name in ["vegetation", "terrain", "sky"]:
+                # Natural elements get soft piano - ambient
+                note_idx = i % len(c_major_scale)
+                self.class_to_piano[i] = {
+                    "note": c_major_scale[note_idx] - 12,  # One octave lower
+                    "velocity": 50,
+                    "duration": 1.5,
+                    "scale_type": "ambient"
+                }
+            
+            elif class_name in ["motorcycle", "bicycle"]:
+                # Two-wheelers get pentatonic mid-range
+                note_idx = i % len(pentatonic_scale)
+                self.class_to_piano[i] = {
+                    "note": pentatonic_scale[note_idx],
+                    "velocity": 85,
+                    "duration": 0.4,
+                    "scale_type": "pentatonic_mid"
+                }
+            
+            else:
+                # Default piano mapping for other classes
+                note_idx = i % len(c_major_scale)
+                self.class_to_piano[i] = {
+                    "note": c_major_scale[note_idx],
+                    "velocity": 60,
+                    "duration": 0.7,
+                    "scale_type": "default"
+                }
+    
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+        """
+        Generate piano music based on segmentation data.
+        
+        Args:
+            segmentation_data: Segmentation map as numpy array
+            frame_id: Frame identifier for tracking
+            
+        Returns:
+            MusicFrame containing generated piano music events
+        """
+        if not self.is_initialized:
+            self.initialize()
+        
+        timestamp = time.time()
+        events = []
+        
+        # Analyze segmentation data
+        unique_classes, counts = np.unique(segmentation_data, return_counts=True)
+        total_pixels = segmentation_data.shape[0] * segmentation_data.shape[1]
+        
+        # Generate piano events based on detected classes
+        for class_id, pixel_count in zip(unique_classes, counts):
+            # Skip background class (0) if it's too dominant
+            if class_id == 0 and pixel_count > total_pixels * 0.8:
+                continue
+                
+            # Calculate presence ratio
+            presence_ratio = pixel_count / total_pixels
+            
+            # Only generate events for classes with significant presence
+            if presence_ratio > 0.01:  # At least 1% of the frame
+                if class_id in self.class_to_piano:
+                    mapping = self.class_to_piano[class_id]
+                    
+                    # Adjust velocity based on presence ratio
+                    adjusted_velocity = min(127, int(mapping["velocity"] * (1 + presence_ratio * 1.5)))
+                    
+                    # Adjust duration based on presence ratio
+                    adjusted_duration = mapping["duration"] * (0.5 + presence_ratio * 1.5)
+                    
+                    event = MusicEvent(
+                        note=mapping["note"],
+                        velocity=adjusted_velocity,
+                        duration=adjusted_duration,
+                        channel=0,  # All piano events on channel 0
+                        timestamp=timestamp,
+                        metadata={
+                            "class_id": int(class_id),
+                            "class_name": self.cityscapes_labels[class_id] if class_id < len(self.cityscapes_labels) else "unknown",
+                            "presence_ratio": float(presence_ratio),
+                            "pixel_count": int(pixel_count),
+                            "instrument": "piano",
+                            "scale_type": mapping["scale_type"]
+                        }
+                    )
+                    events.append(event)
+        
+        # Create frame result
+        music_frame = MusicFrame(
+            events=events,
+            frame_id=frame_id,
+            timestamp=timestamp,
+            tempo=self.tempo,
+            key_signature=self.key_signature,
+            metadata={
+                "musician_type": "PianistTestMusician",
+                "total_classes_detected": len(unique_classes),
+                "total_events_generated": len(events),
+                "segmentation_shape": segmentation_data.shape,
+                "instrument": "piano_only"
+            }
+        )
+        
+        self.frame_counter += 1
+        
+        # Log occasionally for debugging
+        if self.frame_counter % 30 == 0:  # Every 30 frames
+            logger.debug(f"🎹 Generated {len(events)} piano events for frame {frame_id}")
+            logger.debug(f"🎯 Detected classes: {[e.metadata['class_name'] for e in events]}")
+        
+        return music_frame
+    
+    def get_supported_classes(self) -> List[str]:
+        """Get the list of supported segmentation classes."""
+        return self.cityscapes_labels
 
 
 class TestMusician(BaseMusician):
@@ -321,7 +538,7 @@ class TestMusician(BaseMusician):
             presence_ratio = pixel_count / total_pixels
             
             # Only generate events for classes with significant presence
-            if presence_ratio > 0.001:  # At least 0.1% of the frame
+            if presence_ratio > 0.01:  # At least 1% of the frame
                 if class_id in self.class_to_music:
                     mapping = self.class_to_music[class_id]
                     
@@ -404,8 +621,10 @@ class Musician:
         """Create the appropriate musician based on type."""
         if musician_type.lower() == 'test':
             return TestMusician(tempo, key_signature)
+        elif musician_type.lower() == 'pianist':
+            return PianistTestMusician(tempo, key_signature)
         else:
-            raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: 'test'")
+            raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: 'test', 'pianist'")
     
     def __call__(self, segmentation_data: Union[np.ndarray], frame_id: int = 0) -> MusicFrame:
         """
