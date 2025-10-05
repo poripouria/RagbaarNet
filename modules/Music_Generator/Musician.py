@@ -369,10 +369,23 @@ class ContinuousPianistMusician(BaseMusician):
                     start_time = self.note_start_times.get(class_id, timestamp)
                     continuous_duration = timestamp - start_time
                     
-                    # Create continuous event with extended duration
+                    # Calculate fade-out velocity based on collision duration
+                    # Fade out over time with configurable fade duration
+                    fade_duration = 5.0  # Fade out over 5 seconds
+                    fade_factor = max(0.0, 1.0 - (continuous_duration / fade_duration))
+                    
+                    # Apply fade-out to velocity (but never go below 20% of original)
+                    min_velocity_factor = 0.2  # Minimum 20% of original velocity
+                    fade_factor = max(min_velocity_factor, fade_factor)
+                    
+                    # Calculate final velocity with presence ratio and fade-out
+                    base_velocity = min(127, int(mapping["velocity"] * (1 + presence_ratio * 1.5)))
+                    faded_velocity = int(base_velocity * fade_factor)
+                    
+                    # Create continuous event with fading velocity
                     event = MusicEvent(
                         note=mapping["note"],
-                        velocity=adjusted_velocity,
+                        velocity=faded_velocity,
                         duration=mapping["base_duration"] + continuous_duration,  # Extend duration based on collision time
                         channel=0,  # All piano events on channel 0
                         timestamp=timestamp,
@@ -386,7 +399,10 @@ class ContinuousPianistMusician(BaseMusician):
                             "edge_collision": True,
                             "edges_touched": collision_data['edges_touched'],
                             "continuous_duration": continuous_duration,
-                            "collision_state": "active"
+                            "collision_state": "active",
+                            "fade_factor": fade_factor,
+                            "base_velocity": base_velocity,
+                            "faded_velocity": faded_velocity
                         }
                     )
                     events.append(event)
