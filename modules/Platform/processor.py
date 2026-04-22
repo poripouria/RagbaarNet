@@ -71,13 +71,13 @@ class VideoProcessor:
         logger.info("🔄 Initializing segmentation models...")
         try:
             # YOLO model
-            model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolov8m-seg.pt')
-            self.segmentor = Segmentor('yolo', model_path)
-            logger.info("✅ YOLO Segmentor initialized successfully")
+            # model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolov8m-seg.pt')
+            # self.segmentor = Segmentor('yolo', model_path)
+            # logger.info("✅ YOLO Segmentor initialized successfully")
 
             # SegFormer model
-            # self.segmentor = Segmentor('segformer')
-            # logger.info("✅ SegFormer Segmentor initialized successfully")
+            self.segmentor = Segmentor('segformer')
+            logger.info("✅ SegFormer Segmentor initialized successfully")
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
