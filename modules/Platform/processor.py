@@ -76,8 +76,12 @@ class VideoProcessor:
             # logger.info("✅ YOLO Segmentor initialized successfully")
 
             # SegFormer model
-            self.segmentor = Segmentor('segformer')
-            logger.info("✅ SegFormer Segmentor initialized successfully")
+            # self.segmentor = Segmentor('segformer')
+            # logger.info("✅ SegFormer Segmentor initialized successfully")
+
+            # Local SegFormer model (if available)
+            self.segmentor = Segmentor('segformer-offline')
+            logger.info("✅ Local SegFormer Segmentor initialized successfully")
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
