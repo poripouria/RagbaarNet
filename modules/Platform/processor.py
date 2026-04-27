@@ -38,7 +38,13 @@ class VideoProcessor:
         """Initialize the video processor with segmentation models"""
         self.socketio = socketio_instance  # Store socketio instance for broadcasting
         self.frame_counter = 0
-        self.segmentation_interval = 2
+        # Process segmentation every N frames (higher => higher FPS, lower segmentation refresh rate)
+        self.segmentation_interval = int(os.environ.get('RAGBAARNET_SEGMENTATION_INTERVAL', '2'))
+
+        # Optional downscale for segmentation input to improve FPS (keeps output resized back to original).
+        # Example: set RAGBAARNET_SEGMENTATION_MAX_SIDE=512
+        max_side_raw = os.environ.get('RAGBAARNET_SEGMENTATION_MAX_SIDE', '').strip()
+        self.segmentation_max_side = int(max_side_raw) if max_side_raw.isdigit() else None
         self.frame_queue = Queue(maxsize=10)
         self.segmentation_queue = Queue(maxsize=5)
         self.current_frame = None
@@ -206,7 +212,36 @@ class VideoProcessor:
 
                     try:
                         # Perform segmentation
-                        result = self.segmentor(frame)
+                        seg_frame = frame
+                        orig_h, orig_w = frame.shape[:2]
+
+                        if self.segmentation_max_side is not None:
+                            max_side = max(orig_h, orig_w)
+                            if max_side > self.segmentation_max_side:
+                                scale = self.segmentation_max_side / float(max_side)
+                                new_w = max(1, int(orig_w * scale))
+                                new_h = max(1, int(orig_h * scale))
+                                seg_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+                        result = self.segmentor(seg_frame)
+
+                        # Resize outputs back to original frame size for consistent downstream processing.
+                        if seg_frame is not frame:
+                            try:
+                                result.segmentation_map = cv2.resize(
+                                    result.segmentation_map,
+                                    (orig_w, orig_h),
+                                    interpolation=cv2.INTER_NEAREST,
+                                )
+                                if result.confidence_map is not None:
+                                    result.confidence_map = cv2.resize(
+                                        result.confidence_map,
+                                        (orig_w, orig_h),
+                                        interpolation=cv2.INTER_LINEAR,
+                                    )
+                            except Exception as resize_err:
+                                if self.debug_mode:
+                                    logger.warning("❌ Failed to resize segmentation outputs: %s", resize_err)
 
                         # Create segmentation visualization (optimized)
                         segmentation_overlay = self._create_segmentation_overlay_optimized(frame, result)
