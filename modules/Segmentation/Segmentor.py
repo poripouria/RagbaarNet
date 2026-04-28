@@ -493,11 +493,19 @@ class Segmentor:
             if model_path is None:
                 pretrained_root = os.path.join("modules", "Segmentation", "Pre-trained Models")
                 common = [
-                    os.path.join(pretrained_root, "segformer-b0-finetuned-cityscapes-1024-1024"),
-                    os.path.join(pretrained_root, "segformer-b2-cityscapes"),
+                    os.path.join(pretrained_root, "segformer-b0-finetuned-cityscapes-512-1024"),
+                    os.path.join(pretrained_root, "segformer-b2-finetuned-cityscapes-1024-1024"),
                 ]
                 for path in common:
-                    if os.path.exists(path):
+                    if not os.path.exists(path):
+                        continue
+
+                    # Only select folders that contain PyTorch weights expected by our loader.
+                    has_pytorch_weights = (
+                        os.path.exists(os.path.join(path, "model.safetensors"))
+                        or os.path.exists(os.path.join(path, "pytorch_model.bin"))
+                    )
+                    if has_pytorch_weights:
                         model_path = path
                         break
 
