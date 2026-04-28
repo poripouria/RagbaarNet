@@ -27,6 +27,7 @@ let offset = {x: 0, y: 0};
 let isPaused = false;
 let settings = {};
 let showControlPoints = true;
+let roiFillEnabled = true; // When false, ROI area is transparent (outline + vertices still visible)
 
 // Frame processing variables
 let frameProcessingEnabled = true; // Always keep processing enabled
@@ -76,6 +77,20 @@ const colors = {
 function isMobileDevice() {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
            (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+}
+
+function setInstructionsText(text) {
+    const instructionsTextEl = document.getElementById('instructionsText');
+    if (instructionsTextEl) {
+        instructionsTextEl.textContent = text;
+        return;
+    }
+
+    // Fallback for older markup
+    const instructions = document.querySelector('.instructions');
+    if (instructions) {
+        instructions.textContent = text;
+    }
 }
 
 /**
@@ -948,7 +963,6 @@ function toggleFrameProcessing() {
     const videoElement = document.getElementById('videoElement');
     const roiCanvas = document.getElementById('roiCanvas');
     const segCanvas = document.getElementById('segmentationCanvas');
-    const instructions = document.querySelector('.instructions');
     
     if (segmentationDisplayEnabled) {
         // Show segmentation overlay with ROI (hide video but keep ROI visible)
@@ -958,9 +972,7 @@ function toggleFrameProcessing() {
             segCanvas.style.display = 'block';
             segCanvas.style.pointerEvents = 'none'; // Keep it non-interactive
         }
-        if (instructions) {
-            instructions.textContent = 'Displaying AI Segmentation Overlay with ROI • Drag points to adjust ROI • Toggle off to return to original video';
-        }
+        setInstructionsText('Displaying AI Segmentation Overlay with ROI • Drag points to adjust ROI • Toggle off to return to original video');
         
         updateStatus('Showing segmentation overlay with ROI (processing continues)');
         console.log('✅ Segmentation DISPLAY: Overlay with ROI (background processing continues)');
@@ -989,9 +1001,7 @@ function toggleFrameProcessing() {
         if (videoElement) videoElement.style.display = 'block';
         if (roiCanvas) roiCanvas.style.display = 'block';
         if (segCanvas) segCanvas.style.display = 'none';
-        if (instructions) {
-            instructions.textContent = 'Drag green points to adjust ROI corners • Drag red points to control edge curves (segmentation processing continues in background)';
-        }
+        setInstructionsText('Drag green points to adjust ROI corners • Drag red points to control edge curves (segmentation processing continues in background)');
         
         updateStatus('Showing original video with ROI (segmentation processing continues in background)');
         console.log('❌ Segmentation DISPLAY: Hidden (background processing continues)');
@@ -1294,6 +1304,9 @@ function setupRoiCanvas() {
     
     // Update segmentation button state
     updateSegmentationButtonState();
+
+    // Update ROI fill button state
+    updateRoiFillButtonState();
 }
 
 /**
@@ -1487,10 +1500,12 @@ function drawRoi() {
         
         ctx.closePath();
         ctx.stroke();
-        
-        // Fill with semi-transparent color
-        ctx.fillStyle = colors.accent + '20'; // Add transparency
-        ctx.fill();
+
+        // Fill with semi-transparent color (optional)
+        if (roiFillEnabled) {
+            ctx.fillStyle = colors.accent + '20'; // Add transparency
+            ctx.fill();
+        }
     }
     
     // Draw ROI corner points
@@ -1893,6 +1908,33 @@ function resetRoi() {
     drawRoi();
     updateRoiInfo();
     updateStatus('ROI reset to default');
+}
+
+function toggleRoiFill() {
+    roiFillEnabled = !roiFillEnabled;
+    updateRoiFillButtonState();
+    drawRoi();
+    updateStatus(roiFillEnabled ? 'ROI area fill enabled' : 'ROI area is transparent');
+}
+
+function updateRoiFillButtonState() {
+    // Legacy menu button (if present)
+    const legacyButton = document.getElementById('toggleRoiFillBtn');
+    if (legacyButton) {
+        legacyButton.textContent = roiFillEnabled ? '⬜ ROI Area: Filled' : '🫥 ROI Area: Transparent';
+    }
+
+    // New compact icon in the instructions pill
+    const iconButton = document.getElementById('toggleRoiFillIcon');
+    if (iconButton) {
+        // State: transparent when roiFillEnabled === false
+        const transparentEnabled = !roiFillEnabled;
+        iconButton.dataset.active = transparentEnabled.toString();
+        iconButton.setAttribute('aria-pressed', transparentEnabled.toString());
+        iconButton.title = roiFillEnabled
+            ? 'ROI area: Filled (click for transparent)'
+            : 'ROI area: Transparent (click for filled)';
+    }
 }
 
 function startMusicGeneration() {
