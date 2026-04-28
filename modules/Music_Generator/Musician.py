@@ -472,6 +472,34 @@ class ContinuousPianistMusician(BaseMusician):
         self.note_start_times.clear()
 
 
+class Test2Musician(ContinuousPianistMusician):
+    """
+    Test 2 Musician that reuses the continuous pianist logic behind a dedicated name.
+
+    This gives Processor a separate musician type for experimentation without changing
+    the existing TestMusician or PianistTestMusician implementations.
+    """
+
+    def initialize(self) -> None:
+        """Initialize the Test 2 Musician."""
+        try:
+            logger.info("🎼 Initializing Test 2 Musician...")
+            self.is_initialized = True
+            logger.info("✅ Test 2 Musician initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Test 2 Musician: {e}")
+            raise
+
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+        """Generate music while preserving the Test 2 Musician identity in metadata."""
+        music_frame = super().generate_music(segmentation_data, frame_id)
+        if music_frame.metadata is None:
+            music_frame.metadata = {}
+        music_frame.metadata["musician_type"] = "Test2Musician"
+        music_frame.metadata["display_name"] = "Test 2 Musician"
+        return music_frame
+
+
 class PianistTestMusician(BaseMusician):
     """
     Simplified pianist musician that maps all segmentation classes to piano notes only.
@@ -972,10 +1000,12 @@ class Musician:
             return TestMusician(tempo, key_signature)
         elif musician_type.lower() == 'pianist':
             return PianistTestMusician(tempo, key_signature)
+        elif musician_type.lower() in ('test2', 'test_2', 'test 2'):
+            return Test2Musician(tempo, key_signature)
         elif musician_type.lower() == 'continuous_pianist':
             return ContinuousPianistMusician(tempo, key_signature)
         else:
-            raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: 'test', 'pianist', 'continuous_pianist'")
+            raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: 'test', 'pianist', 'test2', 'continuous_pianist'")
     
     def __call__(self, segmentation_data: Union[np.ndarray], frame_id: int = 0) -> MusicFrame:
         """
