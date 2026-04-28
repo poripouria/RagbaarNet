@@ -67,7 +67,29 @@
             <canvas id="segmentationCanvas" class="canvas-overlay" style="display: none; pointer-events: none;"></canvas>
         </div>
         
-        <div class="instructions">Drag green points to adjust ROI corners • Drag red points to control edge curves</div>
+        <div class="instructions-wrapper">
+            <div class="instructions">
+                <span id="instructionsText">Drag green points to adjust ROI corners • Drag red points to control edge curves</span>
+            </div>
+            <button
+                id="toggleRoiFillIcon"
+                class="roi-fill-toggle"
+                type="button"
+                onclick="toggleRoiFill()"
+                ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleRoiFill();}"
+                aria-label="Toggle ROI area transparency"
+                title="ROI area: Filled (click for transparent)"
+            >
+                <img
+                    id="toggleRoiFillIconImg"
+                    class="roi-fill-toggle__img"
+                    src="../../assets/icons/Transparent%20Icon.png"
+                    alt=""
+                    aria-hidden="true"
+                    draggable="false"
+                >
+            </button>
+        </div>
     </div>
 
     <!-- Hidden file inputs -->

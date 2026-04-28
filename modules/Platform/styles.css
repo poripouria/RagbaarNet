@@ -435,11 +435,20 @@ body {
 }
 
 /* Instructions */
-.instructions {
+
+.instructions-wrapper {
     position: absolute;
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
+    display: flex;
+    align-items: stretch; /* ensures icon matches pill height */
+    gap: 10px;
+    z-index: 20;
+    max-width: 80%;
+}
+
+.instructions {
     background: rgba(0, 0, 0, 0.8);
     color: var(--text-primary);
     padding: 12px 30px;
@@ -448,12 +457,47 @@ body {
     text-align: center;
     border: 1px solid var(--border-color);
     backdrop-filter: blur(5px);
-    z-index: 20;
     min-width: 400px;
-    max-width: 80%;
+    flex: 1 1 auto;
     white-space: nowrap;
     overflow: hidden;
+}
+
+#instructionsText {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.roi-fill-toggle {
+    flex: 0 0 auto;
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid var(--border-color);
+    border-radius: 25px;
+    padding: 0 14px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.roi-fill-toggle[data-active="true"] {
+    border-color: var(--accent-color);
+}
+
+.roi-fill-toggle:active {
+    transform: scale(0.98);
+}
+
+.roi-fill-toggle__img {
+    width: 18px;
+    height: 18px;
+    display: block;
+    pointer-events: none;
 }
 
 /* Hidden Elements */
