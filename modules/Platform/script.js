@@ -966,7 +966,19 @@ function toggleFrameProcessing() {
     
     if (segmentationDisplayEnabled) {
         // Show segmentation overlay with ROI (hide video but keep ROI visible)
-        if (videoElement) videoElement.style.display = 'none';
+        if (videoElement) {
+            // IMPORTANT: For camera streams (srcObject), using display:none can freeze frame updates
+            // in some browsers. Keep it in the render tree and hide visually instead.
+            const isCameraStream = !!videoElement.srcObject;
+            if (isCameraStream) {
+                videoElement.style.display = 'block';
+                videoElement.style.visibility = 'hidden';
+                videoElement.style.opacity = '0';
+                videoElement.style.pointerEvents = 'none';
+            } else {
+                videoElement.style.display = 'none';
+            }
+        }
         if (roiCanvas) roiCanvas.style.display = 'block'; // Keep ROI visible
         if (segCanvas) {
             segCanvas.style.display = 'block';
@@ -998,7 +1010,12 @@ function toggleFrameProcessing() {
         }
     } else {
         // Show original video with ROI (hide segmentation display, but processing continues)
-        if (videoElement) videoElement.style.display = 'block';
+        if (videoElement) {
+            videoElement.style.display = 'block';
+            videoElement.style.visibility = 'visible';
+            videoElement.style.opacity = '1';
+            videoElement.style.pointerEvents = '';
+        }
         if (roiCanvas) roiCanvas.style.display = 'block';
         if (segCanvas) segCanvas.style.display = 'none';
         setInstructionsText('Drag green points to adjust ROI corners • Drag red points to control edge curves (segmentation processing continues in background)');
