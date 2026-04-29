@@ -4,6 +4,17 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Android/Gradle (do not commit local machine or build artifacts)
+**/.idea/
+**/*.iml
+**/.gradle/
+**/local.properties
+**/build/
+**/.cxx/
+**/.externalNativeBuild/
+*.apk
+*.aab
+
 # Local/offline SegFormer weights (keep local; too large for GitHub)
 modules/Segmentation/Pre-trained Models/**/tf_model.h5
 modules/Segmentation/Pre-trained Models/**/model.safetensors
