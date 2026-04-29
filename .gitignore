@@ -7,4 +7,5 @@ __pycache__/
 # Local/offline SegFormer weights (keep local; too large for GitHub)
 modules/Segmentation/Pre-trained Models/**/tf_model.h5
 modules/Segmentation/Pre-trained Models/**/model.safetensors
-modules/Segmentation/Pre-trained Models/**/pytorch_model.bin
+modules/Segmentation/Pre-trained Models/**/pytorch_model.bin*.pt
+*.pt

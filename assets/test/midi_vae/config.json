@@ -1,0 +1,26 @@
+{
+  "args": {
+    "data_dir": "C:\\Users\\porip\\Documents\\Pouria Ar\\PouriaEdu\\University2\\Master Thesis\\Code\\Dataset\\Lakh MIDI\\sample_midi_files",
+    "out_dir": "C:\\Users\\porip\\Documents\\Pouria Ar\\PouriaEdu\\University2\\Master Thesis\\Code\\assets\\test\\midi_vae",
+    "epochs": 1,
+    "batch_size": 8,
+    "lr": 0.001,
+    "beta": 0.1,
+    "latent_dim": 64,
+    "steps_per_beat": 4,
+    "segment_bars": 4,
+    "beats_per_bar": 4,
+    "include_drums": false,
+    "num_samples_per_epoch": 64,
+    "limit_files": 20,
+    "seed": 0,
+    "num_workers": 0
+  },
+  "pianoroll": {
+    "steps_per_beat": 4,
+    "segment_bars": 4,
+    "beats_per_bar": 4,
+    "ignore_drums": true
+  },
+  "input_dim": 8192
+}
