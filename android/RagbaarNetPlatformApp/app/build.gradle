@@ -16,7 +16,7 @@ android {
 
         // IMPORTANT: set this to your laptop IP on the same Wi‑Fi/LAN.
         // Example: "http://192.168.1.12:5000/ui/"
-        buildConfigField "String", "SERVER_URL", "\"http://192.168.1.100:5000/ui/\""
+        buildConfigField "String", "SERVER_URL", "\"http://172.25.225.104:5000/ui/\""
     }
 
     buildFeatures {

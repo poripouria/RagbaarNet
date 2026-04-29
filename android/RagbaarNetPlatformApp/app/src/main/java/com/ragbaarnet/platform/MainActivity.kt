@@ -64,6 +64,25 @@ class MainActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 return false
             }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: android.webkit.WebResourceError?
+            ) {
+                // Show a friendly error or just log it
+                if (request?.isForMainFrame == true) {
+                    val errorHtml = "<html><body><div style='padding:20px; font-family:sans-serif;'>" +
+                            "<h2>Connection Error</h2>" +
+                            "<p>Cannot reach server at ${BuildConfig.SERVER_URL}</p>" +
+                            "<p>Error: ${error?.description}</p>" +
+                            "<p><b>Tips:</b><br>1. Check if the server is running.<br>" +
+                            "2. Ensure ADB Reverse is active (if using USB).<br>" +
+                            "3. Check Wi-Fi connection.</p>" +
+                            "</div></body></html>"
+                    view?.loadData(errorHtml, "text/html", "UTF-8")
+                }
+            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
