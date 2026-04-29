@@ -180,9 +180,13 @@ class YOLOSegmentor(BaseSegmentor):
             self.load_model()
             
         # Get YOLO results
+        # NOTE: Our framework uses RGB images, but Ultralytics' numpy/OpenCV pathway
+        # typically assumes BGR. Convert here to keep call sites consistent.
+        yolo_input = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
         # Ensure evaluation/inference context
         with torch.inference_mode():
-            results = self.model(image)[0]
+            results = self.model(yolo_input)[0]
         
         # Create segmentation map
         segmentation_map = np.zeros(image.shape[:2], dtype=np.uint8)
@@ -493,8 +497,8 @@ class Segmentor:
             if model_path is None:
                 pretrained_root = os.path.join("modules", "Segmentation", "Pre-trained Models")
                 common = [
-                    os.path.join(pretrained_root, "segformer-b0-finetuned-cityscapes-512-1024"),
                     os.path.join(pretrained_root, "segformer-b2-finetuned-cityscapes-1024-1024"),
+                    os.path.join(pretrained_root, "segformer-b0-finetuned-cityscapes-512-1024"),
                 ]
                 for path in common:
                     if not os.path.exists(path):

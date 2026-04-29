@@ -65,10 +65,13 @@ class VideoProcessor:
 
         # Pre-compute color mapping arrays for faster lookup
         self.color_mapping_array = None
+        self.yolo_color_mapping_array = None
 
         # Create consistent color mapping for segmentation classes
         self.color_map = self._create_consistent_color_map()
         self._prepare_color_mapping_array()
+        # YOLO uses a different label space (COCO) than Cityscapes, so keep a separate palette.
+        self.yolo_color_mapping_array = self._create_generic_color_mapping_array()
 
         # Cache for image encoding to avoid repeated allocations
         self.encode_params = [cv2.IMWRITE_JPEG_QUALITY, 75]
@@ -95,7 +98,7 @@ class VideoProcessor:
         # Initialize music generation
         logger.info("🔄 Initializing music generation...")
         try:
-            self.musician = Musician('test2', tempo=120, key_signature="C_major")
+            self.musician = Musician('pianist', tempo=120, key_signature="C_major")
             self.music_queue = Queue(maxsize=5)
             self.current_music = None
             self.music_enabled = True
@@ -184,6 +187,26 @@ class VideoProcessor:
         self.color_mapping_array = np.zeros((256, 3), dtype=np.uint8)
         for class_id, color in self.color_map.items():
             self.color_mapping_array[class_id] = color
+
+    def _create_generic_color_mapping_array(self):
+        """Create a generic per-class color mapping array for non-Cityscapes models (e.g., YOLO/COCO).
+
+        Index 0 is treated as background (black). Remaining IDs get deterministic HSV colors.
+        """
+        import colorsys
+
+        mapping = np.zeros((256, 3), dtype=np.uint8)
+        mapping[0] = [0, 0, 0]
+        mapping[255] = [0, 0, 0]
+
+        for class_id in range(1, 255):
+            hue = (class_id * 137.5) % 360  # golden angle
+            saturation = 80
+            value = 220
+            r, g, b = colorsys.hsv_to_rgb(hue / 360.0, saturation / 100.0, value / 255.0)
+            mapping[class_id] = [int(r * 255), int(g * 255), int(b * 255)]
+
+        return mapping
         
     def _processing_loop(self):
         """Main processing loop that runs in a separate thread"""
@@ -224,6 +247,19 @@ class VideoProcessor:
                                 seg_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
                         result = self.segmentor(seg_frame)
+
+                        # Derive a small, UI-friendly list of detected class names.
+                        detected_classes = []
+                        try:
+                            if getattr(result, 'bounding_boxes', None):
+                                detected_classes = sorted({b.get('class_name') for b in result.bounding_boxes if b.get('class_name')})
+                            elif getattr(result, 'class_labels', None) is not None:
+                                unique_ids = np.unique(result.segmentation_map)
+                                labels = result.class_labels or []
+                                detected_classes = [labels[int(i)] for i in unique_ids if 0 <= int(i) < len(labels)]
+                        except Exception as cls_err:
+                            if self.debug_mode:
+                                logger.debug("Failed to derive detected classes: %s", cls_err)
 
                         # Resize outputs back to original frame size for consistent downstream processing.
                         if seg_frame is not frame:
@@ -266,6 +302,8 @@ class VideoProcessor:
                             'overlay': segmentation_overlay,
                             'overlay_b64': self._last_overlay_b64,
                             'class_labels': result.class_labels,
+                            'detected_classes': detected_classes,
+                            'model_type': (result.metadata or {}).get('model_type'),
                             'metadata': result.metadata,
                         }
 
@@ -406,7 +444,11 @@ class VideoProcessor:
                 logger.debug("🛣️ Road: %.1f%% of image", road_percentage)
             
             # Vectorized color mapping using pre-computed lookup table
-            overlay = self.color_mapping_array[segmentation_map]
+            model_type = ((getattr(result, 'metadata', None) or {}).get('model_type') or '').lower()
+            if model_type == 'yolo' and self.yolo_color_mapping_array is not None:
+                overlay = self.yolo_color_mapping_array[segmentation_map]
+            else:
+                overlay = self.color_mapping_array[segmentation_map]
             
             # Resize overlay to match original frame size if needed
             if overlay.shape[:2] != frame.shape[:2]:
@@ -494,7 +536,9 @@ class VideoProcessor:
                     'frame_id': seg_data['frame_id'],
                     'timestamp': seg_data['timestamp'],
                     'frame_counter': seg_data['frame_counter'],
-                    'frames_since_segmentation': frame_diff
+                    'frames_since_segmentation': frame_diff,
+                    'class_labels': seg_data.get('detected_classes') or [],
+                    'model_type': seg_data.get('model_type')
                 }
         
         # For status page, provide basic info without heavy data
@@ -503,7 +547,9 @@ class VideoProcessor:
             display_data['segmentation_info'] = {
                 'frame_id': seg_data['frame_id'],
                 'frame_counter': seg_data['frame_counter'],
-                'frames_since_segmentation': self.frame_counter - seg_data['frame_counter']
+                'frames_since_segmentation': self.frame_counter - seg_data['frame_counter'],
+                'class_labels': seg_data.get('detected_classes') or [],
+                'model_type': seg_data.get('model_type')
             }
         
         # Add music information if available

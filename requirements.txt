@@ -18,7 +18,7 @@ transformers>=4.35.2            # Hugging Face transformers (SegFormer models)
 
 # Audio Processing & Music Generation
 # Note: Web Audio API is used on frontend for real-time audio synthesis
-# Future: Consider adding mido>=1.3.0 for MIDI file export
+mido>=1.3.0                    # MIDI parsing (used for LAKH MIDI VAE training)
 
 # Visualization & Analysis
 matplotlib>=3.8.0               # Plotting and visualization library

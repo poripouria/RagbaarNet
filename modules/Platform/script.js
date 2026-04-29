@@ -865,11 +865,8 @@ function updateSegmentationDisplay(data) {
         }
     }
     
-    // Handle case when display is disabled
-    if (!segmentationDisplayEnabled) {
-        // Clear segmentation overlay when display is disabled (but processing continues)
-        clearSegmentationOverlay();
-    }
+    // When display is OFF, keep the latest overlay cached so toggling ON can show it immediately.
+    // (Canvas may be hidden anyway, so no need to clear+drop cached data here.)
 }
 
 function updateFrameCounter(count) {
@@ -946,7 +943,7 @@ function clearSegmentationOverlay() {
     if (segmentationCanvas && segmentationCtx) {
         segmentationCtx.clearRect(0, 0, segmentationCanvas.width, segmentationCanvas.height);
     }
-    currentSegmentationOverlay = null;
+    // Keep `currentSegmentationOverlay` cached; only the visible canvas is cleared.
 }
 
 function toggleFrameProcessing() {
@@ -967,17 +964,12 @@ function toggleFrameProcessing() {
     if (segmentationDisplayEnabled) {
         // Show segmentation overlay with ROI (hide video but keep ROI visible)
         if (videoElement) {
-            // IMPORTANT: For camera streams (srcObject), using display:none can freeze frame updates
-            // in some browsers. Keep it in the render tree and hide visually instead.
-            const isCameraStream = !!videoElement.srcObject;
-            if (isCameraStream) {
-                videoElement.style.display = 'block';
-                videoElement.style.visibility = 'hidden';
-                videoElement.style.opacity = '0';
-                videoElement.style.pointerEvents = 'none';
-            } else {
-                videoElement.style.display = 'none';
-            }
+            // IMPORTANT: Using display:none can freeze frame updates in some browsers.
+            // Keep the video in the render tree and hide it visually instead.
+            videoElement.style.display = 'block';
+            videoElement.style.visibility = 'hidden';
+            videoElement.style.opacity = '0';
+            videoElement.style.pointerEvents = 'none';
         }
         if (roiCanvas) roiCanvas.style.display = 'block'; // Keep ROI visible
         if (segCanvas) {
