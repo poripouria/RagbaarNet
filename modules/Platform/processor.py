@@ -13,7 +13,7 @@ import time
 import threading
 import argparse
 from queue import Queue, Empty
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import os
@@ -643,6 +643,11 @@ CORS(app)  # Enable CORS for all routes
 # Reduce Socket.IO/engineio log noise in production
 socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
 
+# Paths for serving the existing web UI (so mobile devices can load it from the laptop)
+PLATFORM_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(PLATFORM_DIR, '..', '..'))
+ASSETS_DIR = os.path.join(PROJECT_ROOT, 'assets')
+
 # Additional CORS headers for all routes
 @app.after_request
 def after_request(response):
@@ -753,6 +758,28 @@ def index():
     </body>
     </html>
     """
+
+
+@app.route('/ui/')
+def ui_index():
+    """Serve the main Platform UI entrypoint (UI.html).
+
+    Keeping UI.html as-is means all existing responsive behavior and JS logic stays identical;
+    relative links (styles.css/script.js) resolve under /ui/ automatically.
+    """
+    return send_from_directory(PLATFORM_DIR, 'UI.html')
+
+
+@app.route('/ui/<path:filename>')
+def ui_static(filename: str):
+    """Serve Platform UI static files (script.js, styles.css, etc.)."""
+    return send_from_directory(PLATFORM_DIR, filename)
+
+
+@app.route('/assets/<path:filename>')
+def serve_assets(filename: str):
+    """Serve shared project assets (icons, etc.) referenced by UI.html."""
+    return send_from_directory(ASSETS_DIR, filename)
 
 @app.route('/api/process_frame', methods=['POST'])
 def process_frame():
@@ -875,14 +902,18 @@ def handle_update_request():
 def handle_connect():
     """Handle client connection"""
     # Determine if this is status page or main UI based on referrer
-    referrer = request.headers.get('Referer', '')
-    if '127.0.0.1:5000' in referrer and 'modules/Platform' not in referrer:
-        # This is the status page
-        processor.status_page_clients.add(request.sid)
-        logger.info("📄 Status page connected: %s", request.sid)
-    else:
-        # This is the main UI
+    referrer = (request.headers.get('Referer', '') or '').lower()
+
+    # If the client came from /ui/, treat as Main UI; otherwise, treat as status page.
+    # When Referer is missing (e.g., some WebViews), default to Main UI.
+    is_main_ui = (not referrer) or ('/ui/' in referrer) or (referrer.endswith('/ui'))
+
+    if is_main_ui:
         logger.info("🎯 Main UI connected: %s", request.sid)
+        return
+
+    processor.status_page_clients.add(request.sid)
+    logger.info("📄 Status page connected: %s", request.sid)
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -947,7 +978,9 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     """Run the processor server"""
     logger.info("🚀 Starting Video Processor Server on %s:%s", host, port)
     logger.info("📊 Processing every %s frames for optimal performance", processor.segmentation_interval)
-    logger.info("🌐 Web interface available at: http://%s:%s", host, port)
+    logger.info("🌐 Web interface available at:")
+    logger.info("   - Status: http://%s:%s/", host, port)
+    logger.info("   - UI:     http://%s:%s/ui/", host, port)
     logger.info("📡 API endpoints:")
     logger.info("   - POST /api/process_frame - Send frame data")
     logger.info("   - GET  /api/get_display  - Get synchronized display")
