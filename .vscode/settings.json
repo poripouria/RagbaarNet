@@ -1,0 +1,8 @@
+{
+  "java.jdt.ls.java.home": "C:\\Program Files\\Android\\Android Studio1\\jbr",
+  "java.import.gradle.java.home": "C:\\Program Files\\Android\\Android Studio1\\jbr",
+  "java.home": "C:\\Program Files\\Android\\Android Studio1\\jbr",
+  "terminal.integrated.env.windows": {
+    "JAVA_HOME": "C:\\Program Files\\Android\\Android Studio1\\jbr"
+  }
+}
