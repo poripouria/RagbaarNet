@@ -1,36 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:background="#FFFFFF">
+
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
     <LinearLayout
+        android:id="@+id/inputContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:background="#CCFFFFFF"
+        android:elevation="4dp"
         android:orientation="horizontal"
-        android:padding="8dp"
-        android:background="#F0F0F0">
+        android:padding="12dp">
 
         <EditText
             android:id="@+id/urlInput"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:layout_weight="1"
-            android:hint="e.g. 192.168.1.10:5000/ui/"
+            android:background="@drawable/input_bg"
+            android:hint="Enter Server IP (e.g. 192.168.1.10:5000)"
             android:inputType="textUri"
+            android:paddingHorizontal="12dp"
+            android:textColor="#333333"
             android:textSize="14sp" />
 
         <Button
             android:id="@+id/connectButton"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Connect" />
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="#2196F3"
+            android:text="Connect"
+            android:textColor="#FFFFFF" />
     </LinearLayout>
 
-    <WebView
-        android:id="@+id/webView"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
-
-</LinearLayout>
+</RelativeLayout>

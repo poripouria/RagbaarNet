@@ -13,6 +13,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
+import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 
@@ -21,6 +23,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var urlInput: EditText
     private lateinit var connectButton: Button
+    private lateinit var inputContainer: LinearLayout
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
 
     private val PREFS_NAME = "RagbaarPrefs"
@@ -50,6 +53,7 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webView)
         urlInput = findViewById(R.id.urlInput)
         connectButton = findViewById(R.id.connectButton)
+        inputContainer = findViewById(R.id.inputContainer)
 
         val sharedPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val lastUrl = sharedPrefs.getString(KEY_URL, BuildConfig.SERVER_URL)
@@ -67,6 +71,12 @@ class MainActivity : AppCompatActivity() {
                 
                 webView.loadUrl(url)
             }
+        }
+
+        // Long press on WebView to show the URL bar again
+        webView.setOnLongClickListener {
+            inputContainer.visibility = View.VISIBLE
+            true
         }
 
         // Runtime permissions for getUserMedia() (camera/mic)
@@ -92,6 +102,12 @@ class MainActivity : AppCompatActivity() {
                 return false
             }
 
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                // Hide input bar after successful load
+                inputContainer.visibility = View.GONE
+            }
+
             override fun onReceivedError(
                 view: WebView?,
                 request: WebResourceRequest?,
@@ -99,6 +115,7 @@ class MainActivity : AppCompatActivity() {
             ) {
                 // Show a friendly error or just log it
                 if (request?.isForMainFrame == true) {
+                    inputContainer.visibility = View.VISIBLE
                     val currentUrl = view?.url ?: ""
                     val errorHtml = "<html><body><div style='padding:20px; font-family:sans-serif;'>" +
                             "<h2>Connection Error</h2>" +
@@ -106,7 +123,8 @@ class MainActivity : AppCompatActivity() {
                             "<p>Error: ${error?.description}</p>" +
                             "<p><b>Tips:</b><br>1. Check if the server is running.<br>" +
                             "2. Ensure ADB Reverse is active (if using USB).<br>" +
-                            "3. Check Wi-Fi connection.</p>" +
+                            "3. Check Wi-Fi connection.<br>" +
+                            "4. <b>Long-press anywhere</b> to show the URL bar again.</p>" +
                             "</div></body></html>"
                     view?.loadData(errorHtml, "text/html", "UTF-8")
                 }
