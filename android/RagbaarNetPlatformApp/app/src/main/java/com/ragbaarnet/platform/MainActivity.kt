@@ -96,6 +96,12 @@ class MainActivity : AppCompatActivity() {
         ws.loadWithOverviewMode = true
         ws.useWideViewPort = true
         ws.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        
+        // Enable getUserMedia() and getDisplayMedia() support (API 21+)
+        ws.mediaPlaybackRequiresUserGesture = false
+        
+        // Enable audio focus for getUserMedia()
+        this.volumeControlStream = android.media.AudioManager.STREAM_VOICE_CALL
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -133,8 +139,23 @@ class MainActivity : AppCompatActivity() {
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
-                // Grant WebRTC permissions (camera/mic) for the loaded page.
-                request.grant(request.resources)
+                // Grant both WebRTC and Media permissions (camera/mic) for the loaded page.
+                // This handles both getUserMedia() and getDisplayMedia() calls.
+                android.util.Log.d("WebChromeClient", "Permission request received for resources: ${request.resources.joinToString(",")}")
+                
+                // Filter to only grant CAMERA and MICROPHONE permissions
+                val allowedResources = request.resources.filter { resource ->
+                    resource == PermissionRequest.RESOURCE_VIDEO_CAPTURE || 
+                    resource == PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                }
+                
+                if (allowedResources.isNotEmpty()) {
+                    android.util.Log.d("WebChromeClient", "Granting permissions: ${allowedResources.joinToString(",")}")
+                    request.grant(allowedResources.toTypedArray())
+                } else {
+                    android.util.Log.w("WebChromeClient", "No supported resources in permission request")
+                    request.deny()
+                }
             }
 
             override fun onShowFileChooser(

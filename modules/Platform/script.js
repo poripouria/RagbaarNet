@@ -1391,8 +1391,21 @@ function startVideoCapture() {
         navigator.mediaDevices.getUserMedia(constraints)
             .then(stream => {
                 videoElement.srcObject = stream;
-                updateStatus('Connected - Receiving camera feed');
-                console.log('Camera stream started successfully');
+                // Ensure playback starts (some browsers require an explicit play() call)
+                const playPromise = videoElement.play();
+                if (playPromise && typeof playPromise.then === 'function') {
+                    playPromise.then(() => {
+                        updateStatus('Connected - Receiving camera feed');
+                        console.log('Camera stream started and playing');
+                    }).catch(err => {
+                        // Playback may be blocked by autoplay policies; still keep stream attached
+                        console.warn('Camera stream attached but playback blocked:', err);
+                        updateStatus('Connected - Camera attached (tap play to start)');
+                    });
+                } else {
+                    updateStatus('Connected - Receiving camera feed');
+                    console.log('Camera stream started (play() not required)');
+                }
             })
             .catch(err => {
                 console.error('Camera error details:', err);
@@ -1402,7 +1415,17 @@ function startVideoCapture() {
                 navigator.mediaDevices.getUserMedia({ video: true })
                     .then(stream => {
                         videoElement.srcObject = stream;
-                        updateStatus('Connected - Using fallback camera settings');
+                        const playPromise = videoElement.play();
+                        if (playPromise && typeof playPromise.then === 'function') {
+                            playPromise.then(() => {
+                                updateStatus('Connected - Using fallback camera settings');
+                            }).catch(err => {
+                                console.warn('Fallback camera attached but playback blocked:', err);
+                                updateStatus('Connected - Camera attached (tap play to start)');
+                            });
+                        } else {
+                            updateStatus('Connected - Using fallback camera settings');
+                        }
                     })
                     .catch(fallbackErr => {
                         console.error('Fallback camera error:', fallbackErr);
@@ -1414,15 +1437,74 @@ function startVideoCapture() {
         videoElement.src = url;
         updateStatus('Connecting to network stream...');
     } else if (inputSource === 'screen_record') {
-        // For screen recording, fall back to camera for now
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => {
-                videoElement.srcObject = stream;
-                updateStatus('Connected - Using camera as fallback');
-            })
-            .catch(err => {
-                updateStatus('Error: Could not access camera');
-            });
+        // For screen recording on desktop, prefer getDisplayMedia (screen capture)
+        if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
+            navigator.mediaDevices.getDisplayMedia({ video: true })
+                .then(stream => {
+                    // Some browsers provide a MediaStream with a single video track for the screen
+                    videoElement.srcObject = stream;
+                    const playPromise = videoElement.play();
+                    if (playPromise && typeof playPromise.then === 'function') {
+                        playPromise.then(() => {
+                            updateStatus('Connected - Screen capture started');
+                            console.log('Screen capture started and playing');
+                        }).catch(err => {
+                            console.warn('Screen capture attached but playback blocked:', err);
+                            updateStatus('Connected - Screen attached (tap play to start)');
+                        });
+                    } else {
+                        updateStatus('Connected - Screen capture started');
+                    }
+                })
+                .catch(err => {
+                    console.warn('Screen capture failed, falling back to camera:', err);
+                    updateStatus('Screen capture denied or unavailable - falling back to camera');
+
+                    // Fallback to camera if screen capture is denied or unsupported at runtime
+                    navigator.mediaDevices.getUserMedia({ video: true })
+                        .then(camStream => {
+                            videoElement.srcObject = camStream;
+                            const playPromise = videoElement.play();
+                            if (playPromise && typeof playPromise.then === 'function') {
+                                playPromise.then(() => {
+                                    updateStatus('Connected - Using camera as fallback');
+                                }).catch(playErr => {
+                                    console.warn('Fallback camera attached but playback blocked:', playErr);
+                                    updateStatus('Connected - Camera attached (tap play to start)');
+                                });
+                            } else {
+                                updateStatus('Connected - Using camera as fallback');
+                            }
+                        })
+                        .catch(camErr => {
+                            console.error('Fallback camera error:', camErr);
+                            updateStatus('Error: Could not access screen or camera');
+                        });
+                });
+        } else {
+            // getDisplayMedia not supported; use camera as fallback
+            console.warn('getDisplayMedia not supported in this browser - using camera fallback');
+            updateStatus('Screen capture not supported - using camera fallback');
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    videoElement.srcObject = stream;
+                    const playPromise = videoElement.play();
+                    if (playPromise && typeof playPromise.then === 'function') {
+                        playPromise.then(() => {
+                            updateStatus('Connected - Using camera as fallback');
+                        }).catch(err => {
+                            console.warn('Fallback camera attached but playback blocked:', err);
+                            updateStatus('Connected - Camera attached (tap play to start)');
+                        });
+                    } else {
+                        updateStatus('Connected - Using camera as fallback');
+                    }
+                })
+                .catch(err => {
+                    console.error('Fallback camera error:', err);
+                    updateStatus('Error: Could not access camera');
+                });
+        }
     } else if (inputSource === 'video_file') {
         // Video file source is handled in handleVideoFile function
         updateStatus('Loading video file...');
