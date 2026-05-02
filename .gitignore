@@ -1,6 +1,7 @@
 Dataset/
 ragbaarnet-env/
 utils/Tests/
+assets/test/
 __pycache__/
 *.pyc
 *.pyo
