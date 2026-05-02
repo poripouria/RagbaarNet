@@ -11,13 +11,20 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.EditText
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
+    private lateinit var urlInput: EditText
+    private lateinit var connectButton: Button
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+
+    private val PREFS_NAME = "RagbaarPrefs"
+    private val KEY_URL = "last_url"
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -41,6 +48,26 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         webView = findViewById(R.id.webView)
+        urlInput = findViewById(R.id.urlInput)
+        connectButton = findViewById(R.id.connectButton)
+
+        val sharedPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val lastUrl = sharedPrefs.getString(KEY_URL, BuildConfig.SERVER_URL)
+        urlInput.setText(lastUrl)
+
+        connectButton.setOnClickListener {
+            var url = urlInput.text.toString().trim()
+            if (url.isNotEmpty()) {
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    url = "http://$url"
+                }
+                
+                // Save for next time
+                sharedPrefs.edit().putString(KEY_URL, url).apply()
+                
+                webView.loadUrl(url)
+            }
+        }
 
         // Runtime permissions for getUserMedia() (camera/mic)
         requestPermissionsLauncher.launch(
@@ -72,9 +99,10 @@ class MainActivity : AppCompatActivity() {
             ) {
                 // Show a friendly error or just log it
                 if (request?.isForMainFrame == true) {
+                    val currentUrl = view?.url ?: ""
                     val errorHtml = "<html><body><div style='padding:20px; font-family:sans-serif;'>" +
                             "<h2>Connection Error</h2>" +
-                            "<p>Cannot reach server at ${BuildConfig.SERVER_URL}</p>" +
+                            "<p>Cannot reach server at $currentUrl</p>" +
                             "<p>Error: ${error?.description}</p>" +
                             "<p><b>Tips:</b><br>1. Check if the server is running.<br>" +
                             "2. Ensure ADB Reverse is active (if using USB).<br>" +
@@ -111,8 +139,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Load the Platform UI from the processor server running on the laptop.
-        webView.loadUrl(BuildConfig.SERVER_URL)
+        // Automatically load the last used URL
+        if (lastUrl != null && lastUrl.isNotEmpty()) {
+            webView.loadUrl(lastUrl)
+        }
     }
 
     override fun onDestroy() {
