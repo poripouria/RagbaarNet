@@ -123,3 +123,46 @@ def extract_random_segment(
     pad = np.zeros((segment_steps, 128), dtype=np.float32)
     pad[: roll.shape[0]] = roll
     return pad
+
+
+def transpose_pianoroll(roll: np.ndarray, semitones: int) -> np.ndarray:
+    """Shift a piano-roll along the pitch axis without wrap-around."""
+    if roll.ndim != 2 or roll.shape[1] != 128:
+        raise ValueError("roll must have shape (T, 128)")
+    semitones = int(semitones)
+    if semitones == 0:
+        return roll.copy()
+
+    shifted = np.zeros_like(roll)
+    if semitones > 0:
+        shifted[:, semitones:] = roll[:, : 128 - semitones]
+    else:
+        shifted[:, : 128 + semitones] = roll[:, -semitones:]
+    return shifted
+
+
+def augment_pianoroll(
+    roll: np.ndarray,
+    rng: np.random.Generator,
+    *,
+    note_dropout: float = 0.0,
+    time_mask_prob: float = 0.0,
+    time_mask_width: int = 0,
+) -> np.ndarray:
+    """Apply lightweight augmentation to a piano-roll without changing the pitch range."""
+    if roll.ndim != 2 or roll.shape[1] != 128:
+        raise ValueError("roll must have shape (T, 128)")
+
+    augmented = roll.copy()
+
+    if note_dropout > 0.0:
+        drop_mask = rng.random(augmented.shape) < float(note_dropout)
+        augmented = augmented * (~drop_mask).astype(augmented.dtype)
+
+    if time_mask_prob > 0.0 and time_mask_width > 0 and augmented.shape[0] > time_mask_width:
+        for t in range(augmented.shape[0]):
+            if rng.random() < float(time_mask_prob):
+                start = int(rng.integers(0, augmented.shape[0] - time_mask_width + 1))
+                augmented[start : start + time_mask_width] = 0.0
+
+    return augmented

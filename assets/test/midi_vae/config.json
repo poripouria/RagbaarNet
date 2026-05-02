@@ -2,19 +2,30 @@
   "args": {
     "data_dir": "C:\\Users\\porip\\Documents\\Pouria Ar\\PouriaEdu\\University2\\Master Thesis\\Code\\Dataset\\Lakh MIDI\\sample_midi_files",
     "out_dir": "C:\\Users\\porip\\Documents\\Pouria Ar\\PouriaEdu\\University2\\Master Thesis\\Code\\assets\\test\\midi_vae",
-    "epochs": 1,
-    "batch_size": 8,
+    "epochs": 20,
+    "batch_size": 16,
     "lr": 0.001,
     "beta": 0.1,
     "latent_dim": 64,
+    "kl_warmup_epochs": 5,
+    "kl_cycle_epochs": 0,
     "steps_per_beat": 4,
     "segment_bars": 4,
     "beats_per_bar": 4,
     "include_drums": false,
-    "num_samples_per_epoch": 64,
+    "num_samples_per_epoch": 1024,
     "limit_files": 20,
     "seed": 0,
-    "num_workers": 0
+    "num_workers": 0,
+    "val_ratio": 0.2,
+    "save_samples_every": 1,
+    "transpose_range": 5,
+    "note_dropout": 0.02,
+    "time_mask_prob": 0.05,
+    "time_mask_width": 2,
+    "decode_strategy": "adaptive_topk",
+    "decode_threshold": 0.5,
+    "decode_top_k": 4
   },
   "pianoroll": {
     "steps_per_beat": 4,
@@ -22,5 +33,21 @@
     "beats_per_bar": 4,
     "ignore_drums": true
   },
-  "input_dim": 8192
+  "input_dim": 8192,
+  "augmentation": {
+    "transpose_range": 5,
+    "note_dropout": 0.02,
+    "time_mask_prob": 0.05,
+    "time_mask_width": 2
+  },
+  "decoding": {
+    "strategy": "adaptive_topk",
+    "threshold": 0.5,
+    "top_k": 4
+  },
+  "kl_schedule": {
+    "beta": 0.1,
+    "warmup_epochs": 5,
+    "cycle_epochs": 0
+  }
 }
