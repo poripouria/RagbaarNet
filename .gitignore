@@ -22,3 +22,6 @@ modules/Segmentation/Pre-trained Models/**/tf_model.h5
 modules/Segmentation/Pre-trained Models/**/model.safetensors
 modules/Segmentation/Pre-trained Models/**/pytorch_model.bin*.pt
 *.pt
+
+# VS Code
+.vscode/*
