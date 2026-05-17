@@ -13,9 +13,13 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Union, Optional, Any
 from dataclasses import dataclass
 import os
+import logging
 # Model-specific imports
 from ultralytics import YOLO
 from transformers import SegformerImageProcessor, SegformerForSemanticSegmentation
+
+
+logger = logging.getLogger("segmentation.segmentor")
 
 
 @dataclass
@@ -64,6 +68,10 @@ class BaseSegmentor(ABC):
         """Setup the appropriate device for model inference."""
         if device == 'auto':
             return 'cuda' if torch.cuda.is_available() else 'cpu'
+        device_norm = str(device).lower()
+        if device_norm.startswith('cuda') and not torch.cuda.is_available():
+            logger.warning("CUDA requested but not available; falling back to CPU.")
+            return 'cpu'
         return device
     
     @abstractmethod
@@ -148,7 +156,7 @@ class YOLOSegmentor(BaseSegmentor):
             self.model.to(self.device)
             self.model.eval()
             self.is_loaded = True
-            print(f"✅ YOLO model loaded on {self.device}")
+            logger.info("✅ YOLO model loaded on %s", self.device)
             
         except Exception as e:
             raise RuntimeError(f"Failed to load YOLO model: {e}")
@@ -180,8 +188,7 @@ class YOLOSegmentor(BaseSegmentor):
             self.load_model()
             
         # Get YOLO results
-        # NOTE: Our framework uses RGB images, but Ultralytics' numpy/OpenCV pathway
-        # typically assumes BGR. Convert here to keep call sites consistent.
+        # NOTE: Our framework uses RGB images, but Ultralytics' numpy/OpenCV pathway typically assumes BGR. 
         yolo_input = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
         # Ensure evaluation/inference context
@@ -206,7 +213,10 @@ class YOLOSegmentor(BaseSegmentor):
                 mask_binary = (mask_resized > 0.5).astype(np.uint8)
                 
                 # Assign class ID to segmentation map
-                segmentation_map[mask_binary == 1] = int(cls) + 1  # +1 to avoid background (0)
+                class_id = int(cls) + 1  # +1 to avoid background (0)
+                if class_id > 255:
+                    class_id = 255
+                segmentation_map[mask_binary == 1] = class_id
                 
                 # Store bounding box information
                 bounding_boxes.append({
@@ -257,6 +267,7 @@ class SegformerSegmentor(BaseSegmentor):
         model_path: str = "nvidia/segformer-b2-finetuned-cityscapes-1024-1024",
         device: str = 'auto',
         local_files_only: Optional[bool] = None,
+        return_confidence: bool = True,
     ):
         """
         Initialize Segformer segmentor.
@@ -264,10 +275,12 @@ class SegformerSegmentor(BaseSegmentor):
         Args:
             model_path: Hugging Face model identifier or local path
             device: Device to run the model on
+            return_confidence: Whether to compute per-pixel confidence map
         """
         super().__init__(model_path, device)
         self.processor = None
         self._local_files_only_override = local_files_only
+        self.return_confidence = return_confidence
         self.cityscapes_labels = [
             "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
             "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
@@ -353,7 +366,7 @@ class SegformerSegmentor(BaseSegmentor):
             self.model.to(self.device)
             self.model.eval()
             self.is_loaded = True
-            print(f"✅ Segformer model loaded on: {self.device}")
+            logger.info("✅ Segformer model loaded on: %s", self.device)
             
         except Exception as e:
             if self._local_files_only_override is None:
@@ -430,8 +443,10 @@ class SegformerSegmentor(BaseSegmentor):
         )
         
         # Get predictions and confidence
-        softmax_probs = torch.softmax(upsampled_logits, dim=1)
-        confidence_map = torch.max(softmax_probs, dim=1)[0].cpu().numpy()[0]
+        confidence_map = None
+        if self.return_confidence:
+            softmax_probs = torch.softmax(upsampled_logits, dim=1)
+            confidence_map = torch.max(softmax_probs, dim=1)[0].cpu().numpy()[0]
         segmentation_map = torch.argmax(upsampled_logits, dim=1).cpu().numpy()[0].astype(np.uint8)
         
         return SegmentationResult(
@@ -538,7 +553,10 @@ class Segmentor:
         """
         # Handle different input types
         if isinstance(image, str):
-            image = cv2.imread(image)
+            image_path = image
+            image = cv2.imread(image_path)
+            if image is None:
+                raise ValueError(f"Failed to read image from path: {image_path}")
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         elif isinstance(image, np.ndarray) and len(image.shape) == 3 and image.shape[2] == 3:
             # Assume it's already in RGB format
@@ -585,7 +603,7 @@ class Segmentor:
                 try:
                     base_cmap = plt.colormaps.get_cmap('tab20')
                     colors = [base_cmap(i) for i in range(num_classes)]
-                except:
+                except Exception:
                     # Fallback if tab20 is not available
                     colors = plt.cm.Set3(np.linspace(0, 1, num_classes))
             else:
@@ -628,4 +646,4 @@ class Segmentor:
         """
         self.model_type = model_type.lower()
         self.segmentor = self._create_segmentor(model_type, model_path, self.device)
-        print(f"Switched to {model_type} model")
+        logger.info("Switched to %s model", model_type)
