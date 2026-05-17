@@ -16,6 +16,7 @@ from queue import Queue, Empty
 from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
+import colorsys
 import os
 import sys
 import logging
@@ -161,7 +162,6 @@ class VideoProcessor:
             value = 180 + (i % 4) * 20       # Vary brightness
             
             # Convert HSV to RGB
-            import colorsys
             r, g, b = colorsys.hsv_to_rgb(hue/360, saturation/100, value/255)
             color_map[i] = [int(r*255), int(g*255), int(b*255)]
 
@@ -193,8 +193,6 @@ class VideoProcessor:
 
         Index 0 is treated as background (black). Remaining IDs get deterministic HSV colors.
         """
-        import colorsys
-
         mapping = np.zeros((256, 3), dtype=np.uint8)
         mapping[0] = [0, 0, 0]
         mapping[255] = [0, 0, 0]
