@@ -86,21 +86,24 @@ body {
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 2px solid var(--border-color);
-    padding: 20px;
+    padding: 18px 12px;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: bold;
     transition: all 0.3s ease;
-    min-height: 60px;
+    height: 56px;
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
-    min-width: 150px;
+    width: 100%;
     touch-action: manipulation;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
 }
 
 .input-btn:hover {
@@ -175,18 +178,24 @@ body {
 }
 
 .url-btn {
-    padding: 12px 20px;
+    padding: 10px 16px;
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
     transition: all 0.3s ease;
-    min-height: 48px;
-    min-width: 100px;
+    height: 44px;
+    min-width: 80px;
     touch-action: manipulation;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .confirm-btn {
@@ -242,8 +251,8 @@ body {
 .button-group {
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    margin-bottom: 15px;
+    gap: 8px;
+    margin-bottom: 8px;
     width: 100%;
 }
 
@@ -251,18 +260,23 @@ body {
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 2px solid var(--border-color);
-    padding: 15px 10px;
+    padding: 12px 8px;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
     transition: all 0.3s ease;
     width: 100%;
     text-align: center;
-    min-height: 50px;
+    height: 44px;
+    line-height: 20px;
     touch-action: manipulation;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
 }
 
 .menu-btn:hover {
@@ -279,28 +293,33 @@ body {
 }
 
 #changeSourceBtn {
-    margin-bottom: 15px;
+    margin-bottom: 8px;
 }
 
 .music-gen-btn {
     background: var(--bg-tertiary);
     color: var(--text-primary);
     border: 2px solid var(--accent-color);
-    padding: 20px;
+    padding: 12px 8px;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: bold;
-    margin: 15px 0;
+    margin: 8px 0;
     transition: all 0.3s ease;
     width: 100%;
+    text-align: center;
+    height: 48px;
+    line-height: 24px;
     box-shadow: 0 4px 8px var(--shadow-color);
-    min-height: 60px;
     touch-action: manipulation;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
     position: relative;
     overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    display: block;
 }
 
 .music-gen-btn::before {
@@ -610,9 +629,13 @@ body {
     }
     
     .menu-btn {
-        font-size: 10px;
-        padding: 8px 5px;
-        min-height: 40px;
+        font-size: 11px;
+        padding: 8px 6px;
+        height: 40px;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .button-group {
@@ -621,17 +644,25 @@ body {
     }
     
     .button-group .menu-btn {
-        font-size: 9px;
-        padding: 6px 3px;
-        min-height: 36px;
+        font-size: 10px;
+        padding: 6px 4px;
+        height: 36px;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .music-gen-btn {
         width: 100%;
-        font-size: 12px;
-        padding: 10px;
-        margin: 10px 0;
-        min-height: 44px;
+        font-size: 13px;
+        padding: 10px 8px;
+        margin: 8px 0;
+        height: 44px;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .status-section {
@@ -680,10 +711,13 @@ body {
     
     .url-btn {
         font-size: 12px;
-        padding: 10px 14px;
-        min-height: 44px;
-        min-width: 100px;
+        padding: 8px 12px;
+        height: 40px;
         width: 100%;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
 }
 
@@ -722,7 +756,11 @@ body {
     .menu-btn {
         font-size: 11px;
         padding: 8px 6px;
-        min-height: 40px;
+        height: 40px;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .button-group {
@@ -732,19 +770,27 @@ body {
     .button-group .menu-btn {
         font-size: 10px;
         padding: 6px 4px;
-        min-height: 36px;
+        height: 36px;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     #changeSourceBtn {
-        margin-bottom: 15px;
+        margin-bottom: 8px;
     }
     
     .music-gen-btn {
         width: 100%;
-        font-size: 12px;
-        padding: 10px;
+        font-size: 13px;
+        padding: 10px 8px;
         margin: 8px 0;
-        min-height: 40px;
+        height: 44px;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .status-section {
@@ -793,9 +839,12 @@ body {
     
     .url-btn {
         font-size: 13px;
-        padding: 10px 16px;
-        min-height: 44px;
-        min-width: 100px;
+        padding: 8px 14px;
+        height: 40px;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
 }
 
@@ -814,12 +863,22 @@ body {
     
     .menu-btn {
         font-size: 13px;
-        padding: 12px 8px;
+        padding: 10px 8px;
+        height: 44px;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .music-gen-btn {
         font-size: 15px;
-        padding: 18px;
+        padding: 10px 12px;
+        height: 48px;
+        line-height: 28px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .instructions {
@@ -843,6 +902,11 @@ body {
     
     .menu-btn {
         font-size: 13.5px;
+        height: 44px;
+        line-height: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .instructions {
@@ -868,14 +932,22 @@ body {
     
     .menu-btn {
         font-size: 15px;
-        padding: 18px 12px;
-        min-height: 55px;
+        padding: 12px 10px;
+        height: 52px;
+        line-height: 28px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .music-gen-btn {
-        font-size: 18px;
-        padding: 25px;
-        min-height: 70px;
+        font-size: 17px;
+        padding: 14px 12px;
+        height: 56px;
+        line-height: 28px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     .status-section {
