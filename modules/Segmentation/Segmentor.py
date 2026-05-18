@@ -357,11 +357,17 @@ class SegformerSegmentor(BaseSegmentor):
             segformer_config.id2label = {i: label for i, label in enumerate(self.cityscapes_labels)}
             segformer_config.label2id = {label: i for i, label in enumerate(self.cityscapes_labels)}
 
-            # Prefer safetensors (PyTorch). Note: tf_model.h5 is TensorFlow weights and is not used here.
+            # Prefer safetensors (PyTorch) when available; fall back to pytorch_model.bin if needed.
+            use_safetensors = True
+            if is_local:
+                safetensors_path = os.path.join(resolved_id, "model.safetensors")
+                if not os.path.exists(safetensors_path):
+                    use_safetensors = False
+
             self.model = SegformerForSemanticSegmentation.from_pretrained(
                 resolved_id,
                 config=segformer_config,
-                use_safetensors=True,
+                use_safetensors=use_safetensors,
                 local_files_only=local_files_only,
             )
 
@@ -517,6 +523,7 @@ class Segmentor:
             if model_path is None:
                 pretrained_root = os.path.join("modules", "Segmentation", "Pre-trained Models")
                 common = [
+                    os.path.join(pretrained_root, "segformer-b2-finetuned-cityscapes-1024-1024-b2"),
                     os.path.join(pretrained_root, "segformer-b2-finetuned-cityscapes-1024-1024"),
                     os.path.join(pretrained_root, "segformer-b0-finetuned-cityscapes-512-1024"),
                 ]
