@@ -20,6 +20,7 @@ import colorsys
 import os
 import sys
 import logging
+import zlib
 
 # Add the modules directory to the path to import Segmentor
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -54,6 +55,7 @@ class VideoProcessor:
         # Cache for last encoded overlay to avoid re-encoding on every websocket tick
         self._last_overlay_b64 = None
         self._last_overlay_counter = -1
+        self._last_overlay_hash = None
 
         # Performance optimization flags
         self.debug_mode = False
@@ -188,6 +190,42 @@ class VideoProcessor:
         for class_id, color in self.color_map.items():
             self.color_mapping_array[class_id] = color
 
+    def _validate_segmentation_map(self, seg_map):
+        """Normalize and validate segmentation map into a 2D uint8 index array.
+
+        - Ensures 2D shape
+        - Clips values to [0,255]
+        - Converts floats to nearest integers
+        """
+        arr = np.asarray(seg_map)
+
+        # Reduce channel dim if present (e.g., HxWx1)
+        if arr.ndim == 3:
+            if arr.shape[2] == 1:
+                arr = arr.squeeze(2)
+            else:
+                if self.debug_mode:
+                    logger.warning("⚠️ segmentation_map has %s channels; using first channel", arr.shape[2])
+                arr = arr[..., 0]
+
+        # Ensure numeric integer type
+        if np.issubdtype(arr.dtype, np.floating):
+            arr = np.rint(arr).astype(np.int32)
+        else:
+            arr = arr.astype(np.int32)
+
+        if arr.size == 0:
+            return np.zeros((0, 0), dtype=np.uint8)
+
+        minv = int(arr.min())
+        maxv = int(arr.max())
+        if (minv < 0) or (maxv > 255):
+            if self.debug_mode:
+                logger.warning("⚠️ segmentation_map values out of range: min=%s max=%s — clamping to [0,255]", minv, maxv)
+
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+        return arr
+
     def _create_generic_color_mapping_array(self):
         """Create a generic per-class color mapping array for non-Cityscapes models (e.g., YOLO/COCO).
 
@@ -246,18 +284,15 @@ class VideoProcessor:
 
                         result = self.segmentor(seg_frame)
 
-                        # Derive a small, UI-friendly list of detected class names.
+                        # Derive a small, UI-friendly list of detected class names from bounding boxes only.
+                        # For segmentation-based class extraction we wait until segmentation_map is normalized below.
                         detected_classes = []
                         try:
                             if getattr(result, 'bounding_boxes', None):
                                 detected_classes = sorted({b.get('class_name') for b in result.bounding_boxes if b.get('class_name')})
-                            elif getattr(result, 'class_labels', None) is not None:
-                                unique_ids = np.unique(result.segmentation_map)
-                                labels = result.class_labels or []
-                                detected_classes = [labels[int(i)] for i in unique_ids if 0 <= int(i) < len(labels)]
                         except Exception as cls_err:
                             if self.debug_mode:
-                                logger.debug("Failed to derive detected classes: %s", cls_err)
+                                logger.debug("Failed to derive detected classes from bounding boxes: %s", cls_err)
 
                         # Resize outputs back to original frame size for consistent downstream processing.
                         if seg_frame is not frame:
@@ -273,18 +308,48 @@ class VideoProcessor:
                                         (orig_w, orig_h),
                                         interpolation=cv2.INTER_LINEAR,
                                     )
+                                # Validate and normalize segmentation map to safe uint8 indices
+                                try:
+                                    result.segmentation_map = self._validate_segmentation_map(result.segmentation_map)
+                                except Exception as _v:
+                                    if self.debug_mode:
+                                        logger.warning("⚠️ Failed to validate segmentation_map: %s", _v)
+                                    result.segmentation_map = np.clip(np.asarray(result.segmentation_map, dtype=np.int32), 0, 255).astype(np.uint8)
                             except Exception as resize_err:
                                 if self.debug_mode:
                                     logger.warning("❌ Failed to resize segmentation outputs: %s", resize_err)
 
+                        # After resizing/validation, derive detected classes from segmentation map if available
+                        try:
+                            if getattr(result, 'class_labels', None) is not None and getattr(result, 'segmentation_map', None) is not None:
+                                labels = result.class_labels or []
+                                unique_ids = np.unique(result.segmentation_map)
+                                detected_from_seg = [labels[int(i)] for i in unique_ids if 0 <= int(i) < len(labels)]
+                                # Merge with bounding box-derived classes and keep unique
+                                detected_classes = sorted(set(detected_classes) | set(detected_from_seg))
+                        except Exception as cls_err:
+                            if self.debug_mode:
+                                logger.debug("Failed to derive detected classes from segmentation: %s", cls_err)
+
                         # Create segmentation visualization (optimized)
                         segmentation_overlay = self._create_segmentation_overlay_optimized(frame, result)
-                        # Encode overlay once per segmentation result and cache
+                        # Compute a small hash for the overlay to avoid re-encoding identical images
                         try:
-                            _, buffer = cv2.imencode('.jpg', segmentation_overlay, self.encode_params)
-                            overlay_b64 = base64.b64encode(buffer).decode('utf-8')
-                            self._last_overlay_b64 = f"data:image/jpeg;base64,{overlay_b64}"
-                            self._last_overlay_counter = self.frame_counter
+                            overlay_hash = zlib.crc32(segmentation_overlay.tobytes())
+                        except Exception:
+                            overlay_hash = None
+
+                        try:
+                            if overlay_hash is None or overlay_hash != self._last_overlay_hash or self._last_overlay_b64 is None:
+                                _, buffer = cv2.imencode('.jpg', segmentation_overlay, self.encode_params)
+                                overlay_b64 = base64.b64encode(buffer).decode('utf-8')
+                                self._last_overlay_b64 = f"data:image/jpeg;base64,{overlay_b64}"
+                                self._last_overlay_counter = self.frame_counter
+                                self._last_overlay_hash = overlay_hash
+                            else:
+                                # Reuse cached overlay
+                                if self.debug_mode:
+                                    logger.debug("♻️ Reusing cached overlay (frame %s)", self.frame_counter)
                         except Exception as enc_err:
                             if self.debug_mode:
                                 logger.warning("❌ JPEG encode failed: %s", enc_err)
@@ -429,7 +494,19 @@ class VideoProcessor:
     def _create_segmentation_overlay_optimized(self, frame, result):
         """Create an optimized visualization overlay for the segmentation result"""
         try:
-            segmentation_map = result.segmentation_map
+            segmentation_map = getattr(result, 'segmentation_map', None)
+            if segmentation_map is None:
+                if self.debug_mode:
+                    logger.debug("⚠️ No segmentation_map present in result; returning original frame")
+                return frame
+
+            # Validate and normalize segmentation map
+            try:
+                segmentation_map = self._validate_segmentation_map(segmentation_map)
+            except Exception as _v:
+                if self.debug_mode:
+                    logger.warning("⚠️ segmentation_map validation failed in overlay: %s", _v)
+                segmentation_map = np.clip(np.asarray(segmentation_map, dtype=np.int32), 0, 255).astype(np.uint8)
             
             # Occasional debug info (not every frame)
             if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
