@@ -16,7 +16,7 @@ import os
 import logging
 # Model-specific imports
 from ultralytics import YOLO
-from transformers import SegformerImageProcessor, SegformerForSemanticSegmentation
+from transformers import SegformerConfig, SegformerImageProcessor, SegformerForSemanticSegmentation
 
 
 logger = logging.getLogger("segmentation.segmentor")
@@ -284,9 +284,7 @@ class SegformerSegmentor(BaseSegmentor):
         self.cityscapes_labels = [
             "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
             "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
-            "truck", "bus", "train", "motorcycle", "bicycle", "parking", "rail track",
-            "on rails", "caravan", "trailer", "guard rail", "bridge", "tunnel",
-            "pole group", "ground", "dynamic", "static"
+            "truck", "bus", "train", "motorcycle", "bicycle"
         ]
 
     def _resolve_model_identifier(self, *, local_files_only: bool) -> Tuple[str, bool]:
@@ -353,9 +351,16 @@ class SegformerSegmentor(BaseSegmentor):
                 # but not preprocessor_config.json. In that case, fall back to defaults.
                 self.processor = SegformerImageProcessor()
 
+            segformer_config = SegformerConfig.from_pretrained(resolved_id, local_files_only=local_files_only)
+            expected_num_labels = len(self.cityscapes_labels)
+            segformer_config.num_labels = expected_num_labels
+            segformer_config.id2label = {i: label for i, label in enumerate(self.cityscapes_labels)}
+            segformer_config.label2id = {label: i for i, label in enumerate(self.cityscapes_labels)}
+
             # Prefer safetensors (PyTorch). Note: tf_model.h5 is TensorFlow weights and is not used here.
             self.model = SegformerForSemanticSegmentation.from_pretrained(
                 resolved_id,
+                config=segformer_config,
                 use_safetensors=True,
                 local_files_only=local_files_only,
             )
