@@ -6,4 +6,4 @@
 
 ## 🎯 Overview
 
-RagbaarNet is a research project developing an AI system that generates music based on driver perception and in-vehicle context. The platform uses real-time video processing and semantic segmentation to understand driving scenarios.
+RagbaarNet is a research project developing an AI system that generates music based on driver visual perception. The platform uses real-time video processing and semantic segmentation to understand driving scenarios.
