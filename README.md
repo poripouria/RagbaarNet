@@ -1,6 +1,6 @@
 # RagbaarNet - AI Music Generation Platform
 
-**Master's Thesis Project**: Real-time Music Generation from Driver Perception and In-Vehicle Context in Smart Vehicles
+**Master's Thesis Project**: Real-Time Music Generation Based on Driver Visual Perception in Smart Vehicles
 
 > ⚠️ **Project Status**: Work in Progress - Core components under development
 
