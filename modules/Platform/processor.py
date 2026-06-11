@@ -1,9 +1,9 @@
 """
-Modular Processing Framework for Receiving Data and Performing Segmentation
+Modular Processing Framework for Receiving Data and Performing Segmentation and Generating Music
 =================================================
 
 This module receives data from UI.html and processes it using the Segmentor class.
-Then sends the processed data back to UI.html.
+Then sends the processed data back to UI.html for Generating Music.
 """
 
 import cv2
