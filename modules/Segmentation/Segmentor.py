@@ -255,7 +255,9 @@ class YOLOSegmentor(BaseSegmentor):
             metadata = {
                 'model_type': 'YOLO',
                 'model_path': self.model_path,
-                'device': self.device
+                'device': self.device,
+                'num_detected': len(masks),
+                'num_classes': len(class_labels)
             }
         )
     
@@ -294,14 +296,13 @@ class SegformerSegmentor(BaseSegmentor):
         self.processor = None
         self._local_files_only_override = local_files_only
         self.return_confidence = return_confidence
-        self.cityscapes_labels = [
-            "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
-            "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
-            "truck", "bus", "train", "motorcycle", "bicycle"
-        ]
+        self.cityscapes_labels = None
+        # ["road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
+        #  "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
+        #  "truck", "bus", "train", "motorcycle", "bicycle"]
 
     def _resolve_model_identifier(self, *, local_files_only: bool) -> Tuple[str, bool]:
-        """Resolve the model identifier/path to load.
+        """Resolve the model identifier/path with offline/online support to load.
 
         In offline mode we try to find a local directory (env override or common project paths).
         In online mode we avoid implicitly overriding the HF identifier (unless a local path was
@@ -316,26 +317,18 @@ class SegformerSegmentor(BaseSegmentor):
 
         if not local_files_only:
             return self.model_path, False
-
-        env_override = (
-            os.environ.get("RAGBAARNET_SEGFORMER_PATH")
-            or os.environ.get("SEGFORMER_MODEL_PATH")
-        )
-
+        
+        # Offline mode - try common locations
         candidates: List[str] = []
-        if env_override:
-            candidates.append(env_override)
+        env_path = os.environ.get("RAGBAARNET_SEGFORMER_PATH") or os.environ.get("SEGFORMER_MODEL_PATH")
+        if env_path:
+            candidates.append(env_path)
 
         if self.model_path:
-            candidates.append(os.path.join("modules", "Segmentation", "Pre-trained Models", self.model_path))
-            candidates.append(
-                os.path.join(
-                    "modules",
-                    "Segmentation",
-                    "Pre-trained Models",
-                    self.model_path.replace("/", "--"),
-                )
-            )
+            candidates.extend([
+                os.path.join("modules", "Segmentation", "Pre-trained Models", self.model_path),
+                os.path.join("modules", "Segmentation", "Pre-trained Models", self.model_path.replace("/", "--")),
+            ])
 
         for candidate in candidates:
             if candidate and os.path.exists(candidate):
@@ -345,54 +338,49 @@ class SegformerSegmentor(BaseSegmentor):
         
     def load_model(self) -> None:
         """Load the Segformer model with safety considerations."""
-        try:
-            if self._local_files_only_override is None:
-                allow_net = os.environ.get("RAGBAARNET_ALLOW_NET", "").strip().lower() in {"1", "true", "yes"}
-                local_files_only = not allow_net
-            else:
-                local_files_only = self._local_files_only_override
 
-            resolved_id, is_local = self._resolve_model_identifier(local_files_only=local_files_only)
+        try:
+            allow_net = os.environ.get("RAGBAARNET_ALLOW_NET", "").strip().lower() in {"1", "true", "yes"}
+            local_files_only = self._local_files_only_override if self._local_files_only_override is not None else not allow_net
+
+            resolved_id, is_local = self._resolve_model_identifier(local_files_only)
 
             # Load processor + model from the same place (local dir or HF cache).
             try:
                 self.processor = SegformerImageProcessor.from_pretrained(
-                    resolved_id,
-                    local_files_only=local_files_only,
+                    resolved_id, local_files_only=local_files_only
                 )
             except Exception:
                 # Some local snapshots may only include weights/config (e.g., model.safetensors + config.json)
                 # but not preprocessor_config.json. In that case, fall back to defaults.
-                self.processor = SegformerImageProcessor()
+                self.processor = SegformerImageProcessor()  # fallback
 
-            segformer_config = SegformerConfig.from_pretrained(resolved_id, local_files_only=local_files_only)
-            expected_num_labels = len(self.cityscapes_labels)
-            segformer_config.num_labels = expected_num_labels
-            segformer_config.id2label = {i: label for i, label in enumerate(self.cityscapes_labels)}
-            segformer_config.label2id = {label: i for i, label in enumerate(self.cityscapes_labels)}
+            # Load config and force correct labels
+            config = SegformerConfig.from_pretrained(resolved_id, local_files_only=local_files_only)
+            self.cityscapes_labels = [config.id2label[i] for i in range(config.num_labels)]
 
-            # Prefer safetensors (PyTorch) when available; fall back to pytorch_model.bin if needed.
+            # Load model with safety checks and support for both safetensors and pytorch_model.bin formats.
             use_safetensors = True
-            if is_local:
-                safetensors_path = os.path.join(resolved_id, "model.safetensors")
-                if not os.path.exists(safetensors_path):
-                    use_safetensors = False
+            if is_local and not os.path.exists(os.path.join(resolved_id, "model.safetensors")):
+                use_safetensors = False
 
             self.model = SegformerForSemanticSegmentation.from_pretrained(
                 resolved_id,
-                config=segformer_config,
+                config=config,
                 use_safetensors=use_safetensors,
                 local_files_only=local_files_only,
+                ignore_mismatched_sizes=True
             )
 
             if is_local:
                 self.model_path = resolved_id
-            
+
             self.model.to(self.device)
             self.model.eval()
             self.is_loaded = True
-            logger.info("✅ Segformer model loaded on: %s", self.device)
-            
+
+            logger.info(f"✅ Segformer ({len(self.cityscapes_labels)} classes) loaded on {self.device}")
+
         except Exception as e:
             if self._local_files_only_override is None:
                 allow_net = os.environ.get("RAGBAARNET_ALLOW_NET", "").strip().lower() in {"1", "true", "yes"}
@@ -404,16 +392,10 @@ class SegformerSegmentor(BaseSegmentor):
 
             if local_files_only and not is_local:
                 raise RuntimeError(
-                    "Failed to load Segformer model in offline mode. "
-                    "The model files were not found in your local Hugging Face cache, "
-                    "and no local directory was found. "
-                    f"Tried identifier: {resolved_id}. "
-                    "\n\nOffline options:"
-                    "\n- Set RAGBAARNET_SEGFORMER_PATH (or SEGFORMER_MODEL_PATH) to a local model folder."
-                    "\n- Ensure the folder contains config.json, preprocessor_config.json, and model.safetensors (PyTorch)."
-                    "\n\nNote: tf_model.h5 is TensorFlow weights and won't be used by the PyTorch SegFormer loader."
+                    f"Failed to load Segformer in offline mode.\n"
+                    f"Model not found at: {resolved_id}\n"
+                    "Set RAGBAARNET_SEGFORMER_PATH or allow network (RAGBAARNET_ALLOW_NET=1)"
                 ) from e
-
             raise RuntimeError(f"Failed to load Segformer model: {e}") from e
     
     def preprocess_image(self, image: np.ndarray) -> Dict[str, torch.Tensor]:
@@ -426,8 +408,9 @@ class SegformerSegmentor(BaseSegmentor):
         Returns:
             Preprocessed inputs ready for Segformer
         """
-        inputs = self.processor(images=image, return_tensors="pt")
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        inputs = self.processor(images=image, return_tensors="pt", do_rescale=True, do_normalize=True)
+        inputs = {k: v.pin_memory().to(self.device, non_blocking=True) for k, v in inputs.items()}
         return inputs
     
     def predict(self, image: np.ndarray) -> SegmentationResult:
@@ -444,51 +427,57 @@ class SegformerSegmentor(BaseSegmentor):
             self.load_model()
             
         # Preprocess the image
+        h, w = image.shape[:2]
         inputs = self.preprocess_image(image)
         
         # Perform inference (optimized: inference_mode + autocast on CUDA)
-        use_cuda = self.device.startswith('cuda') and torch.cuda.is_available()
-        if use_cuda:
-            with torch.inference_mode():
-                with torch.cuda.amp.autocast(True):
+        with torch.inference_mode():
+            if self.device.startswith('cuda') and torch.cuda.is_available():
+                with torch.cuda.amp.autocast('cuda'):
                     outputs = self.model(**inputs)
-        else:
-            with torch.inference_mode():
-                outputs = self.model(**inputs)
+            else:
+                    outputs = self.model(**inputs)
         
         logits = outputs.logits  # [1, num_classes, height, width]
         
         # Upsample to original image size
-        original_height, original_width = image.shape[:2]
         upsampled_logits = torch.nn.functional.interpolate(
-            logits,
-            size=(original_height, original_width),
-            mode='bilinear',
-            align_corners=False
+            logits, size=(h, w), mode='bilinear', align_corners=False
         )
         
-        # Get predictions and confidence
+        # Final predictions
+        segmentation_map = torch.argmax(upsampled_logits, dim=1).cpu().numpy()[0].astype(np.uint16)
         confidence_map = None
         if self.return_confidence:
             softmax_probs = torch.softmax(upsampled_logits, dim=1)
             confidence_map = torch.max(softmax_probs, dim=1)[0].cpu().numpy()[0]
-        segmentation_map = torch.argmax(upsampled_logits, dim=1).cpu().numpy()[0].astype(np.uint8)
+            # probs = torch.softmax(upsampled_logits, dim=1)
+            # confidence_map = (probs.max(dim=1).values.cpu().numpy()[0])
+
+        unique, counts = np.unique(segmentation_map, return_counts=True)
+        class_areas = dict(zip(unique.tolist(), counts.tolist()))
         
         return SegmentationResult(
             segmentation_map=segmentation_map,
             confidence_map=confidence_map,
             class_labels=self.cityscapes_labels,
-            bounding_boxes=None,  # Segformer doesn't provide bounding boxes
-            masks=None,  # Dense segmentation, no individual masks
+            bounding_boxes=None,    # Segformer doesn't provide bounding boxes
+            masks=None,             # Dense segmentation, no individual masks
             metadata={
                 'model_type': 'Segformer',
                 'model_path': self.model_path,
-                'device': self.device
+                'device': self.device,
+                'num_detected': int((segmentation_map > 0).sum()),  # count of pixels assigned to any class
+                'num_classes': len(self.cityscapes_labels),
+                'class_areas': class_areas
             }
         )
     
     def get_class_labels(self) -> List[str]:
         """Get Segformer class labels."""
+
+        if not self.cityscapes_labels:
+            self.load_model()
         return self.cityscapes_labels
 
 
@@ -521,7 +510,7 @@ class Segmentor:
 
         if model_type_norm == 'yolo':
             if model_path is None:
-                model_path = "yolov8m.pt"
+                model_path = "yolo11s.pt"
             return YOLOSegmentor(model_path, device)
         elif model_type_norm in {'segformer', 'segformer-online', 'segformer-hf'}:
             # Explicit online variant: prefer the HF Hub (unless a local path is passed explicitly).
@@ -674,7 +663,7 @@ class Segmentor:
             model_type: New model type ('yolo', 'segformer')
             model_path: Path to new model
         """
-        
+
         self.model_type = model_type.lower()
         self.segmentor = self._create_segmentor(model_type, model_path, self.device)
         logger.info("Switched to %s model", model_type)
