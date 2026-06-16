@@ -301,7 +301,7 @@ class SegformerSegmentor(BaseSegmentor):
         #  "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
         #  "truck", "bus", "train", "motorcycle", "bicycle"]
 
-    def _resolve_model_identifier(self, *, local_files_only: bool) -> Tuple[str, bool]:
+    def _resolve_model_identifier(self, local_files_only: bool) -> Tuple[str, bool]:
         """Resolve the model identifier/path with offline/online support to load.
 
         In offline mode we try to find a local directory (env override or common project paths).
@@ -433,7 +433,7 @@ class SegformerSegmentor(BaseSegmentor):
         # Perform inference (optimized: inference_mode + autocast on CUDA)
         with torch.inference_mode():
             if self.device.startswith('cuda') and torch.cuda.is_available():
-                with torch.cuda.amp.autocast('cuda'):
+                with torch.cuda.amp.autocast(enabled=True):
                     outputs = self.model(**inputs)
             else:
                     outputs = self.model(**inputs)
@@ -515,11 +515,15 @@ class Segmentor:
         elif model_type_norm == 'segformer':
             if model_path is None:
                 model_path = "nvidia/segformer-b2-finetuned-cityscapes-1024-1024"
-            return SegformerSegmentor(model_path, device)
+
+            is_local_path = model_path and os.path.exists(model_path)
+            
+            return SegformerSegmentor(model_path=model_path, device=device, local_files_only=is_local_path)
+
         else:
             raise ValueError(f"Unsupported model type: {model_type}.\n"
                              f"Supported types: 'yolo', 'segformer'")
-    
+
     def __call__(self, image: Union[np.ndarray, str]) -> SegmentationResult:
         """
         Perform segmentation on input image.
@@ -562,6 +566,7 @@ class Segmentor:
             show_confidence: Whether to show confidence map
             figsize: Figure size for matplotlib
         """
+
         # Lazy import heavy plotting libs to avoid startup/runtime overhead when not used
         import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
