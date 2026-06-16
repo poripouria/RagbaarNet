@@ -24,3 +24,7 @@ modules/Segmentation/Pre-trained Models/*
 # VS Code
 .vscode/*
 AGENTS.md
+
+# Hand-crafted music dataset
+single_file_dataset
+
