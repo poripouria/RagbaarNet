@@ -26,7 +26,6 @@ from Segmentation.Segmentor import Segmentor
 from Music_Generator.Musician import Musician
 from utils.logging_setup import setup_logging, set_level
 
-# Initialize project-wide logging
 logger = setup_logging("INFO", name="platform.processor")
 
 class VideoProcessor:

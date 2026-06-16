@@ -13,13 +13,15 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Union, Optional, Any
 from dataclasses import dataclass
 import os
-import logging
-# Model-specific imports
+import sys
+
 from ultralytics import YOLO
 from transformers import SegformerConfig, SegformerImageProcessor, SegformerForSemanticSegmentation
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from utils.logging_setup import setup_logging, set_level
 
-logger = logging.getLogger("segmentation.segmentor")
+logger = setup_logging("INFO", name="segmentation.segmentor")
 
 
 @dataclass
