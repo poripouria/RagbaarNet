@@ -9,7 +9,7 @@ This module contains functions to preprocess the Essen music dataset for trainin
 import json
 import music21 as m21
 import numpy as np
-# from tensorflow import keras
+import tensorflow as tf
 import os
 import sys
 
@@ -50,11 +50,11 @@ def load_songs_in_kern(dataset_path: str) -> list:
 
     songs = []
 
-    # go through all the files in dataset and load them with music21
+    # Go through all the files in dataset and load them with music21
     for path, subdirs, files in os.walk(dataset_path):
         for file in files:
 
-            # consider only kern files
+            # Consider only kern files
             if file[-3:] == "krn":
                 song = m21.converter.parse(os.path.join(path, file))
                 songs.append(song)
@@ -87,21 +87,21 @@ def transpose(song: m21.stream.Stream) -> m21.stream.Stream:
         transposed_song: Transposed version of the input piece
     """
 
-    # get key from the song
+    # Get key from the song
     parts = song.getElementsByClass(m21.stream.Part)
     key = parts[0].getElementsByClass(m21.stream.Measure)[0][4]
 
-    # estimate key using music21
+    # Estimate key using music21
     if not isinstance(key, m21.key.Key):
         key = song.analyze("key")
 
-    # get interval for transposition
+    # Get interval for transposition
     if key.mode == "major":
         interval = m21.interval.Interval(key.tonic, m21.pitch.Pitch("C"))
     elif key.mode == "minor":
         interval = m21.interval.Interval(key.tonic, m21.pitch.Pitch("A"))
 
-    # transpose song by calculated interval
+    # Transpose song by calculated interval
     transposed_song = song.transpose(interval)
     return transposed_song
 
@@ -123,25 +123,25 @@ def encode_song(song: m21.stream.Stream, time_step: float=0.25) -> str:
 
     for event in song.flatten().notesAndRests:
 
-        # handle notes
+        # Handle notes
         if isinstance(event, m21.note.Note):
             symbol = event.pitch.midi
-        # handle rests
+        # Handle rests
         elif isinstance(event, m21.note.Rest):
             symbol = "r"
 
-        # convert the note/rest into time series notation
+        # Convert the note/rest into time series notation
         steps = int(event.duration.quarterLength / time_step)
         for step in range(steps):
 
-            # if it's the first time we see a note/rest, let's encode it.
+            # If it's the first time we see a note/rest, let's encode it.
             # Otherwise, it means we're carrying the same symbol in a new time step
             if step == 0:
                 encoded_song.append(symbol)
             else:
                 encoded_song.append("_")
 
-    # cast encoded song to str
+    # Cast encoded song to str
     encoded_song = " ".join(map(str, encoded_song))
 
     return encoded_song
@@ -212,24 +212,106 @@ def create_single_file_dataset(dataset_path: str, file_dataset_path: str, sequen
     new_song_delimiter = "/ " * sequence_length
     songs = ""
 
-    # load encoded songs and add delimiters
+    # Load encoded songs and add delimiters
     for path, _, files in os.walk(dataset_path):
         for file in files:
             file_path = os.path.join(path, file)
             song = load(file_path)
             songs = songs + song + " " + new_song_delimiter
 
-    # remove empty space from last character of string
+    # Remove empty space from last character of string
     songs = songs[:-1]
 
-    # save string that contains all the dataset
+    # Save string that contains all the dataset
     with open(file_dataset_path, "w") as fp:
         fp.write(songs)
 
     return songs
 
+def create_mapping(songs: str, mapping_path: str):
+    """Creates a json file that maps the symbols in the song dataset onto integers
+
+    Args:
+        songs (str): String with all songs
+        mapping_path (str): Path where to save mapping
+    
+    Returns:
+        None
+    """
+    mappings = {}
+
+    # Identify the vocabulary
+    songs = songs.split()
+    vocabulary = list(set(songs))
+
+    # Create mappings
+    for i, symbol in enumerate(vocabulary):
+        mappings[symbol] = i
+
+    # Save vocabulary to a json file
+    with open(mapping_path, "w") as fp:
+        json.dump(mappings, fp, indent=4)
+
+def map_songs_to_int(songs: str) -> list:
+    """Maps the songs from string format to int format using the mapping created by create_mapping.
+
+    Args:
+        songs (str): String with all songs
+    Returns:
+        int_songs (list): List of integers representing the songs
+    """
+
+    int_songs = []
+
+    # Load mappings
+    with open(MAPPING_PATH, "r") as fp:
+        mappings = json.load(fp)
+
+    # Transform songs string to list
+    songs = songs.split()
+
+    # Map songs to int
+    for symbol in songs:
+        int_songs.append(mappings[symbol])
+
+    return int_songs
+
+def generate_training_sequences(sequence_length):
+    """Create input and output data samples for training. Each sample is a sequence.
+
+    Args:
+        sequence_length (int): Length of each sequence. With a quantisation at 16th notes, 64 notes equates to 4 bars
+    Returns:
+        inputs (ndarray): Training inputs
+        targets (ndarray): Training targets
+    """
+
+    # Load songs and map them to int
+    songs = load(SINGLE_FILE_DATASET_PATH)
+    int_songs = map_songs_to_int(songs)
+
+    inputs = []
+    targets = []
+
+    # Generate the training sequences
+    num_sequences = len(int_songs) - sequence_length
+    for i in range(num_sequences):
+        inputs.append(int_songs[i:i+sequence_length])
+        targets.append(int_songs[i+sequence_length])
+
+    # One-hot encode the sequences
+    vocabulary_size = len(set(int_songs))
+    # Inputs size: (# of sequences, sequence length, vocabulary size)
+    inputs = tf.keras.utils.to_categorical(inputs, num_classes=vocabulary_size)
+    targets = np.array(targets)
+
+    print(f"There are {len(inputs)} sequences.")
+
+    return inputs, targets
+
 
 if __name__ == "__main__":
 
-    # preprocess(KERN_DATASET_PATH)
-    create_single_file_dataset(SAVE_DIR, SINGLE_FILE_DATASET_PATH, SEQUENCE_LENGTH)
+    preprocess(KERN_DATASET_PATH)
+    songs = create_single_file_dataset(SAVE_DIR, SINGLE_FILE_DATASET_PATH, SEQUENCE_LENGTH)
+    create_mapping(songs, MAPPING_PATH)
