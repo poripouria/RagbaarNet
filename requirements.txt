@@ -15,6 +15,7 @@ torch>=2.0.1                    # PyTorch deep learning framework
 torchvision>=0.15.2             # PyTorch computer vision utilities
 ultralytics>=8.0.20             # YOLO models for object detection/segmentation
 transformers>=4.35.2            # Hugging Face transformers (SegFormer models)
+tensorflow>=2.15.0              # TensorFlow for deep learning tasks
 
 # Audio Processing & Music Generation
 # Note: Web Audio API is used on frontend for real-time audio synthesis
