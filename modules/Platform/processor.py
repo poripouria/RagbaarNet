@@ -21,7 +21,6 @@ import os
 import sys
 import zlib
 
-# Add the modules directory to the path to import Segmentor
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from Segmentation.Segmentor import Segmentor
 from Music_Generator.Musician import Musician
