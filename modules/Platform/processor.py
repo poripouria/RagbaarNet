@@ -17,9 +17,9 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import colorsys
+import zlib
 import os
 import sys
-import zlib
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from Segmentation.Segmentor import Segmentor
