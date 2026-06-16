@@ -35,6 +35,7 @@ class SegmentationResult:
         masks: Optional individual object masks
         metadata: Additional model-specific information
     """
+
     segmentation_map: np.ndarray
     confidence_map: Optional[np.ndarray] = None
     class_labels: List[str] = None
@@ -59,6 +60,7 @@ class BaseSegmentor(ABC):
             model_path: Path to the model file or model identifier
             device: Device to run the model on ('auto', 'cpu', 'cuda')
         """
+
         self.model_path = model_path
         self.device = self._setup_device(device)
         self.model = None
@@ -66,6 +68,7 @@ class BaseSegmentor(ABC):
         
     def _setup_device(self, device: str) -> str:
         """Setup the appropriate device for model inference."""
+
         if device == 'auto':
             return 'cuda' if torch.cuda.is_available() else 'cpu'
         device_norm = str(device).lower()
@@ -120,6 +123,7 @@ class BaseSegmentor(ABC):
         Returns:
             SegmentationResult containing all segmentation information
         """
+
         if not self.is_loaded:
             self.load_model()
         return self.predict(image)
@@ -133,7 +137,7 @@ class YOLOSegmentor(BaseSegmentor):
     capabilities including bounding boxes and individual object masks.
     """
     
-    def __init__(self, model_path: str = "yolov8s-seg.pt", device: str = 'auto'):
+    def __init__(self, model_path: str = "yolov11s-seg.pt", device: str = 'auto'):
         """
         Initialize YOLO segmentor.
         
@@ -141,10 +145,12 @@ class YOLOSegmentor(BaseSegmentor):
             model_path: Path to YOLO model file
             device: Device to run the model on
         """
+
         super().__init__(model_path, device)
         
     def load_model(self) -> None:
         """Load the YOLO model."""
+
         try:
             # Check if model path exists in Pre-trained Models directory
             if not os.path.exists(self.model_path):
@@ -152,7 +158,7 @@ class YOLOSegmentor(BaseSegmentor):
                 if os.path.exists(pretrained_path):
                     self.model_path = pretrained_path
             
-            self.model = YOLO(self.model_path)
+            self.model = YOLO(self.model_path, task='segment')
             self.model.to(self.device)
             self.model.eval()
             self.is_loaded = True
@@ -184,63 +190,69 @@ class YOLOSegmentor(BaseSegmentor):
         Returns:
             SegmentationResult with instance segmentation information
         """
+
         if not self.is_loaded:
             self.load_model()
-            
-        # Get YOLO results
-        # NOTE: Our framework uses RGB images, but Ultralytics' numpy/OpenCV pathway typically assumes BGR. 
+
+        h, w = image.shape[:2]
+
+        # YOLO Ultralytics expects BGR when passing numpy array directly
         yolo_input = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
         # Ensure evaluation/inference context
         with torch.inference_mode():
-            results = self.model(yolo_input)[0]
+            results = self.model.predict(
+                source = yolo_input,
+                device = self.device,
+                half = (self.device.startswith("cuda") and torch.cuda.is_available()),
+                verbose = False
+            )[0]
         
-        # Create segmentation map
-        segmentation_map = np.zeros(image.shape[:2], dtype=np.uint8)
+        # Initialize maps and lists for results
+        segmentation_map = np.zeros((h, w), dtype=np.uint16)   # safer for >255 classes
+        confidence_map   = np.zeros((h, w), dtype=np.float32)
         bounding_boxes = []
         masks = []
-        confidence_scores = []
-        
-        if results.masks is not None:
-            for i, (mask, box, conf, cls) in enumerate(zip(
-                results.masks.data.cpu().numpy(),
-                results.boxes.xyxy.cpu().numpy(),
-                results.boxes.conf.cpu().numpy(),
-                results.boxes.cls.cpu().numpy()
-            )):
-                # Resize mask to original image size
-                mask_resized = cv2.resize(mask, (image.shape[1], image.shape[0]))
+
+        if results.masks is not None and len(results.masks) > 0:
+            # Convert tensors to numpy once
+            masks_data = results.masks.data.cpu().numpy()      # (N, H, W) normalized
+            boxes = results.boxes.xyxy.cpu().numpy()
+            confs = results.boxes.conf.cpu().numpy()
+            clss = results.boxes.cls.cpu().numpy()
+
+            for mask, box, conf, cls in zip(masks_data, boxes, confs, clss):
+                class_id = int(cls) 
+                
+                # Resize mask
+                mask_resized = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
                 mask_binary = (mask_resized > 0.5).astype(np.uint8)
-                
-                # Assign class ID to segmentation map
-                class_id = int(cls) + 1  # +1 to avoid background (0)
-                if class_id > 255:
-                    class_id = 255
+
+                # Fill segmentation map
                 segmentation_map[mask_binary == 1] = class_id
-                
-                # Store bounding box information
+
+                # Update confidence map (keep maximum)
+                confidence_map = np.maximum(confidence_map, mask_binary * float(conf))
+
+                # Store additional info
+                masks.append(mask_binary)
                 bounding_boxes.append({
                     'bbox': box.tolist(),
                     'confidence': float(conf),
-                    'class_id': int(cls),
-                    'class_name': self.model.names[int(cls)]
+                    'class_id': class_id,
+                    'class_name': self.model.names[class_id]
                 })
-                
-                masks.append(mask_binary)
-                confidence_scores.append(float(conf))
-        
-        # Create confidence map
-        confidence_map = np.zeros(image.shape[:2], dtype=np.float32)
-        for i, (mask, conf) in enumerate(zip(masks, confidence_scores)):
-            confidence_map[mask == 1] = conf
+
+        # Ordered class labels (safe)
+        class_labels = [self.model.names[i] for i in sorted(self.model.names.keys())]
         
         return SegmentationResult(
-            segmentation_map=segmentation_map,
-            confidence_map=confidence_map,
-            class_labels=list(self.model.names.values()),
-            bounding_boxes=bounding_boxes,
-            masks=masks,
-            metadata={
+            segmentation_map = segmentation_map,
+            confidence_map = confidence_map,
+            class_labels = class_labels,
+            bounding_boxes = bounding_boxes,
+            masks = masks,
+            metadata = {
                 'model_type': 'YOLO',
                 'model_path': self.model_path,
                 'device': self.device
@@ -277,6 +289,7 @@ class SegformerSegmentor(BaseSegmentor):
             device: Device to run the model on
             return_confidence: Whether to compute per-pixel confidence map
         """
+
         super().__init__(model_path, device)
         self.processor = None
         self._local_files_only_override = local_files_only
@@ -297,6 +310,7 @@ class SegformerSegmentor(BaseSegmentor):
         Returns:
             (identifier, is_local_path)
         """
+
         if self.model_path and os.path.exists(self.model_path):
             return self.model_path, True
 
@@ -486,7 +500,7 @@ class Segmentor:
     allowing easy switching between models and unified result handling.
     """
     
-    def __init__(self, model_type: str = 'yolo', model_path: str = None, device: str = 'auto'):
+    def __init__(self, model_type: str = 'segformer', model_path: str = None, device: str = 'auto'):
         """
         Initialize the main Segmentor.
         
@@ -495,17 +509,19 @@ class Segmentor:
             model_path: Path to model or model identifier
             device: Device to run the model on
         """
+
         self.model_type = model_type.lower()
         self.device = device
         self.segmentor = self._create_segmentor(model_type, model_path, device)
         
     def _create_segmentor(self, model_type: str, model_path: str, device: str) -> BaseSegmentor:
         """Create the appropriate segmentor based on model type."""
+
         model_type_norm = model_type.lower().strip().replace("_", "-")
 
         if model_type_norm == 'yolo':
             if model_path is None:
-                model_path = "yolov8m-seg.pt"
+                model_path = "yolov8m.pt"
             return YOLOSegmentor(model_path, device)
         elif model_type_norm in {'segformer', 'segformer-online', 'segformer-hf'}:
             # Explicit online variant: prefer the HF Hub (unless a local path is passed explicitly).
@@ -563,6 +579,7 @@ class Segmentor:
         Returns:
             SegmentationResult containing all segmentation information
         """
+
         # Handle different input types
         if isinstance(image, str):
             image_path = image
@@ -580,6 +597,7 @@ class Segmentor:
     
     def get_class_labels(self) -> List[str]:
         """Get class labels for the current model."""
+
         return self.segmentor.get_class_labels()
     
     def visualize_results(self, image: np.ndarray, result: SegmentationResult, 
@@ -656,6 +674,7 @@ class Segmentor:
             model_type: New model type ('yolo', 'segformer')
             model_path: Path to new model
         """
+        
         self.model_type = model_type.lower()
         self.segmentor = self._create_segmentor(model_type, model_path, self.device)
         logger.info("Switched to %s model", model_type)
