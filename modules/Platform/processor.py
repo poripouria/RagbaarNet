@@ -19,7 +19,6 @@ from flask_cors import CORS
 import colorsys
 import os
 import sys
-import logging
 import zlib
 
 # Add the modules directory to the path to import Segmentor
@@ -1087,7 +1086,6 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
         processor.shutdown()
 
 if __name__ == '__main__':
-    import argparse
     
     parser = argparse.ArgumentParser(description='Video Processing Server')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (use 0.0.0.0 for LAN/mobile access)')
