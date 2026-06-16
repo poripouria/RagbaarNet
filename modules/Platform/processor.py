@@ -101,9 +101,9 @@ class VideoProcessor:
                         "Pre-trained Models",
                         "segformer-b2-finetuned-cityscapes-1024-1024-b2",
                     )
-                ),
+                )
             )
-            self.segmentor = Segmentor('segformer-offline', model_path=local_b2_path)
+            self.segmentor = Segmentor('segformer', model_path=local_b2_path)
             logger.info("✅ Local SegFormer (B2) Segmentor initialized successfully")
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
