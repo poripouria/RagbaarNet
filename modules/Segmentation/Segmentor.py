@@ -512,51 +512,13 @@ class Segmentor:
             if model_path is None:
                 model_path = "yolo11s.pt"
             return YOLOSegmentor(model_path, device)
-        elif model_type_norm in {'segformer', 'segformer-online', 'segformer-hf'}:
-            # Explicit online variant: prefer the HF Hub (unless a local path is passed explicitly).
+        elif model_type_norm == 'segformer':
             if model_path is None:
                 model_path = "nvidia/segformer-b2-finetuned-cityscapes-1024-1024"
-            return SegformerSegmentor(model_path, device, local_files_only=False)
-        elif model_type_norm in {'segformer-offline', 'segformer-local'}:
-            # Explicit offline variant: require local/cached files only.
-            if model_path is None:
-                model_path = (
-                    os.environ.get("RAGBAARNET_SEGFORMER_PATH")
-                    or os.environ.get("SEGFORMER_MODEL_PATH")
-                )
-
-            if model_path is None:
-                pretrained_root = os.path.join("modules", "Segmentation", "Pre-trained Models")
-                common = [
-                    os.path.join(pretrained_root, "segformer-b2-finetuned-cityscapes-1024-1024-b2"),
-                    os.path.join(pretrained_root, "segformer-b2-finetuned-cityscapes-1024-1024"),
-                    os.path.join(pretrained_root, "segformer-b0-finetuned-cityscapes-512-1024"),
-                ]
-                for path in common:
-                    if not os.path.exists(path):
-                        continue
-
-                    # Only select folders that contain PyTorch weights expected by our loader.
-                    has_pytorch_weights = (
-                        os.path.exists(os.path.join(path, "model.safetensors"))
-                        or os.path.exists(os.path.join(path, "pytorch_model.bin"))
-                    )
-                    if has_pytorch_weights:
-                        model_path = path
-                        break
-
-            if model_path is None:
-                raise ValueError(
-                    "SegFormer offline requested but no local model folder was provided/found. "
-                    "Pass model_path to Segmentor('segformer-offline', model_path=...) or set RAGBAARNET_SEGFORMER_PATH."
-                )
-
-            return SegformerSegmentor(model_path, device, local_files_only=True)
+            return SegformerSegmentor(model_path, device)
         else:
-            raise ValueError(
-                f"Unsupported model type: {model_type}. "
-                "Supported types: 'yolo', 'segformer' (online), 'segformer-offline' (local)."
-            )
+            raise ValueError(f"Unsupported model type: {model_type}.\n"
+                             f"Supported types: 'yolo', 'segformer'")
     
     def __call__(self, image: Union[np.ndarray, str]) -> SegmentationResult:
         """
