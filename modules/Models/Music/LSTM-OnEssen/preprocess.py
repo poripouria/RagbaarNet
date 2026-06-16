@@ -2,7 +2,8 @@
 Preprocessing module for Essen music dataset (Folk songs).
 ========================================================================
 
-This module contains functions to preprocess the Essen music dataset for training an LSTM model. 
+This module contains functions to preprocess the Essen music dataset for training an LSTM model.
+(Special thanks to Valerio Velardo)
 """
 
 import json
@@ -18,6 +19,20 @@ from utils.logging_setup import setup_logging
 logger = setup_logging("INFO", name="Models.Music.LSTM-OnEssen.preprocess")
 
 KERN_DATASET_PATH = "Dataset/KernScores/essen/europa/deutschl"
+SAVE_DIR = "modules/Models/Music/LSTM-OnEssen/dataset"
+SINGLE_FILE_DATASET_PATH = "modules/Models/Music/LSTM-OnEssen/single_file_dataset"
+MAPPING_PATH = "modules/Models/Music/LSTM-OnEssen/mapping.json"
+ACCEPTABLE_DURATIONS = [ # durations are expressed in quarter length
+    0.25,   # 16th note
+    0.5,    # 8th note
+    0.75,       # dotted 8th note
+    1.0,    # quarter note
+    1.5,        # dotted quarter note
+    2,      # half note
+    3,          # dotted half note 
+    4       # whole note
+]
+SEQUENCE_LENGTH = 64
 
 def load_songs_in_kern(dataset_path: str) -> list:
     """Loads all kern pieces in dataset using music21.
@@ -46,6 +61,91 @@ def load_songs_in_kern(dataset_path: str) -> list:
 
     return songs
 
+def has_acceptable_durations(song: m21.stream.Stream, acceptable_durations: list) -> bool:
+    """Boolean routine that returns True if piece has all acceptable duration, False otherwise.
+
+    Args:
+        song (m21 stream): The music21 stream to check
+        acceptable_durations (list): List of acceptable duration in quarter length
+
+    Returns:
+        bool: True if all durations are acceptable, False otherwise
+    """
+
+    for note in song.flatten().notesAndRests:
+        if note.duration.quarterLength not in acceptable_durations:
+            return False
+    return True
+
+def transpose(song: m21.stream.Stream) -> m21.stream.Stream:
+    """Transposes song to C maj/A min
+
+    Args:
+        piece: Piece to transpose
+
+    Returns:
+        transposed_song: Transposed version of the input piece
+    """
+
+    # get key from the song
+    parts = song.getElementsByClass(m21.stream.Part)
+    key = parts[0].getElementsByClass(m21.stream.Measure)[0][4]
+
+    # estimate key using music21
+    if not isinstance(key, m21.key.Key):
+        key = song.analyze("key")
+
+    # get interval for transposition
+    if key.mode == "major":
+        interval = m21.interval.Interval(key.tonic, m21.pitch.Pitch("C"))
+    elif key.mode == "minor":
+        interval = m21.interval.Interval(key.tonic, m21.pitch.Pitch("A"))
+
+    # transpose song by calculated interval
+    transposed_song = song.transpose(interval)
+    return transposed_song
+
+def encode_song(song: m21.stream.Stream, time_step: float=0.25) -> str:
+    """Converts a score into a time-series-like music representation. Each item in the encoded list represents 'min_duration'
+    quarter lengths. The symbols used at each step are: integers for MIDI notes, 'r' for representing a rest, and '_'
+    for representing notes/rests that are carried over into a new time step. Here's a sample encoding:
+
+        ["r", "_", "60", "_", "_", "_", "72" "_"]
+
+    Args:
+        song (m21 stream): Piece to encode
+        time_step (float): Duration of each time step in quarter length
+    Returns:
+        encoded_song (str): Encoded song as a string
+    """
+
+    encoded_song = []
+
+    for event in song.flatten().notesAndRests:
+
+        # handle notes
+        if isinstance(event, m21.note.Note):
+            symbol = event.pitch.midi
+        # handle rests
+        elif isinstance(event, m21.note.Rest):
+            symbol = "r"
+
+        # convert the note/rest into time series notation
+        steps = int(event.duration.quarterLength / time_step)
+        for step in range(steps):
+
+            # if it's the first time we see a note/rest, let's encode it.
+            # Otherwise, it means we're carrying the same symbol in a new time step
+            if step == 0:
+                encoded_song.append(symbol)
+            else:
+                encoded_song.append("_")
+
+    # cast encoded song to str
+    encoded_song = " ".join(map(str, encoded_song))
+
+    return encoded_song
+
 def preprocess(dataset_path: str):
     """
     Preprocess the Essen music dataset.
@@ -61,17 +161,75 @@ def preprocess(dataset_path: str):
     songs = load_songs_in_kern(dataset_path)
     logger.info(f"Loaded {len(songs)} songs.")
 
-    # Filter the songs that have non-acceptable duration
-    
-    # Encode the songs into a suitable format for LSTM (time-series sequences)
+    for i, song in enumerate(songs):
 
-    # Save the songs to a text file
+        # Filter the songs that have non-acceptable duration
+        if not has_acceptable_durations(song, ACCEPTABLE_DURATIONS):
+            logger.info(f"Song {i} has non-acceptable durations. Skipping.")
+            continue
+
+        # Transpose the songs to C maj/A min
+        song = transpose(song)
+        
+        # Encode the songs into a suitable format for LSTM (time-series sequences)
+        encoded_song = encode_song(song)
+
+        # Save the songs to a text file
+        save_path = os.path.join(SAVE_DIR, "song "+str(i))
+        with open(save_path, "w") as fp:
+            fp.write(encoded_song)
+
+        if i % 10 == 0:
+            logger.info(f"Song {i} out of {len(songs)} processed")
+
+    logger.info("Preprocessing completed.")
+
+def load(file_path: str) -> list:
+    """Loads preprocessed data from a text file.
+
+    Args:
+        file_path (str): Path to the preprocessed data file.
+    Returns:
+        song (str): The preprocessed song as a string.
+    """
+    
+    with open(file_path, "r") as fp:
+        song = fp.read()
+    return song
+
+def create_single_file_dataset(dataset_path: str, file_dataset_path: str, sequence_length: int) -> str:
+    """Generates a file collating all the encoded songs and adding new piece delimiters.
+
+    Args:
+        dataset_path (str): Path to folder containing the encoded songs
+        file_dataset_path (str): Path to file for saving songs in single file
+        sequence_length (int):  # of time steps to be considered for training
+
+    Returns:
+        songs (str): String containing all songs in dataset + delimiters
+    """
+
+    new_song_delimiter = "/ " * sequence_length
+    songs = ""
+
+    # load encoded songs and add delimiters
+    for path, _, files in os.walk(dataset_path):
+        for file in files:
+            file_path = os.path.join(path, file)
+            song = load(file_path)
+            songs = songs + song + " " + new_song_delimiter
+
+    # remove empty space from last character of string
+    songs = songs[:-1]
+
+    # save string that contains all the dataset
+    with open(file_dataset_path, "w") as fp:
+        fp.write(songs)
+
+    return songs
+
 
 if __name__ == "__main__":
 
-    songs = load_songs_in_kern(KERN_DATASET_PATH)
-    logger.info(f"Loaded {len(songs)} songs from the dataset.")
-
-    test_song = songs[0]
-    test_song.show()
-
+    # preprocess(KERN_DATASET_PATH)
+    create_single_file_dataset(SAVE_DIR, SINGLE_FILE_DATASET_PATH, SEQUENCE_LENGTH)
