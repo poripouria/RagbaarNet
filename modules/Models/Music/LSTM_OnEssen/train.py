@@ -23,10 +23,10 @@ logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.train")
 
 INTERNAL_UNIT_SIZE = [256, 256]
 LEARNING_RATE      = 0.001
-EPOCHS             = 90
+EPOCHS             = 60
 BATCH_SIZE         = 128
 DROPOUT            = 0.1
-MODEL_SAVE_PATH    = "modules/Models/Music/LSTM-OnEssen/LSTM_OnEssen.pt"
+MODEL_SAVE_PATH    = "modules/Models/Music/LSTM_OnEssen/LSTM_OnEssen.pt"
 
 class LSTM_OnEssen(nn.Module):
     """Two-layer LSTM for symbolic music generation.
@@ -212,6 +212,7 @@ def train(num_units: list = INTERNAL_UNIT_SIZE, learning_rate: float = LEARNING_
             patience_left = 5
         else:
             patience_left -= 1
+            logger.info("No improvement. Patience left: %d", patience_left)
             if patience_left == 0:
                 logger.info("Early stopping triggered at epoch %d.", epoch)
                 break
