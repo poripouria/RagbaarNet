@@ -308,7 +308,7 @@ def generate_training_sequences(sequence_length):
     inputs = np.array(inputs, dtype=np.int32)
     targets = np.array(targets)
 
-    print(f"There are {len(inputs)} sequences.")
+    logger.info(f"Generated {len(inputs)} training sequences of length {sequence_length}.")
 
     return inputs, targets
 
