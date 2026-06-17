@@ -8,6 +8,7 @@ This module contains functions to generate melodies using a trained PyTorch LSTM
 import json
 import numpy as np
 import torch
+import music21 as m21
 import os
 import sys
 
@@ -30,6 +31,8 @@ class MelodyGenerator:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         self.model_path = model_path
+
+        self._start_symbols = ["/"] * SEQUENCE_LENGTH
        
         # Load mapping
         with open(MAPPING_PATH, 'r') as f:
@@ -53,72 +56,138 @@ class MelodyGenerator:
 
         logger.info(f"✅ Model loaded successfully from {model_path} (Best loss: {checkpoint.get('best_loss', 'N/A')})")
 
-    def generate(self, seed_sequence: list = None, length: int = 500, 
-                 temperature: float = 1.0, top_k: int = 12, top_p: float = 0.9):
+    def generate_melody(self, seed: str, num_steps: int = 500, temperature: float = 0.8):
         """Generates a melody using the trained LSTM model.
         
         Args:
             seed_sequence (list): List of integers representing the seed melody.
             length (int): Number of notes to generate.
             temperature (float): Sampling temperature for controlling randomness.
-            top_k (int): Number of top-k candidates to consider for sampling.
+        
         Returns:
             generated_sequence (list): List of integers representing the generated melody.
         """
-        
+
         self.model.eval()
 
-        if seed_sequence is None or len(seed_sequence) == 0:
-            seed_sequence = [0] * SEQUENCE_LENGTH
+        seed_list = seed.split()
+        melody = seed_list.copy()
+        seed_list = self._start_symbols + seed_list
 
-        if isinstance(seed_sequence[0], str):
-            seed_sequence = [self.mapping.get(s, 0) for s in seed_sequence]
+        seed_idx = [self.mapping.get(symbol, 0) for symbol in seed_list]
 
-        seed = torch.tensor(seed_sequence[-SEQUENCE_LENGTH:], dtype=torch.long, device=self.device)
-        generated = seed.tolist()
+        seed_tensor = torch.tensor(seed_idx[-SEQUENCE_LENGTH:], dtype=torch.long, device=self.device)
 
-        with torch.no_grad():
-            for i in range(length):
-                input_seq = torch.nn.functional.one_hot(seed, num_classes=self.vocab_size).float().unsqueeze(0)
+        for _ in range(num_steps):
+            input_seq = torch.nn.functional.one_hot(seed_tensor, num_classes=self.vocab_size).float().unsqueeze(0)
 
+            with torch.no_grad():
                 output = self.model(input_seq)
-                output = output.squeeze(0) / temperature
+                output = output.squeeze(0)
 
-                # Nucleus + Top-k Sampling (بهترین روش برای موسیقی)
-                probs = torch.softmax(output, dim=-1)
-                
-                # Top-k
-                topk_probs, topk_indices = torch.topk(probs, top_k)
-                topk_probs = topk_probs / topk_probs.sum()
+            probs = torch.softmax(output, dim=-1).cpu().numpy()
+            output_int = self._sample_with_temperature(probs, temperature)
 
-                # Top-p (Nucleus)
-                sorted_probs, sorted_indices = torch.sort(topk_probs, descending=True)
-                cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
-                sorted_indices_to_remove = cumulative_probs > top_p
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-                sorted_indices_to_remove[..., 0] = 0
-                topk_probs[sorted_indices_to_remove] = 0
-                topk_probs = topk_probs / topk_probs.sum()
+            seed_tensor = torch.cat([seed_tensor[1:], torch.tensor([output_int], device=self.device)])
 
-                next_note = torch.multinomial(topk_probs, num_samples=1).item()
-                next_note = topk_indices[next_note].item()
+            output_symbol = self.reverse_mapping.get(output_int, "?")
 
-                generated.append(next_note)
-                seed = torch.cat([seed[1:], torch.tensor([next_note], device=self.device)])
+            if not output_symbol.isdigit() and output_symbol not in ["_", "r", "/"]:
+                output_symbol = "r"
 
-                if next_note == self.mapping.get("/", 0):
-                    break
+            if output_symbol == "/":
+                break
 
-        generated_notes = [self.reverse_mapping.get(idx, "?") for idx in generated]
-        return generated_notes
+            melody.append(output_symbol)
+
+        return melody
+
+    def _sample_with_temperature(self, probabilities: np.ndarray, temperature: float):
+        """Samples an index from a probability array reapplying softmax using temperature
+
+        Args:
+            predictions (nd.array): Array containing probabilities for each of the possible outputs.
+            temperature (float): Float in interval [0, 1]. Numbers closer to 0 make the model more deterministic.
+                A number closer to 1 makes the generation more unpredictable.
+
+        Returns:
+            index (int): Selected output symbol
+        """
+    
+        probabilities = np.array(probabilities, dtype=np.float64)
+        probabilities = np.clip(probabilities, 1e-10, 1.0)
+
+        predictions = np.log(probabilities) / temperature
+        exp_preds = np.exp(predictions)
+        probabilities = exp_preds / np.sum(exp_preds)
+
+        choices = range(len(probabilities))
+        return np.random.choice(choices, p=probabilities)
+
+    def save_melody(self, melody, step_duration=0.25, file_name="generated_melody.mid"):
+        """Converts a melody into a MIDI file
+
+        Args:
+            melody (list of str): List of symbols representing the melody.
+            step_duration (float): Duration of each time step in quarter length.
+            file_name (str): Name of the MIDI file to save.
+
+        Returns:
+            None
+        """
+
+        stream = m21.stream.Stream()
+        start_symbol = None
+        step_counter = 1
+
+        for i, symbol in enumerate(melody):
+            symbol = str(symbol).strip()
+
+            if symbol.startswith('_') and len(symbol) > 1:
+                symbol = symbol[1:]
+
+            if symbol not in ["_", "r", "/"] and not symbol.isdigit():
+                symbol = "r"
+
+            if symbol != "_" or i + 1 == len(melody):
+                if start_symbol is not None:
+                    quarter_length = step_duration * step_counter
+
+                    try:
+                        if start_symbol == "r" or start_symbol == "_":
+                            event = m21.note.Rest(quarterLength=quarter_length)
+                        else:
+                            pitch = int(start_symbol)
+                            event = m21.note.Note(pitch, quarterLength=quarter_length)
+                        
+                        stream.append(event)
+                    except ValueError:
+                        stream.append(m21.note.Rest(quarterLength=quarter_length))
+
+                    step_counter = 1
+
+                start_symbol = symbol
+            else:
+                step_counter += 1
+
+        file_path = os.path.join(os.path.dirname(self.model_path), file_name)
+        try:
+            stream.write("midi", file_path)
+            logger.info(f"✅ MIDI file saved successfully: {file_path}")
+        except Exception as e:
+            logger.error(f"❌ Error saving MIDI: {e}")
 
 
 if __name__ == "__main__":
 
     generator = MelodyGenerator()
 
-    seed_exmpl = ["55", "_", "_", "52", "55", "60", "_"] * 3
+    seed_exmpl = "55 _ _ 52 55 60 _ r _ _ _" * 2
+    seed_exmpl2 = "67 _ 67 _ 67 _ _ 65 64 _ 64 _ 64 _ _"
+    seed_exmpl3 = "67 _ _ _ _ _ 65 _ 64 _ 62 _ 60 _ _ _"
 
-    generated_melody = generator.generate(seed_exmpl, 200, 1.1, 12, 0.92)
+    generated_melody = generator.generate_melody(seed_exmpl3, 500, 0.8)
 
-    print("Generated melody (as integers):", " ".join(generated_melody))
+    print("Generated melody (as integers): %s", " ".join(generated_melody))
+
+    generator.save_melody(generated_melody, step_duration=0.25, file_name="generated_melody3.mid")
