@@ -16,12 +16,12 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 from utils.logging_setup import setup_logging
 
-logger = setup_logging("INFO", name="Models.Music.LSTM-OnEssen.preprocess")
+logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.preprocess")
 
 KERN_DATASET_PATH = "Dataset/KernScores/essen/europa/deutschl"
-SAVE_DIR = "modules/Models/Music/LSTM-OnEssen/dataset"
-SINGLE_FILE_DATASET_PATH = "modules/Models/Music/LSTM-OnEssen/single_file_dataset"
-MAPPING_PATH = "modules/Models/Music/LSTM-OnEssen/mapping.json"
+SAVE_DIR = "modules/Models/Music/LSTM_OnEssen/dataset"
+SINGLE_FILE_DATASET_PATH = "modules/Models/Music/LSTM_OnEssen/single_file_dataset"
+MAPPING_PATH = "modules/Models/Music/LSTM_OnEssen/mapping.json"
 ACCEPTABLE_DURATIONS = [ # durations are expressed in quarter length
     0.25,   # 16th note
     0.5,    # 8th note
@@ -302,7 +302,7 @@ def generate_training_sequences(sequence_length):
     # One-hot encode the sequences
     vocabulary_size = len(set(int_songs))
     # Inputs size: (# of sequences, sequence length, vocabulary size)
-    inputs = tf.keras.utils.to_categorical(inputs, num_classes=vocabulary_size)
+    inputs = tf.keras.utils.to_categorical(inputs, num_classes=vocabulary_size, dtype=np.uint8)
     targets = np.array(targets)
 
     print(f"There are {len(inputs)} sequences.")
