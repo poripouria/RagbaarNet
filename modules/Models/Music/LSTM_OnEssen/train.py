@@ -24,7 +24,7 @@ logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.train")
 INTERNAL_UNIT_SIZE = [256, 256]
 LEARNING_RATE      = 0.001
 EPOCHS             = 90
-BATCH_SIZE         = 64
+BATCH_SIZE         = 128
 DROPOUT            = 0.1
 MODEL_SAVE_PATH    = "modules/Models/Music/LSTM-OnEssen/LSTM_OnEssen.pt"
 
@@ -81,22 +81,45 @@ def setup_device() -> torch.device:
         logger.warning("No GPU found — training will run on CPU.")
     return device
 
-def build_dataloader(inputs: np.ndarray, targets: np.ndarray, batch_size: int) -> DataLoader:
+def build_dataloader(inputs: np.ndarray, targets: np.ndarray, batch_size: int, vocab_size: int, device: torch.device) -> DataLoader:
     """Wrap numpy arrays in a PyTorch DataLoader.
 
     Args:
-        inputs  (np.ndarray): shape (N, seq_len, vocab_size), int32
+        inputs  (np.ndarray): shape (N, seq_len, vocab_size), float32
         targets (np.ndarray): shape (N,), int64
         batch_size (int): mini-batch size
+        vocab_size (int): Size of the vocabulary
+        device (torch.device): Device to move tensors to
     Returns:
         DataLoader
     """
 
+    # We will one-hot on the fly inside the collate function to save RAM
+    def collate_fn(batch):
+        inputs_batch, targets_batch = zip(*batch)
+        inputs_batch = torch.stack(inputs_batch)   # (batch, seq_len)
+        
+        # One-hot encoding on GPU (very memory efficient)
+        inputs_onehot = torch.nn.functional.one_hot(inputs_batch, num_classes=vocab_size).float()
+        # shape: (batch, seq_len, vocab_size)
+        
+        targets_batch = torch.stack(targets_batch)
+        
+        return inputs_onehot.to(device, non_blocking=True), targets_batch.to(device, non_blocking=True)
+
     dataset = TensorDataset(
-        torch.from_numpy(inputs),    # int32 — LSTM input
-        torch.from_numpy(targets),   # int64   — CrossEntropyLoss target
+        torch.from_numpy(inputs).long(),      # (N, seq_len)
+        torch.from_numpy(targets).long(),     # (N,)
     )
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
+
+    return DataLoader(
+        dataset,
+        batch_size = batch_size,
+        shuffle = True,
+        collate_fn = collate_fn,
+        pin_memory = False,
+        num_workers = 0
+    )
 
 def train(num_units: list = INTERNAL_UNIT_SIZE, learning_rate: float = LEARNING_RATE,
     epochs: int = EPOCHS, batch_size: int = BATCH_SIZE):
@@ -112,14 +135,16 @@ def train(num_units: list = INTERNAL_UNIT_SIZE, learning_rate: float = LEARNING_
     device = setup_device()
 
     inputs, targets = generate_training_sequences(SEQUENCE_LENGTH)
-    dataloader = build_dataloader(inputs, targets, batch_size)
 
     with open(MAPPING_PATH, "r") as fp:
         mapping = json.load(fp)
     vocab_size = len(mapping)
 
+    logger.info(f"Input shape: {inputs.shape} | Memory: {inputs.nbytes / 1e9:.2f} GB")
     logger.info("Vocabulary size : %d", vocab_size)
     logger.info("Training samples: %d", len(inputs))
+    
+    dataloader = build_dataloader(inputs, targets, batch_size, vocab_size, device)
 
     model = LSTM_OnEssen(
         input_size   = vocab_size,
@@ -136,11 +161,11 @@ def train(num_units: list = INTERNAL_UNIT_SIZE, learning_rate: float = LEARNING_
 
     # Reduce LR when loss plateaus
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-6, verbose=True
+        optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-6 
     )
 
     # Mixed precision scaler (only active on CUDA)
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == 'cuda'))
+    scaler = torch.amp.GradScaler(device.type) if device.type == 'cuda' else None
 
     # Early stopping state
     best_loss      = float('inf')
@@ -155,19 +180,21 @@ def train(num_units: list = INTERNAL_UNIT_SIZE, learning_rate: float = LEARNING_
         epoch_loss = 0.0
 
         for batch_inputs, batch_targets in dataloader:
-            batch_inputs  = batch_inputs.to(device, non_blocking=True)
-            batch_targets = batch_targets.to(device, non_blocking=True)
-
             optimizer.zero_grad()
 
-            # Mixed precision forward pass
-            with torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
-                logits = model(batch_inputs)             # (batch, vocab)
-                loss   = criterion(logits, batch_targets)
+            if scaler is not None:
+                with torch.amp.autocast(device_type='cuda', enabled=True):
+                    logits = model(batch_inputs)
+                    loss = criterion(logits, batch_targets)
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                logits = model(batch_inputs)
+                loss = criterion(logits, batch_targets)
+                loss.backward()
+                optimizer.step()
 
             epoch_loss += loss.item() * len(batch_inputs)
 
