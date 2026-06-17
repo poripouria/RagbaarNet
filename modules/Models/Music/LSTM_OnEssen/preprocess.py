@@ -9,7 +9,6 @@ This module contains functions to preprocess the Essen music dataset for trainin
 import json
 import music21 as m21
 import numpy as np
-import tensorflow as tf
 import os
 import sys
 
@@ -18,11 +17,11 @@ from utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.preprocess")
 
-KERN_DATASET_PATH = "Dataset/KernScores/essen/europa/deutschl"
-SAVE_DIR = "modules/Models/Music/LSTM_OnEssen/dataset"
-SINGLE_FILE_DATASET_PATH = "modules/Models/Music/LSTM_OnEssen/single_file_dataset"
-MAPPING_PATH = "modules/Models/Music/LSTM_OnEssen/mapping.json"
-ACCEPTABLE_DURATIONS = [ # durations are expressed in quarter length
+KERN_DATASET_PATH           = "Dataset/KernScores/essen/europa/deutschl"
+SAVE_DIR                    = "modules/Models/Music/LSTM_OnEssen/dataset"
+SINGLE_FILE_DATASET_PATH    = "modules/Models/Music/LSTM_OnEssen/single_file_dataset"
+MAPPING_PATH                = "modules/Models/Music/LSTM_OnEssen/mapping.json"
+ACCEPTABLE_DURATIONS        = [ # durations are expressed in quarter length
     0.25,   # 16th note
     0.5,    # 8th note
     0.75,       # dotted 8th note
@@ -32,7 +31,7 @@ ACCEPTABLE_DURATIONS = [ # durations are expressed in quarter length
     3,          # dotted half note 
     4       # whole note
 ]
-SEQUENCE_LENGTH = 64
+SEQUENCE_LENGTH             = 64
 
 def load_songs_in_kern(dataset_path: str) -> list:
     """Loads all kern pieces in dataset using music21.
@@ -299,10 +298,14 @@ def generate_training_sequences(sequence_length):
         inputs.append(int_songs[i:i+sequence_length])
         targets.append(int_songs[i+sequence_length])
 
-    # One-hot encode the sequences
-    vocabulary_size = len(set(int_songs))
-    # Inputs size: (# of sequences, sequence length, vocabulary size)
-    inputs = tf.keras.utils.to_categorical(inputs, num_classes=vocabulary_size, dtype=np.uint8)
+    # # One-hot encode the sequences
+    # import tensorflow as tf
+    # vocabulary_size = len(set(int_songs))
+    # # Inputs size: (# of sequences, sequence length, vocabulary size)
+    # inputs = tf.keras.utils.to_categorical(inputs, num_classes=vocabulary_size, dtype=np.uint8)
+    # targets = np.array(targets)
+
+    inputs = np.array(inputs, dtype=np.int32)
     targets = np.array(targets)
 
     print(f"There are {len(inputs)} sequences.")
