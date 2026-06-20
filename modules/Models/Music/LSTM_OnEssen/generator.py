@@ -18,6 +18,8 @@ from Models.Music.LSTM_OnEssen.train import LSTM_OnEssen, MODEL_SAVE_PATH
 from Models.Music.LSTM_OnEssen.preprocess import SEQUENCE_LENGTH, MAPPING_PATH
 
 logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.generator")
+np.random.seed(42)
+torch.manual_seed(42)
 
 class MelodyGenerator:
     """A class that wraps the LSTM model and offers utilities to generate melodies.
@@ -56,14 +58,15 @@ class MelodyGenerator:
 
         logger.info(f"✅ Model loaded successfully from {model_path} (Best loss: {checkpoint.get('best_loss', 'N/A')})")
 
-    def generate_melody(self, seed: str, num_steps: int = 500, temperature: float = 0.8):
+    def generate_melody(self, seed: str, num_steps: int = 500, temperature: float = 0.8, mode: str = None):
         """Generates a melody using the trained LSTM model.
         
         Args:
             seed_sequence (list): List of integers representing the seed melody.
             length (int): Number of notes to generate.
             temperature (float): Sampling temperature for controlling randomness.
-        
+            mode (str): Generation mode ("real-time" or None).
+
         Returns:
             generated_sequence (list): List of integers representing the generated melody.
         """
@@ -95,8 +98,14 @@ class MelodyGenerator:
             if not output_symbol.isdigit() and output_symbol not in ["_", "r", "/"]:
                 output_symbol = "r"
 
+            if mode == "real-time":
+                yield output_symbol
+
             if output_symbol == "/":
-                break
+                if mode == "real-time":
+                    continue
+                else:
+                    break
 
             melody.append(output_symbol)
 
@@ -106,7 +115,7 @@ class MelodyGenerator:
         """Samples an index from a probability array reapplying softmax using temperature
 
         Args:
-            predictions (nd.array): Array containing probabilities for each of the possible outputs.
+            probabilities (nd.array): Array containing probabilities for each of the possible outputs.
             temperature (float): Float in interval [0, 1]. Numbers closer to 0 make the model more deterministic.
                 A number closer to 1 makes the generation more unpredictable.
 
@@ -170,7 +179,7 @@ class MelodyGenerator:
             else:
                 step_counter += 1
 
-        file_path = os.path.join(os.path.dirname(self.model_path), file_name)
+        file_path = os.path.join(os.path.dirname(self.model_path), "Generated Melodies", file_name)
         try:
             stream.write("midi", file_path)
             logger.info(f"✅ MIDI file saved successfully: {file_path}")
@@ -186,8 +195,8 @@ if __name__ == "__main__":
     seed_exmpl2 = "67 _ 67 _ 67 _ _ 65 64 _ 64 _ 64 _ _"
     seed_exmpl3 = "67 _ _ _ _ _ 65 _ 64 _ 62 _ 60 _ _ _"
 
-    generated_melody = generator.generate_melody(seed_exmpl3, 500, 0.8)
+    generated_melody = generator.generate_melody(seed_exmpl3, 600, 0.8)
 
-    print("Generated melody (as integers): %s", " ".join(generated_melody))
+    print(f"Generated melody (len: {len(generated_melody)}): {' '.join(generated_melody)}")
 
     generator.save_melody(generated_melody, step_duration=0.25, file_name="generated_melody3.mid")
