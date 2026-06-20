@@ -277,9 +277,7 @@ class TestMusician(BaseMusician):
         Returns:
             MusicFrame containing generated music events
         """
-        if not self.is_initialized:
-            self.initialize()
-        
+
         timestamp = time.time()
         events = []
         
@@ -365,6 +363,7 @@ class PianistTestMusician(BaseMusician):
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
         """
+
         super().__init__(tempo, key_signature)
         
         # Cityscapes class labels (matching Segformer model)
@@ -378,16 +377,8 @@ class PianistTestMusician(BaseMusician):
         self.class_to_piano = {}
         self._setup_piano_mappings()
         
-    def initialize(self) -> None:
-        """Initialize the Pianist Test Musician."""
-        try:
-            logger.info("🎹 Initializing Pianist Test Musician...")
-            self.is_initialized = True
-            logger.info("✅ Pianist Test Musician initialized successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Pianist Test Musician: {e}")
-            raise
-    
+        logger.info("✅ Pianist Test Musician initialized successfully")
+            
     def _setup_piano_mappings(self) -> None:
         """Setup piano-only mappings from segmentation classes to piano notes."""
         
@@ -491,8 +482,6 @@ class PianistTestMusician(BaseMusician):
         Returns:
             MusicFrame containing generated piano music events
         """
-        if not self.is_initialized:
-            self.initialize()
         
         timestamp = time.time()
         events = []
@@ -583,6 +572,7 @@ class ContinuousPianistMusician(BaseMusician):
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
         """
+
         super().__init__(tempo, key_signature)
         
         # Cityscapes class labels (matching Segformer model)
@@ -601,15 +591,7 @@ class ContinuousPianistMusician(BaseMusician):
         self.collision_history = {}  # Track collision state history
         self.note_start_times = {}  # Track when notes started playing
         
-    def initialize(self) -> None:
-        """Initialize the Continuous Pianist Musician."""
-        try:
-            logger.info("🎹🔄 Initializing Continuous Pianist Musician...")
-            self.is_initialized = True
-            logger.info("✅ Continuous Pianist Musician initialized successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Continuous Pianist Musician: {e}")
-            raise
+        logger.info("✅ Continuous Pianist Musician initialized successfully")
     
     def _setup_piano_mappings(self) -> None:
         """Setup piano-only mappings from segmentation classes to piano notes."""
@@ -904,16 +886,30 @@ class ContinuousPianistMusician(BaseMusician):
         
         return music_frame
     
-    def get_supported_classes(self) -> List[str]:
-        """Get the list of supported segmentation classes."""
-        return self.cityscapes_labels
-    
     def stop_all_notes(self) -> None:
         """Stop all currently playing continuous notes."""
         logger.info("🎹⏹️ Stopping all continuous notes")
         self.active_notes.clear()
         self.collision_history.clear()
         self.note_start_times.clear()
+
+class LSTMMusician1(BaseMusician):
+    """
+    Placeholder for LSTM-based music generation model.
+    
+    This musician will take segmentation data and generates music sequences based on learned patterns.
+    """
+    
+    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
+        """
+        Initialize LSTM Musician.
+        
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+        """
+
+        super().__init__(tempo, key_signature)
 
 class Musician:
     """
@@ -942,15 +938,18 @@ class Musician:
         
     def _create_musician(self, musician_type: str, tempo: int, key_signature: str) -> BaseMusician:
         """Create the appropriate musician based on type."""
+
         if musician_type.lower() == 'test':
             return TestMusician(tempo, key_signature)
         elif musician_type.lower() == 'pianist':
             return PianistTestMusician(tempo, key_signature)
         elif musician_type.lower() == 'continuous_pianist':
             return ContinuousPianistMusician(tempo, key_signature)
+        elif musician_type.lower() == 'lstm-onessen':
+            return LSTMMusician1(tempo, key_signature)
         else:
             raise ValueError(f"Unsupported musician type: {musician_type}. " +
-                             f"Supported types: 'test', 'pianist', 'continuous_pianist'")
+                             f"Supported types: 'test', 'pianist', 'continuous_pianist', 'lstm-onEssen'")
     
     def __call__(self, segmentation_data: Union[np.ndarray], frame_id: int = 0) -> MusicFrame:
         """
@@ -963,14 +962,11 @@ class Musician:
         Returns:
             MusicFrame containing generated music events
         """
+
         if not isinstance(segmentation_data, np.ndarray):
             raise ValueError("Segmentation data must be a numpy array")
         
         return self.musician(segmentation_data, frame_id)
-    
-    def get_supported_classes(self) -> List[str]:
-        """Get supported classes for the current musician."""
-        return self.musician.get_supported_classes()
     
     def switch_musician(self, musician_type: str, tempo: int = None, key_signature: str = None) -> None:
         """
@@ -998,6 +994,7 @@ class Musician:
             music_frames: List of MusicFrame objects
             output_path: Path to save MIDI file
         """
+
         # TODO: Implement MIDI export functionality
         logger.info(f"📝 MIDI export functionality not yet implemented. Would export to: {output_path}")
         logger.info(f"📊 Total frames to export: {len(music_frames)}")
