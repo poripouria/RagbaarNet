@@ -468,7 +468,7 @@ class SegformerSegmentor(BaseSegmentor):
                 'model_type': 'Segformer',
                 'model_path': self.model_path,
                 'device': self.device,
-                'num_detected': int((segmentation_map > 0).sum()),  # count of pixels assigned to any class
+                'num_detected': int((segmentation_map > 0).sum()), 
                 'num_classes': len(self.cityscapes_labels),
                 'class_areas': class_areas
             }
