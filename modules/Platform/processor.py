@@ -110,7 +110,7 @@ class VideoProcessor:
         # Initialize music generation
         logger.info("🔄 Initializing music generation...")
         try:
-            self.musician = Musician('pianist', tempo=120, key_signature="C_major")
+            self.musician = Musician('lstm-onEssen', tempo=120, key_signature="C_major")
             self.music_queue = Queue(maxsize=5)
             self.current_music = None
             self.music_enabled = True

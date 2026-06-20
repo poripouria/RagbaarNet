@@ -17,6 +17,7 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.logging_setup import setup_logging
+from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
 
 logger = setup_logging("INFO", name="music_generator.musician")
 
@@ -551,10 +552,6 @@ class PianistTestMusician(BaseMusician):
             logger.debug(f"🎯 Detected classes: {[e.metadata['class_name'] for e in events]}")
         
         return music_frame
-    
-    def get_supported_classes(self) -> List[str]:
-        """Get the list of supported segmentation classes."""
-        return self.cityscapes_labels
 
 class ContinuousPianistMusician(BaseMusician):
     """
@@ -895,21 +892,152 @@ class ContinuousPianistMusician(BaseMusician):
 
 class LSTMMusician1(BaseMusician):
     """
-    Placeholder for LSTM-based music generation model.
-    
-    This musician will take segmentation data and generates music sequences based on learned patterns.
+    LSTM-based musician that generates melodic sequences based on visual segmentation.
+    Uses the trained LSTM_OnEssen model for musically coherent generation.
     """
     
-    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
-        """
-        Initialize LSTM Musician.
+    def __init__(self, 
+                 tempo: int = 120, 
+                 key_signature: str = "C_major",
+                 model_path: str = None,
+                 temperature: float = 0.85,
+                 max_notes_per_frame: int = 12):
         
-        Args:
-            tempo: Music tempo in BPM
-            key_signature: Key signature for music generation
-        """
-
         super().__init__(tempo, key_signature)
+        
+        if model_path is None:
+            model_path = "modules/Models/Music/LSTM-OnEssen/LSTM_OnEssen.pt"
+        
+        self.generator = MelodyGenerator(model_path)
+        self.temperature = temperature
+        self.max_notes_per_frame = max_notes_per_frame
+        
+        # State for continuity between frames
+        self.current_seed = None
+        self.last_generated = []
+        
+        # Mapping segmentation to musical context
+        self.class_to_seed = self._create_visual_to_seed_mapping()
+        
+        logger.info("🎼 LSTM Musician (OnEssen) initialized successfully")
+
+    def _create_visual_to_seed_mapping(self):
+        """Map dominant visual elements to good musical seeds"""
+        return {
+            "car": "55 _ _ 52 55 60 _",
+            "truck": "48 _ 50 _ 52 _ 55",
+            "person": "64 _ 67 _ 69 _ 67",
+            "road": "60 _ _ 62 _ _ 64",
+            "building": "55 57 60 _ 62 _",
+            "vegetation": "72 _ 71 _ 69 _ 67",
+            "default": "60 _ 64 _ 67 _ 72"
+        }
+
+    def _analyze_scene(self, segmentation_data: np.ndarray) -> dict:
+        """Analyze segmentation map to extract musical context"""
+
+        unique, counts = np.unique(segmentation_data, return_counts=True)
+        total = segmentation_data.shape[0] * segmentation_data.shape[1]
+        
+        dominant_class = unique[np.argmax(counts)]
+        presence = {cls: cnt/total for cls, cnt in zip(unique, counts) if cnt/total > 0.05}
+        
+        # Find dominant object
+        dominant_name = "default"
+        if dominant_class < len(self.generator.cityscapes_labels):  # اگر لیست labels موجود بود
+            try:
+                dominant_name = self.generator.cityscapes_labels[dominant_class]
+            except:
+                pass
+        
+        # Check if important objects are present
+        has_vehicle = any(c in presence for c in [13, 14, 15])  # car, truck, bus
+        has_person = 11 in presence  # person
+        
+        return {
+            "dominant_class": dominant_class,
+            "dominant_name": dominant_name,
+            "has_vehicle": has_vehicle,
+            "has_person": has_person,
+            "complexity": len(presence)  # تعداد کلاس‌های مختلف = پیچیدگی صحنه
+        }
+
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+        """
+        Generate music using LSTM model based on current scene.
+        """
+        timestamp = time.time()
+        events = []
+        
+        scene_info = self._analyze_scene(segmentation_data)
+        
+        # Determine seed based on scene
+        if scene_info["dominant_name"] in self.class_to_seed:
+            seed_str = self.class_to_seed[scene_info["dominant_name"]]
+        else:
+            seed_str = self.class_to_seed["default"]
+        
+        # Use previous melody for better continuity
+        if self.last_generated and len(self.last_generated) > 8:
+            seed_str = " ".join(self.last_generated[-8:])
+        
+        # Generate new notes
+        try:
+            generated_notes = list(self.generator.generate_melody(
+                seed=seed_str,
+                num_steps=self.max_notes_per_frame,
+                temperature=self.temperature
+            ))
+            
+            self.last_generated = generated_notes[-20:]  # keep last part for continuity
+            
+        except Exception as e:
+            logger.warning(f"LSTM generation failed: {e}")
+            generated_notes = ["60", "_", "64", "_", "67"]  # fallback
+        
+        # Convert generated notes to MusicEvent
+        current_time = timestamp
+        step_duration = 60.0 / self.tempo / 2  # quarter note adjusted by tempo
+        
+        for i, symbol in enumerate(generated_notes):
+            if symbol.isdigit():
+                try:
+                    note = int(symbol)
+                    event = MusicEvent(
+                        note=note,
+                        velocity=75 + np.random.randint(-15, 15),
+                        duration=step_duration * (1.2 if i % 3 == 0 else 0.8),
+                        channel=0,  # Piano channel
+                        timestamp=current_time,
+                        metadata={
+                            "class_name": scene_info["dominant_name"],
+                            "source": "lstm_onessen",
+                            "frame_id": frame_id
+                        }
+                    )
+                    events.append(event)
+                    current_time += event.duration
+                except:
+                    continue
+        
+        # Create MusicFrame
+        music_frame = MusicFrame(
+            events=events,
+            frame_id=frame_id,
+            timestamp=timestamp,
+            tempo=self.tempo,
+            key_signature=self.key_signature,
+            metadata={
+                "musician_type": "LSTMMusician1",
+                "model": "LSTM_OnEssen",
+                "dominant_class": scene_info["dominant_name"],
+                "generated_notes": len(generated_notes),
+                "temperature": self.temperature
+            }
+        )
+        
+        self.frame_counter += 1
+        return music_frame
 
 class Musician:
     """
