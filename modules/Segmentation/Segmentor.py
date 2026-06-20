@@ -434,7 +434,7 @@ class SegformerSegmentor(BaseSegmentor):
         # Perform inference (optimized: inference_mode + autocast on CUDA)
         with torch.inference_mode():
             if self.device.startswith('cuda') and torch.cuda.is_available():
-                with torch.cuda.amp.autocast(device_type='cuda', enabled=True):
+                with torch.cuda.amp.autocast(enabled=True): # device_type='cuda', 
                     outputs = self.model(**inputs)
             else:
                     outputs = self.model(**inputs)
