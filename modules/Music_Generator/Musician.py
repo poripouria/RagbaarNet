@@ -20,7 +20,6 @@ from utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="music_generator.musician")
 
-
 @dataclass
 class MusicEvent:
     """
@@ -34,6 +33,7 @@ class MusicEvent:
         timestamp: Event timestamp
         metadata: Additional event-specific information
     """
+
     note: int
     velocity: int = 64
     duration: float = 0.5
@@ -55,6 +55,7 @@ class MusicFrame:
         key_signature: Current key signature
         metadata: Additional frame-specific information
     """
+
     events: List[MusicEvent]
     frame_id: int = 0
     timestamp: float = 0.0
@@ -79,15 +80,10 @@ class BaseMusician(ABC):
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
         """
+
         self.tempo = tempo
         self.key_signature = key_signature
-        self.is_initialized = False
         self.frame_counter = 0
-        
-    @abstractmethod
-    def initialize(self) -> None:
-        """Initialize the music generation model."""
-        pass
     
     @abstractmethod
     def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
@@ -103,11 +99,6 @@ class BaseMusician(ABC):
         """
         pass
     
-    @abstractmethod
-    def get_supported_classes(self) -> List[str]:
-        """Get the list of supported segmentation classes."""
-        pass
-    
     def __call__(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
         """
         Convenience method to call generate_music directly.
@@ -119,10 +110,462 @@ class BaseMusician(ABC):
         Returns:
             MusicFrame containing generated music events
         """
-        if not self.is_initialized:
-            self.initialize()
         return self.generate_music(segmentation_data, frame_id)
 
+class TestMusician(BaseMusician):
+    """
+    Test musician implementation that deterministically assigns musical elements to objects.
+    
+    Maps segmentation classes to specific musical notes and patterns:
+    - Cars → Piano notes (C major scale)
+    - Traffic signs → B minor chord variations
+    - Roads → Drum patterns
+    - Other objects → Additional instrument assignments
+    """
+    
+    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
+        """
+        Initialize Test Musician.
+        
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+        """
+
+        super().__init__(tempo, key_signature)
+        
+        # Cityscapes class labels (matching Segformer model)
+        self.cityscapes_labels = [
+            "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
+            "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
+            "truck", "bus", "train", "motorcycle", "bicycle"
+        ]
+        
+        # Musical mappings for different object classes
+        self.class_to_music = {}
+        self._setup_music_mappings()
+
+        logger.info("✅ Test Musician initialized successfully")
+    
+    def _setup_music_mappings(self) -> None:
+        """Setup deterministic mappings from segmentation classes to musical elements."""
+        
+        # C Major scale notes (MIDI numbers)
+        c_major_scale = [60, 62, 64, 65, 67, 69, 71]  # C4, D4, E4, F4, G4, A4, B4
+        
+        # B Minor chord variations (MIDI numbers)
+        b_minor_chord = [59, 62, 66]  # B3, D4, F#4
+        b_minor_variations = [
+            [59, 62, 66],      # Root position
+            [62, 66, 71],      # First inversion
+            [66, 71, 59+12],   # Second inversion
+        ]
+        
+        # Drum patterns (using MIDI standard drum map on channel 9)
+        drum_patterns = {
+            "kick": 36,        # Bass drum
+            "snare": 38,       # Acoustic snare
+            "hihat": 42,       # Closed hi-hat
+            "crash": 49,       # Crash cymbal
+            "ride": 51,        # Ride cymbal
+        }
+        
+        # Map each class to specific musical elements
+        for i, class_name in enumerate(self.cityscapes_labels):
+            if class_name == "car":
+                # Cars get C major scale notes
+                note_idx = i % len(c_major_scale)
+                self.class_to_music[i] = {
+                    "note": c_major_scale[note_idx],
+                    "channel": 0,  # Piano channel
+                    "velocity": 80,
+                    "duration": 0.5,
+                    "instrument": "piano"
+                }
+            
+            elif class_name == "traffic sign":
+                # Traffic signs get B minor variations
+                chord_idx = i % len(b_minor_variations)
+                self.class_to_music[i] = {
+                    "note": b_minor_variations[chord_idx][0],  # Root note
+                    "channel": 1,  # Different channel for traffic signs
+                    "velocity": 70,
+                    "duration": 0.8,
+                    "instrument": "electric_piano"
+                }
+            
+            elif class_name == "road":
+                # Roads get drum patterns
+                self.class_to_music[i] = {
+                    "note": drum_patterns["kick"],
+                    "channel": 9,  # Standard MIDI drum channel
+                    "velocity": 90,
+                    "duration": 0.3,
+                    "instrument": "drums"
+                }
+            
+            elif class_name == "truck":
+                # Trucks get bass notes
+                self.class_to_music[i] = {
+                    "note": 48 + (i % 12),  # Bass octave
+                    "channel": 2,
+                    "velocity": 85,
+                    "duration": 1.0,
+                    "instrument": "bass"
+                }
+            
+            elif class_name == "person":
+                # People get violin-like sounds
+                note_idx = i % len(c_major_scale)
+                self.class_to_music[i] = {
+                    "note": c_major_scale[note_idx] + 12,  # One octave higher
+                    "channel": 3,
+                    "velocity": 60,
+                    "duration": 0.7,
+                    "instrument": "strings"
+                }
+            
+            elif class_name == "motorcycle":
+                # Motorcycles get electric guitar
+                self.class_to_music[i] = {
+                    "note": 55 + (i % 8),  # Mid-range notes
+                    "channel": 4,
+                    "velocity": 95,
+                    "duration": 0.4,
+                    "instrument": "electric_guitar"
+                }
+            
+            elif class_name == "bicycle":
+                # Bicycles get acoustic guitar
+                self.class_to_music[i] = {
+                    "note": 50 + (i % 10),
+                    "channel": 5,
+                    "velocity": 65,
+                    "duration": 0.6,
+                    "instrument": "acoustic_guitar"
+                }
+            
+            elif class_name in ["sidewalk", "building"]:
+                # Infrastructure gets pad sounds
+                self.class_to_music[i] = {
+                    "note": 36 + (i % 24),  # Wide range for ambience
+                    "channel": 6,
+                    "velocity": 40,
+                    "duration": 2.0,
+                    "instrument": "pad"
+                }
+            
+            else:
+                # Default mapping for other classes
+                note = 60 + (i % 12)  # Chromatic scale from C4
+                self.class_to_music[i] = {
+                    "note": note,
+                    "channel": 7,
+                    "velocity": 50,
+                    "duration": 0.5,
+                    "instrument": "synth"
+                }
+    
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+        """
+        Generate music based on segmentation data.
+        
+        Args:
+            segmentation_data: Segmentation map as numpy array
+            frame_id: Frame identifier for tracking
+            
+        Returns:
+            MusicFrame containing generated music events
+        """
+        if not self.is_initialized:
+            self.initialize()
+        
+        timestamp = time.time()
+        events = []
+        
+        # Analyze segmentation data
+        unique_classes, counts = np.unique(segmentation_data, return_counts=True)
+        total_pixels = segmentation_data.shape[0] * segmentation_data.shape[1]
+        
+        # Generate music events based on detected classes
+        for class_id, pixel_count in zip(unique_classes, counts):
+            # Skip background class (0) if it's too dominant
+            if class_id == 0 and pixel_count > total_pixels * 0.8:
+                continue
+                
+            # Calculate presence ratio
+            presence_ratio = pixel_count / total_pixels
+            
+            # Only generate events for classes with significant presence
+            if presence_ratio > 0.01:  # At least 1% of the frame
+                if class_id in self.class_to_music:
+                    mapping = self.class_to_music[class_id]
+                    
+                    # Adjust velocity based on presence ratio
+                    adjusted_velocity = min(127, int(mapping["velocity"] * (1 + presence_ratio * 2)))
+                    
+                    # Adjust duration based on presence ratio
+                    adjusted_duration = mapping["duration"] * (0.5 + presence_ratio)
+                    
+                    event = MusicEvent(
+                        note=mapping["note"],
+                        velocity=adjusted_velocity,
+                        duration=adjusted_duration,
+                        channel=mapping["channel"],
+                        timestamp=timestamp,
+                        metadata={
+                            "class_id": int(class_id),
+                            "class_name": self.cityscapes_labels[class_id] if class_id < len(self.cityscapes_labels) else "unknown",
+                            "presence_ratio": float(presence_ratio),
+                            "pixel_count": int(pixel_count),
+                            "instrument": mapping["instrument"]
+                        }
+                    )
+                    events.append(event)
+        
+        # Create frame result
+        music_frame = MusicFrame(
+            events=events,
+            frame_id=frame_id,
+            timestamp=timestamp,
+            tempo=self.tempo,
+            key_signature=self.key_signature,
+            metadata={
+                "musician_type": "TestMusician",
+                "total_classes_detected": len(unique_classes),
+                "total_events_generated": len(events),
+                "segmentation_shape": segmentation_data.shape
+            }
+        )
+        
+        self.frame_counter += 1
+        
+        # Log occasionally for debugging
+        if self.frame_counter % 30 == 0:  # Every 30 frames
+            logger.debug(f"🎵 Generated {len(events)} music events for frame {frame_id}")
+            logger.debug(f"🎯 Detected classes: {[e.metadata['class_name'] for e in events]}")
+        
+        return music_frame
+
+class PianistTestMusician(BaseMusician):
+    """
+    Simplified pianist musician that maps all segmentation classes to piano notes only.
+    
+    Maps segmentation classes to piano notes using different scales and patterns:
+    - All objects get piano sounds with different note ranges
+    - Uses C major, D minor, and pentatonic scales for variety
+    - Velocity and duration vary based on object type and presence
+    """
+    
+    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
+        """
+        Initialize Pianist Test Musician.
+        
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+        """
+        super().__init__(tempo, key_signature)
+        
+        # Cityscapes class labels (matching Segformer model)
+        self.cityscapes_labels = [
+            "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
+            "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
+            "truck", "bus", "train", "motorcycle", "bicycle"
+        ]
+        
+        # Piano-only musical mappings
+        self.class_to_piano = {}
+        self._setup_piano_mappings()
+        
+    def initialize(self) -> None:
+        """Initialize the Pianist Test Musician."""
+        try:
+            logger.info("🎹 Initializing Pianist Test Musician...")
+            self.is_initialized = True
+            logger.info("✅ Pianist Test Musician initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Pianist Test Musician: {e}")
+            raise
+    
+    def _setup_piano_mappings(self) -> None:
+        """Setup piano-only mappings from segmentation classes to piano notes."""
+        
+        # Different piano note ranges and patterns
+        c_major_scale = [60, 62, 64, 65, 67, 69, 71]  # C4, D4, E4, F4, G4, A4, B4
+        d_minor_scale = [62, 64, 65, 67, 69, 70, 72]  # D4, E4, F4, G4, A4, Bb4, C5
+        pentatonic_scale = [60, 62, 65, 67, 69]       # C4, D4, F4, G4, A4
+        bass_notes = [36, 38, 40, 43, 45, 47, 48]     # Bass octave
+        high_notes = [72, 74, 76, 77, 79, 81, 83]     # High octave
+        
+        # Map each class to specific piano elements
+        for i, class_name in enumerate(self.cityscapes_labels):
+            if class_name in ["car", "truck", "bus"]:
+                # Vehicles get C major scale - mid range
+                note_idx = i % len(c_major_scale)
+                self.class_to_piano[i] = {
+                    "note": c_major_scale[note_idx],
+                    "velocity": 80,
+                    "duration": 0.6,
+                    "scale_type": "C_major"
+                }
+            
+            elif class_name in ["person", "rider"]:
+                # People get high piano notes - more delicate
+                note_idx = i % len(high_notes)
+                self.class_to_piano[i] = {
+                    "note": high_notes[note_idx],
+                    "velocity": 65,
+                    "duration": 0.8,
+                    "scale_type": "high_range"
+                }
+            
+            elif class_name in ["road", "sidewalk"]:
+                # Infrastructure gets bass notes - foundation
+                note_idx = i % len(bass_notes)
+                self.class_to_piano[i] = {
+                    "note": bass_notes[note_idx],
+                    "velocity": 90,
+                    "duration": 1.2,
+                    "scale_type": "bass_range"
+                }
+            
+            elif class_name in ["building", "wall", "fence"]:
+                # Structures get D minor scale - more complex
+                note_idx = i % len(d_minor_scale)
+                self.class_to_piano[i] = {
+                    "note": d_minor_scale[note_idx],
+                    "velocity": 70,
+                    "duration": 1.0,
+                    "scale_type": "D_minor"
+                }
+            
+            elif class_name in ["traffic light", "traffic sign", "pole"]:
+                # Traffic elements get pentatonic - pleasant
+                note_idx = i % len(pentatonic_scale)
+                self.class_to_piano[i] = {
+                    "note": pentatonic_scale[note_idx] + 12,  # One octave higher
+                    "velocity": 75,
+                    "duration": 0.5,
+                    "scale_type": "pentatonic"
+                }
+            
+            elif class_name in ["vegetation", "terrain", "sky"]:
+                # Natural elements get soft piano - ambient
+                note_idx = i % len(c_major_scale)
+                self.class_to_piano[i] = {
+                    "note": c_major_scale[note_idx] - 12,  # One octave lower
+                    "velocity": 50,
+                    "duration": 1.5,
+                    "scale_type": "ambient"
+                }
+            
+            elif class_name in ["motorcycle", "bicycle"]:
+                # Two-wheelers get pentatonic mid-range
+                note_idx = i % len(pentatonic_scale)
+                self.class_to_piano[i] = {
+                    "note": pentatonic_scale[note_idx],
+                    "velocity": 85,
+                    "duration": 0.4,
+                    "scale_type": "pentatonic_mid"
+                }
+            
+            else:
+                # Default piano mapping for other classes
+                note_idx = i % len(c_major_scale)
+                self.class_to_piano[i] = {
+                    "note": c_major_scale[note_idx],
+                    "velocity": 60,
+                    "duration": 0.7,
+                    "scale_type": "default"
+                }
+    
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+        """
+        Generate piano music based on segmentation data.
+        
+        Args:
+            segmentation_data: Segmentation map as numpy array
+            frame_id: Frame identifier for tracking
+            
+        Returns:
+            MusicFrame containing generated piano music events
+        """
+        if not self.is_initialized:
+            self.initialize()
+        
+        timestamp = time.time()
+        events = []
+        
+        # Analyze segmentation data
+        unique_classes, counts = np.unique(segmentation_data, return_counts=True)
+        total_pixels = segmentation_data.shape[0] * segmentation_data.shape[1]
+        
+        # Generate piano events based on detected classes
+        for class_id, pixel_count in zip(unique_classes, counts):
+            # Skip background class (0) if it's too dominant
+            if class_id == 0 and pixel_count > total_pixels * 0.8:
+                continue
+                
+            # Calculate presence ratio
+            presence_ratio = pixel_count / total_pixels
+            
+            # Only generate events for classes with significant presence
+            if presence_ratio > 0.01:  # At least 1% of the frame
+                if class_id in self.class_to_piano:
+                    mapping = self.class_to_piano[class_id]
+                    
+                    # Adjust velocity based on presence ratio
+                    adjusted_velocity = min(127, int(mapping["velocity"] * (1 + presence_ratio * 1.5)))
+                    
+                    # Adjust duration based on presence ratio
+                    adjusted_duration = mapping["duration"] * (0.5 + presence_ratio * 1.5)
+                    
+                    event = MusicEvent(
+                        note=mapping["note"],
+                        velocity=adjusted_velocity,
+                        duration=adjusted_duration,
+                        channel=0,  # All piano events on channel 0
+                        timestamp=timestamp,
+                        metadata={
+                            "class_id": int(class_id),
+                            "class_name": self.cityscapes_labels[class_id] if class_id < len(self.cityscapes_labels) else "unknown",
+                            "presence_ratio": float(presence_ratio),
+                            "pixel_count": int(pixel_count),
+                            "instrument": "piano",
+                            "scale_type": mapping["scale_type"]
+                        }
+                    )
+                    events.append(event)
+        
+        # Create frame result
+        music_frame = MusicFrame(
+            events=events,
+            frame_id=frame_id,
+            timestamp=timestamp,
+            tempo=self.tempo,
+            key_signature=self.key_signature,
+            metadata={
+                "musician_type": "PianistTestMusician",
+                "total_classes_detected": len(unique_classes),
+                "total_events_generated": len(events),
+                "segmentation_shape": segmentation_data.shape,
+                "instrument": "piano_only"
+            }
+        )
+        
+        self.frame_counter += 1
+        
+        # Log occasionally for debugging
+        if self.frame_counter % 30 == 0:  # Every 30 frames
+            logger.debug(f"🎹 Generated {len(events)} piano events for frame {frame_id}")
+            logger.debug(f"🎯 Detected classes: {[e.metadata['class_name'] for e in events]}")
+        
+        return music_frame
+    
+    def get_supported_classes(self) -> List[str]:
+        """Get the list of supported segmentation classes."""
+        return self.cityscapes_labels
 
 class ContinuousPianistMusician(BaseMusician):
     """
@@ -472,505 +915,6 @@ class ContinuousPianistMusician(BaseMusician):
         self.collision_history.clear()
         self.note_start_times.clear()
 
-
-class Test2Musician(ContinuousPianistMusician):
-    """
-    Test 2 Musician that reuses the continuous pianist logic behind a dedicated name.
-
-    This gives Processor a separate musician type for experimentation without changing
-    the existing TestMusician or PianistTestMusician implementations.
-    """
-
-    def initialize(self) -> None:
-        """Initialize the Test 2 Musician."""
-        try:
-            logger.info("🎼 Initializing Test 2 Musician...")
-            self.is_initialized = True
-            logger.info("✅ Test 2 Musician initialized successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Test 2 Musician: {e}")
-            raise
-
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
-        """Generate music while preserving the Test 2 Musician identity in metadata."""
-        music_frame = super().generate_music(segmentation_data, frame_id)
-        if music_frame.metadata is None:
-            music_frame.metadata = {}
-        music_frame.metadata["musician_type"] = "Test2Musician"
-        music_frame.metadata["display_name"] = "Test 2 Musician"
-        return music_frame
-
-
-class PianistTestMusician(BaseMusician):
-    """
-    Simplified pianist musician that maps all segmentation classes to piano notes only.
-    
-    Maps segmentation classes to piano notes using different scales and patterns:
-    - All objects get piano sounds with different note ranges
-    - Uses C major, D minor, and pentatonic scales for variety
-    - Velocity and duration vary based on object type and presence
-    """
-    
-    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
-        """
-        Initialize Pianist Test Musician.
-        
-        Args:
-            tempo: Music tempo in BPM
-            key_signature: Key signature for music generation
-        """
-        super().__init__(tempo, key_signature)
-        
-        # Cityscapes class labels (matching Segformer model)
-        self.cityscapes_labels = [
-            "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
-            "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
-            "truck", "bus", "train", "motorcycle", "bicycle"
-        ]
-        
-        # Piano-only musical mappings
-        self.class_to_piano = {}
-        self._setup_piano_mappings()
-        
-    def initialize(self) -> None:
-        """Initialize the Pianist Test Musician."""
-        try:
-            logger.info("🎹 Initializing Pianist Test Musician...")
-            self.is_initialized = True
-            logger.info("✅ Pianist Test Musician initialized successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Pianist Test Musician: {e}")
-            raise
-    
-    def _setup_piano_mappings(self) -> None:
-        """Setup piano-only mappings from segmentation classes to piano notes."""
-        
-        # Different piano note ranges and patterns
-        c_major_scale = [60, 62, 64, 65, 67, 69, 71]  # C4, D4, E4, F4, G4, A4, B4
-        d_minor_scale = [62, 64, 65, 67, 69, 70, 72]  # D4, E4, F4, G4, A4, Bb4, C5
-        pentatonic_scale = [60, 62, 65, 67, 69]       # C4, D4, F4, G4, A4
-        bass_notes = [36, 38, 40, 43, 45, 47, 48]     # Bass octave
-        high_notes = [72, 74, 76, 77, 79, 81, 83]     # High octave
-        
-        # Map each class to specific piano elements
-        for i, class_name in enumerate(self.cityscapes_labels):
-            if class_name in ["car", "truck", "bus"]:
-                # Vehicles get C major scale - mid range
-                note_idx = i % len(c_major_scale)
-                self.class_to_piano[i] = {
-                    "note": c_major_scale[note_idx],
-                    "velocity": 80,
-                    "duration": 0.6,
-                    "scale_type": "C_major"
-                }
-            
-            elif class_name in ["person", "rider"]:
-                # People get high piano notes - more delicate
-                note_idx = i % len(high_notes)
-                self.class_to_piano[i] = {
-                    "note": high_notes[note_idx],
-                    "velocity": 65,
-                    "duration": 0.8,
-                    "scale_type": "high_range"
-                }
-            
-            elif class_name in ["road", "sidewalk"]:
-                # Infrastructure gets bass notes - foundation
-                note_idx = i % len(bass_notes)
-                self.class_to_piano[i] = {
-                    "note": bass_notes[note_idx],
-                    "velocity": 90,
-                    "duration": 1.2,
-                    "scale_type": "bass_range"
-                }
-            
-            elif class_name in ["building", "wall", "fence"]:
-                # Structures get D minor scale - more complex
-                note_idx = i % len(d_minor_scale)
-                self.class_to_piano[i] = {
-                    "note": d_minor_scale[note_idx],
-                    "velocity": 70,
-                    "duration": 1.0,
-                    "scale_type": "D_minor"
-                }
-            
-            elif class_name in ["traffic light", "traffic sign", "pole"]:
-                # Traffic elements get pentatonic - pleasant
-                note_idx = i % len(pentatonic_scale)
-                self.class_to_piano[i] = {
-                    "note": pentatonic_scale[note_idx] + 12,  # One octave higher
-                    "velocity": 75,
-                    "duration": 0.5,
-                    "scale_type": "pentatonic"
-                }
-            
-            elif class_name in ["vegetation", "terrain", "sky"]:
-                # Natural elements get soft piano - ambient
-                note_idx = i % len(c_major_scale)
-                self.class_to_piano[i] = {
-                    "note": c_major_scale[note_idx] - 12,  # One octave lower
-                    "velocity": 50,
-                    "duration": 1.5,
-                    "scale_type": "ambient"
-                }
-            
-            elif class_name in ["motorcycle", "bicycle"]:
-                # Two-wheelers get pentatonic mid-range
-                note_idx = i % len(pentatonic_scale)
-                self.class_to_piano[i] = {
-                    "note": pentatonic_scale[note_idx],
-                    "velocity": 85,
-                    "duration": 0.4,
-                    "scale_type": "pentatonic_mid"
-                }
-            
-            else:
-                # Default piano mapping for other classes
-                note_idx = i % len(c_major_scale)
-                self.class_to_piano[i] = {
-                    "note": c_major_scale[note_idx],
-                    "velocity": 60,
-                    "duration": 0.7,
-                    "scale_type": "default"
-                }
-    
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
-        """
-        Generate piano music based on segmentation data.
-        
-        Args:
-            segmentation_data: Segmentation map as numpy array
-            frame_id: Frame identifier for tracking
-            
-        Returns:
-            MusicFrame containing generated piano music events
-        """
-        if not self.is_initialized:
-            self.initialize()
-        
-        timestamp = time.time()
-        events = []
-        
-        # Analyze segmentation data
-        unique_classes, counts = np.unique(segmentation_data, return_counts=True)
-        total_pixels = segmentation_data.shape[0] * segmentation_data.shape[1]
-        
-        # Generate piano events based on detected classes
-        for class_id, pixel_count in zip(unique_classes, counts):
-            # Skip background class (0) if it's too dominant
-            if class_id == 0 and pixel_count > total_pixels * 0.8:
-                continue
-                
-            # Calculate presence ratio
-            presence_ratio = pixel_count / total_pixels
-            
-            # Only generate events for classes with significant presence
-            if presence_ratio > 0.01:  # At least 1% of the frame
-                if class_id in self.class_to_piano:
-                    mapping = self.class_to_piano[class_id]
-                    
-                    # Adjust velocity based on presence ratio
-                    adjusted_velocity = min(127, int(mapping["velocity"] * (1 + presence_ratio * 1.5)))
-                    
-                    # Adjust duration based on presence ratio
-                    adjusted_duration = mapping["duration"] * (0.5 + presence_ratio * 1.5)
-                    
-                    event = MusicEvent(
-                        note=mapping["note"],
-                        velocity=adjusted_velocity,
-                        duration=adjusted_duration,
-                        channel=0,  # All piano events on channel 0
-                        timestamp=timestamp,
-                        metadata={
-                            "class_id": int(class_id),
-                            "class_name": self.cityscapes_labels[class_id] if class_id < len(self.cityscapes_labels) else "unknown",
-                            "presence_ratio": float(presence_ratio),
-                            "pixel_count": int(pixel_count),
-                            "instrument": "piano",
-                            "scale_type": mapping["scale_type"]
-                        }
-                    )
-                    events.append(event)
-        
-        # Create frame result
-        music_frame = MusicFrame(
-            events=events,
-            frame_id=frame_id,
-            timestamp=timestamp,
-            tempo=self.tempo,
-            key_signature=self.key_signature,
-            metadata={
-                "musician_type": "PianistTestMusician",
-                "total_classes_detected": len(unique_classes),
-                "total_events_generated": len(events),
-                "segmentation_shape": segmentation_data.shape,
-                "instrument": "piano_only"
-            }
-        )
-        
-        self.frame_counter += 1
-        
-        # Log occasionally for debugging
-        if self.frame_counter % 30 == 0:  # Every 30 frames
-            logger.debug(f"🎹 Generated {len(events)} piano events for frame {frame_id}")
-            logger.debug(f"🎯 Detected classes: {[e.metadata['class_name'] for e in events]}")
-        
-        return music_frame
-    
-    def get_supported_classes(self) -> List[str]:
-        """Get the list of supported segmentation classes."""
-        return self.cityscapes_labels
-
-
-class TestMusician(BaseMusician):
-    """
-    Test musician implementation that deterministically assigns musical elements to objects.
-    
-    Maps segmentation classes to specific musical notes and patterns:
-    - Cars → Piano notes (C major scale)
-    - Traffic signs → B minor chord variations
-    - Roads → Drum patterns
-    - Other objects → Additional instrument assignments
-    """
-    
-    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
-        """
-        Initialize Test Musician.
-        
-        Args:
-            tempo: Music tempo in BPM
-            key_signature: Key signature for music generation
-        """
-        super().__init__(tempo, key_signature)
-        
-        # Cityscapes class labels (matching Segformer model)
-        self.cityscapes_labels = [
-            "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
-            "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
-            "truck", "bus", "train", "motorcycle", "bicycle", "parking", "rail track",
-            "on rails", "caravan", "trailer", "guard rail", "bridge", "tunnel",
-            "pole group", "ground", "dynamic", "static"
-        ]
-        
-        # Musical mappings for different object classes
-        self.class_to_music = {}
-        self._setup_music_mappings()
-        
-    def initialize(self) -> None:
-        """Initialize the Test Musician."""
-        try:
-            logger.info("🎵 Initializing Test Musician...")
-            self.is_initialized = True
-            logger.info("✅ Test Musician initialized successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Test Musician: {e}")
-            raise
-    
-    def _setup_music_mappings(self) -> None:
-        """Setup deterministic mappings from segmentation classes to musical elements."""
-        
-        # C Major scale notes (MIDI numbers)
-        c_major_scale = [60, 62, 64, 65, 67, 69, 71]  # C4, D4, E4, F4, G4, A4, B4
-        
-        # B Minor chord variations (MIDI numbers)
-        b_minor_chord = [59, 62, 66]  # B3, D4, F#4
-        b_minor_variations = [
-            [59, 62, 66],      # Root position
-            [62, 66, 71],      # First inversion
-            [66, 71, 59+12],   # Second inversion
-        ]
-        
-        # Drum patterns (using MIDI standard drum map on channel 9)
-        drum_patterns = {
-            "kick": 36,        # Bass drum
-            "snare": 38,       # Acoustic snare
-            "hihat": 42,       # Closed hi-hat
-            "crash": 49,       # Crash cymbal
-            "ride": 51,        # Ride cymbal
-        }
-        
-        # Map each class to specific musical elements
-        for i, class_name in enumerate(self.cityscapes_labels):
-            if class_name == "car":
-                # Cars get C major scale notes
-                note_idx = i % len(c_major_scale)
-                self.class_to_music[i] = {
-                    "note": c_major_scale[note_idx],
-                    "channel": 0,  # Piano channel
-                    "velocity": 80,
-                    "duration": 0.5,
-                    "instrument": "piano"
-                }
-            
-            elif class_name == "traffic sign":
-                # Traffic signs get B minor variations
-                chord_idx = i % len(b_minor_variations)
-                self.class_to_music[i] = {
-                    "note": b_minor_variations[chord_idx][0],  # Root note
-                    "channel": 1,  # Different channel for traffic signs
-                    "velocity": 70,
-                    "duration": 0.8,
-                    "instrument": "electric_piano"
-                }
-            
-            elif class_name == "road":
-                # Roads get drum patterns
-                self.class_to_music[i] = {
-                    "note": drum_patterns["kick"],
-                    "channel": 9,  # Standard MIDI drum channel
-                    "velocity": 90,
-                    "duration": 0.3,
-                    "instrument": "drums"
-                }
-            
-            elif class_name == "truck":
-                # Trucks get bass notes
-                self.class_to_music[i] = {
-                    "note": 48 + (i % 12),  # Bass octave
-                    "channel": 2,
-                    "velocity": 85,
-                    "duration": 1.0,
-                    "instrument": "bass"
-                }
-            
-            elif class_name == "person":
-                # People get violin-like sounds
-                note_idx = i % len(c_major_scale)
-                self.class_to_music[i] = {
-                    "note": c_major_scale[note_idx] + 12,  # One octave higher
-                    "channel": 3,
-                    "velocity": 60,
-                    "duration": 0.7,
-                    "instrument": "strings"
-                }
-            
-            elif class_name == "motorcycle":
-                # Motorcycles get electric guitar
-                self.class_to_music[i] = {
-                    "note": 55 + (i % 8),  # Mid-range notes
-                    "channel": 4,
-                    "velocity": 95,
-                    "duration": 0.4,
-                    "instrument": "electric_guitar"
-                }
-            
-            elif class_name == "bicycle":
-                # Bicycles get acoustic guitar
-                self.class_to_music[i] = {
-                    "note": 50 + (i % 10),
-                    "channel": 5,
-                    "velocity": 65,
-                    "duration": 0.6,
-                    "instrument": "acoustic_guitar"
-                }
-            
-            elif class_name in ["sidewalk", "building"]:
-                # Infrastructure gets pad sounds
-                self.class_to_music[i] = {
-                    "note": 36 + (i % 24),  # Wide range for ambience
-                    "channel": 6,
-                    "velocity": 40,
-                    "duration": 2.0,
-                    "instrument": "pad"
-                }
-            
-            else:
-                # Default mapping for other classes
-                note = 60 + (i % 12)  # Chromatic scale from C4
-                self.class_to_music[i] = {
-                    "note": note,
-                    "channel": 7,
-                    "velocity": 50,
-                    "duration": 0.5,
-                    "instrument": "synth"
-                }
-    
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
-        """
-        Generate music based on segmentation data.
-        
-        Args:
-            segmentation_data: Segmentation map as numpy array
-            frame_id: Frame identifier for tracking
-            
-        Returns:
-            MusicFrame containing generated music events
-        """
-        if not self.is_initialized:
-            self.initialize()
-        
-        timestamp = time.time()
-        events = []
-        
-        # Analyze segmentation data
-        unique_classes, counts = np.unique(segmentation_data, return_counts=True)
-        total_pixels = segmentation_data.shape[0] * segmentation_data.shape[1]
-        
-        # Generate music events based on detected classes
-        for class_id, pixel_count in zip(unique_classes, counts):
-            # Skip background class (0) if it's too dominant
-            if class_id == 0 and pixel_count > total_pixels * 0.8:
-                continue
-                
-            # Calculate presence ratio
-            presence_ratio = pixel_count / total_pixels
-            
-            # Only generate events for classes with significant presence
-            if presence_ratio > 0.01:  # At least 1% of the frame
-                if class_id in self.class_to_music:
-                    mapping = self.class_to_music[class_id]
-                    
-                    # Adjust velocity based on presence ratio
-                    adjusted_velocity = min(127, int(mapping["velocity"] * (1 + presence_ratio * 2)))
-                    
-                    # Adjust duration based on presence ratio
-                    adjusted_duration = mapping["duration"] * (0.5 + presence_ratio)
-                    
-                    event = MusicEvent(
-                        note=mapping["note"],
-                        velocity=adjusted_velocity,
-                        duration=adjusted_duration,
-                        channel=mapping["channel"],
-                        timestamp=timestamp,
-                        metadata={
-                            "class_id": int(class_id),
-                            "class_name": self.cityscapes_labels[class_id] if class_id < len(self.cityscapes_labels) else "unknown",
-                            "presence_ratio": float(presence_ratio),
-                            "pixel_count": int(pixel_count),
-                            "instrument": mapping["instrument"]
-                        }
-                    )
-                    events.append(event)
-        
-        # Create frame result
-        music_frame = MusicFrame(
-            events=events,
-            frame_id=frame_id,
-            timestamp=timestamp,
-            tempo=self.tempo,
-            key_signature=self.key_signature,
-            metadata={
-                "musician_type": "TestMusician",
-                "total_classes_detected": len(unique_classes),
-                "total_events_generated": len(events),
-                "segmentation_shape": segmentation_data.shape
-            }
-        )
-        
-        self.frame_counter += 1
-        
-        # Log occasionally for debugging
-        if self.frame_counter % 30 == 0:  # Every 30 frames
-            logger.debug(f"🎵 Generated {len(events)} music events for frame {frame_id}")
-            logger.debug(f"🎯 Detected classes: {[e.metadata['class_name'] for e in events]}")
-        
-        return music_frame
-    
-    def get_supported_classes(self) -> List[str]:
-        """Get the list of supported segmentation classes."""
-        return self.cityscapes_labels
-
-
 class Musician:
     """
     Main Musician class that provides a unified interface for different music generation models.
@@ -988,6 +932,7 @@ class Musician:
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
         """
+        
         self.musician_type = musician_type.lower()
         self.tempo = tempo
         self.key_signature = key_signature
@@ -1001,12 +946,11 @@ class Musician:
             return TestMusician(tempo, key_signature)
         elif musician_type.lower() == 'pianist':
             return PianistTestMusician(tempo, key_signature)
-        elif musician_type.lower() in ('test2', 'test_2', 'test 2'):
-            return Test2Musician(tempo, key_signature)
         elif musician_type.lower() == 'continuous_pianist':
             return ContinuousPianistMusician(tempo, key_signature)
         else:
-            raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: 'test', 'pianist', 'test2', 'continuous_pianist'")
+            raise ValueError(f"Unsupported musician type: {musician_type}. " +
+                             f"Supported types: 'test', 'pianist', 'continuous_pianist'")
     
     def __call__(self, segmentation_data: Union[np.ndarray], frame_id: int = 0) -> MusicFrame:
         """
@@ -1048,7 +992,7 @@ class Musician:
     
     def export_events_to_midi(self, music_frames: List[MusicFrame], output_path: str) -> None:
         """
-        Export generated music events to MIDI file (for future implementation).
+        Export generated music events to MIDI file.
         
         Args:
             music_frames: List of MusicFrame objects
