@@ -409,9 +409,20 @@ class SegformerSegmentor(BaseSegmentor):
         Returns:
             Preprocessed inputs ready for Segformer
         """
+    
+        if self.processor is None:
+            self.load_model()
 
         inputs = self.processor(images=image, return_tensors="pt", do_rescale=True, do_normalize=True)
-        inputs = {k: v.pin_memory().to(self.device, non_blocking=True) for k, v in inputs.items()}
+
+        if self.device.type == 'cuda' and torch.cuda.is_available():
+            inputs = {
+                k: v.pin_memory().to(self.device, non_blocking=True) 
+                for k, v in inputs.items()
+            }
+        else:
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
         return inputs
     
     def predict(self, image: np.ndarray) -> SegmentationResult:
@@ -434,10 +445,10 @@ class SegformerSegmentor(BaseSegmentor):
         # Perform inference (optimized: inference_mode + autocast on CUDA)
         with torch.inference_mode():
             if self.device.startswith('cuda') and torch.cuda.is_available():
-                with torch.cuda.amp.autocast(enabled=True): # device_type='cuda', 
+                with torch.cuda.amp.autocast(device_type='cuda',enabled=True): 
                     outputs = self.model(**inputs)
             else:
-                    outputs = self.model(**inputs)
+                outputs = self.model(**inputs)
         
         logits = outputs.logits  # [1, num_classes, height, width]
         
