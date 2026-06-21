@@ -890,22 +890,35 @@ class ContinuousPianistMusician(BaseMusician):
         self.collision_history.clear()
         self.note_start_times.clear()
 
+class LSTMMusician(BaseMusician):
+    """
+    LSTM-based musician (Collision Trigger) that generates melodic sequences based on visual segmentation.
+    Uses the trained LSTM_OnEssen model for musically coherent generation. More logical.
+    """
+
+    def __init__(self, tempo: int = 120, key_signature: str = "C_major", temperature: float = 0.85):
+        super().__init__(tempo, key_signature)
+        
+        self.generator = MelodyGenerator()
+        self.temperature = temperature
+        self.max_notes = 18
+        
+        self.active_collision = False
+        self.last_seed_notes = ["60", "_", "64", "_", "67"]
+        
+        logger.info("🎼 LSTM Musician initialized")
 
 class LSTMMusician_Test(BaseMusician):
     """
-    LSTM-based musician that generates melodic sequences based on visual segmentation (Collision Trigger).
+    LSTM-based musician (Collision Trigger) that generates melodic sequences based on visual segmentation.
     Uses the trained LSTM_OnEssen model for musically coherent generation.
     """
     
-    def __init__(self, tempo: int = 130, key_signature: str = "C_major", 
-                 model_path: str = None, temperature: float = 0.85):
+    def __init__(self, tempo: int = 130, key_signature: str = "C_major", temperature: float = 0.85):
         
         super().__init__(tempo, key_signature)
         
-        if model_path is None:
-            model_path = "modules/Models/Music/LSTM_OnEssen/LSTM_OnEssen.pt"
-        
-        self.generator = MelodyGenerator(model_path)
+        self.generator = MelodyGenerator()
         self.temperature = temperature
         self.max_notes = 18
         
@@ -1016,7 +1029,7 @@ class Musician:
         Initialize the main Musician.
         
         Args:
-            musician_type: Type of musician ('test', future: 'lstm', 'transformer', etc.)
+            musician_type: Type of musician ('test', 'pianist', 'continuous_pianist', 'lstm', future:  'transformer', etc.)
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
         """
@@ -1038,7 +1051,8 @@ class Musician:
         elif musician_type.lower() == 'continuous_pianist':
             return ContinuousPianistMusician(tempo, key_signature)
         elif musician_type.lower() == 'lstm-onessen':
-            return LSTMMusician_Test(tempo, key_signature)
+            return LSTMMusician(tempo, key_signature)
+            # return LSTMMusician_Test(tempo, key_signature)
         else:
             raise ValueError(f"Unsupported musician type: {musician_type}. " +
                              f"Supported types: 'test', 'pianist', 'continuous_pianist', 'lstm-onEssen'")
@@ -1065,7 +1079,7 @@ class Musician:
         Switch to a different music generation model.
         
         Args:
-            musician_type: New musician type ('test', future types)
+            musician_type: New musician type
             tempo: New tempo (keeps current if None)
             key_signature: New key signature (keeps current if None)
         """
