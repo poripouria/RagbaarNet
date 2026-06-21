@@ -301,13 +301,10 @@ class SegformerSegmentor(BaseSegmentor):
         # ["road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
         #  "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
         #  "truck", "bus", "train", "motorcycle", "bicycle"]
-        
-        # Force GPU if available
-        if device == 'auto':
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        else:
-            self.device = torch.device(device)
-        logger.info(f"Segformer will use device: {self.device}")
+
+        # Check and log if GPU is available and will be used
+        if torch.cuda.is_available():
+            logger.info("🔥🔥🔥🔥🔥🔥🔥CUDA is available. Segformer will run on GPU.")
 
     def _resolve_model_identifier(self, local_files_only: bool) -> Tuple[str, bool]:
         """Resolve the model identifier/path with offline/online support to load.
@@ -422,7 +419,7 @@ class SegformerSegmentor(BaseSegmentor):
 
         inputs = self.processor(images=image, return_tensors="pt", do_rescale=True, do_normalize=True)
 
-        if self.device.type == 'cuda' and torch.cuda.is_available():
+        if self.device.startswith('cuda') and torch.cuda.is_available():
             inputs = {
                 k: v.pin_memory().to(self.device, non_blocking=True) 
                 for k, v in inputs.items()
