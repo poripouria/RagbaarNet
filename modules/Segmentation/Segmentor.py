@@ -301,6 +301,13 @@ class SegformerSegmentor(BaseSegmentor):
         # ["road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
         #  "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
         #  "truck", "bus", "train", "motorcycle", "bicycle"]
+        
+        # Force GPU if available
+        if device == 'auto':
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = torch.device(device)
+        logger.info(f"Segformer will use device: {self.device}")
 
     def _resolve_model_identifier(self, local_files_only: bool) -> Tuple[str, bool]:
         """Resolve the model identifier/path with offline/online support to load.
@@ -444,8 +451,8 @@ class SegformerSegmentor(BaseSegmentor):
         
         # Perform inference (optimized: inference_mode + autocast on CUDA)
         with torch.inference_mode():
-            if self.device.startswith('cuda') and torch.cuda.is_available():
-                with torch.cuda.amp.autocast(device_type='cuda',enabled=True): 
+            if self.device == 'cuda' and torch.cuda.is_available():
+                with torch.cuda.amp.autocast(enabled=True): # device_type='cuda', 
                     outputs = self.model(**inputs)
             else:
                 outputs = self.model(**inputs)

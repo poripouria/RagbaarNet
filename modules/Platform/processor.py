@@ -88,7 +88,7 @@ class VideoProcessor:
             # self.segmentor = Segmentor('segformer')
             # logger.info("✅ SegFormer Segmentor initialized successfully")
 
-            # Prefer local B4 SegFormer for consistent offline use
+            # Prefer local B2 SegFormer for consistent offline use
             local_b2_path = os.environ.get(
                 "RAGBAARNET_SEGFORMER_PATH",
                 os.path.abspath(
@@ -97,12 +97,12 @@ class VideoProcessor:
                         "..",
                         "Segmentation",
                         "Pre-trained Models",
-                        "nvidiasegformer-b4-finetuned-cityscapes-1024-1024",
+                        "segformer-b2-finetuned-cityscapes-1024-1024",
                     )
                 )
             )
             self.segmentor = Segmentor('segformer', model_path=local_b2_path)
-            logger.info("✅ Local SegFormer (B4) Segmentor initialized successfully")
+            logger.info("✅ Local SegFormer (B2) Segmentor initialized successfully")
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
