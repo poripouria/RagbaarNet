@@ -58,7 +58,7 @@ class MelodyGenerator:
 
         logger.info(f"✅ Model loaded successfully from {model_path} (Best loss: {checkpoint.get('best_loss', 'N/A')})")
 
-    def generate_melody(self, seed: str, num_steps: int = 500, temperature: float = 0.8, mode: str = None):
+    def generate_melody_RT(self, seed: str, num_steps: int = 500, temperature: float = 0.8):
         """Generates a melody using the trained LSTM model.
         
         Args:
@@ -78,10 +78,10 @@ class MelodyGenerator:
         seed_list = self._start_symbols + seed_list
 
         seed_idx = [self.mapping.get(symbol, 0) for symbol in seed_list]
-
         seed_tensor = torch.tensor(seed_idx[-SEQUENCE_LENGTH:], dtype=torch.long, device=self.device)
 
         for _ in range(num_steps):
+
             input_seq = torch.nn.functional.one_hot(seed_tensor, num_classes=self.vocab_size).float().unsqueeze(0)
 
             with torch.no_grad():
@@ -98,17 +98,62 @@ class MelodyGenerator:
             if not output_symbol.isdigit() and output_symbol not in ["_", "r", "/"]:
                 output_symbol = "r"
 
-            if mode == "real-time":
-                yield output_symbol
+            yield output_symbol
 
             if output_symbol == "/":
-                if mode == "real-time":
-                    continue
-                else:
-                    break
+                continue
 
             melody.append(output_symbol)
 
+        logger.info(f"🎵 Generated melody (length {len(melody)}): {' '.join(melody)}")
+        return melody
+        
+    def generate_melody(self, seed: str, num_steps: int = 500, temperature: float = 0.8):
+        """Generates a melody using the trained LSTM model.
+        
+        Args:
+            seed_sequence (list): List of integers representing the seed melody.
+            length (int): Number of notes to generate.
+            temperature (float): Sampling temperature for controlling randomness.
+            mode (str): Generation mode ("real-time" or None).
+
+        Returns:
+            generated_sequence (list): List of integers representing the generated melody.
+        """
+
+        self.model.eval()
+
+        seed_list = seed.split()
+        melody = seed_list.copy()
+        seed_list = self._start_symbols + seed_list
+
+        seed_idx = [self.mapping.get(symbol, 0) for symbol in seed_list]
+        seed_tensor = torch.tensor(seed_idx[-SEQUENCE_LENGTH:], dtype=torch.long, device=self.device)
+
+        for _ in range(num_steps):
+
+            input_seq = torch.nn.functional.one_hot(seed_tensor, num_classes=self.vocab_size).float().unsqueeze(0)
+
+            with torch.no_grad():
+                output = self.model(input_seq)
+                output = output.squeeze(0)
+
+            probs = torch.softmax(output, dim=-1).cpu().numpy()
+            output_int = self._sample_with_temperature(probs, temperature)
+
+            seed_tensor = torch.cat([seed_tensor[1:], torch.tensor([output_int], device=self.device)])
+
+            output_symbol = self.reverse_mapping.get(output_int, "?")
+
+            if not output_symbol.isdigit() and output_symbol not in ["_", "r", "/"]:
+                output_symbol = "r"
+
+            if output_symbol == "/":
+                break
+
+            melody.append(output_symbol)
+
+        logger.info(f"🎵 Generated melody (length {len(melody)}): {' '.join(melody)}")
         return melody
 
     def _sample_with_temperature(self, probabilities: np.ndarray, temperature: float):
@@ -133,7 +178,7 @@ class MelodyGenerator:
         choices = range(len(probabilities))
         return np.random.choice(choices, p=probabilities)
 
-    def save_melody(self, melody, step_duration=0.25, file_name="generated_melody.mid"):
+    def save_melody(self, melody: list, step_duration: float = 0.25, file_name: str = "generated_melody.mid"):
         """Converts a melody into a MIDI file
 
         Args:
@@ -145,6 +190,19 @@ class MelodyGenerator:
             None
         """
 
+        if not melody:
+            logger.warning("⚠️ No melody to save!")
+            return None
+
+        # Folder to save generated melodies
+        output_dir = os.path.join(os.path.dirname(self.model_path), "Generated Melodies")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        if not file_name.endswith('.mid'):
+            file_name += ".mid"
+            
+        file_path = os.path.join(output_dir, file_name)
+
         stream = m21.stream.Stream()
         start_symbol = None
         step_counter = 1
@@ -152,11 +210,12 @@ class MelodyGenerator:
         for i, symbol in enumerate(melody):
             symbol = str(symbol).strip()
 
+            # Clean up problematic symbols
             if symbol.startswith('_') and len(symbol) > 1:
                 symbol = symbol[1:]
 
             if symbol not in ["_", "r", "/"] and not symbol.isdigit():
-                symbol = "r"
+                symbol = "r"  # fallback to rest
 
             if symbol != "_" or i + 1 == len(melody):
                 if start_symbol is not None:
@@ -167,36 +226,39 @@ class MelodyGenerator:
                             event = m21.note.Rest(quarterLength=quarter_length)
                         else:
                             pitch = int(start_symbol)
-                            event = m21.note.Note(pitch, quarterLength=quarter_length)
-                        
-                        stream.append(event)
-                    except ValueError:
-                        stream.append(m21.note.Rest(quarterLength=quarter_length))
+                            if 0 <= pitch <= 127:   # MIDI range check
+                                event = m21.note.Note(pitch, quarterLength=quarter_length)
+                            else:
+                                event = m21.note.Rest(quarterLength=quarter_length)
+                    except:
+                        event = m21.note.Rest(quarterLength=quarter_length)
 
+                    stream.append(event)
                     step_counter = 1
 
                 start_symbol = symbol
             else:
                 step_counter += 1
 
-        file_path = os.path.join(os.path.dirname(self.model_path), "Generated Melodies", file_name)
+        # Save the stream to a MIDI file
         try:
             stream.write("midi", file_path)
             logger.info(f"✅ MIDI file saved successfully: {file_path}")
+            return file_path
         except Exception as e:
             logger.error(f"❌ Error saving MIDI: {e}")
+            return None
 
 
 if __name__ == "__main__":
 
     generator = MelodyGenerator()
 
-    seed_exmpl = "55 _ _ 52 55 60 _ r _ _ _" * 2
+    seed_exmpl1 = "55 _ _ 52 55 60 _ r _ _ _" * 2
     seed_exmpl2 = "67 _ 67 _ 67 _ _ 65 64 _ 64 _ 64 _ _"
     seed_exmpl3 = "67 _ _ _ _ _ 65 _ 64 _ 62 _ 60 _ _ _"
+    seed_exmpl4 = "73 _ _ _ 75 _ _ _ 76 _ _ _ 73 _ _ _ 80 _ _ _ _ _ r _ _ _ 73 _ 80 _ 78 _ _ _ _ _ _ 71 _ 80 _ 78 _ _ _ _ _"
 
-    generated_melody = generator.generate_melody(seed_exmpl3, 600, 0.8)
+    generated_melody = generator.generate_melody(seed_exmpl4, 600, 0.8)
 
-    print(f"Generated melody (len: {len(generated_melody)}): {' '.join(generated_melody)}")
-
-    generator.save_melody(generated_melody, step_duration=0.25, file_name="generated_melody3.mid")
+    generator.save_melody(generated_melody, step_duration=0.25, file_name="generated_melody4.mid")
