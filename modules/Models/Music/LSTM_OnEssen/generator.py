@@ -59,13 +59,13 @@ class MelodyGenerator:
         logger.info(f"✅ Model loaded successfully from {model_path} (Best loss: {checkpoint.get('best_loss', 'N/A')})")
 
     def generate_melody_RT(self, seed: str, num_steps: int = 500, temperature: float = 0.8):
-        """Generates a melody using the trained LSTM model.
+        """Generates a melody using the trained LSTM model. 
+        Real-time generation mode yields one note at a time, allowing for immediate playback.
         
         Args:
             seed_sequence (list): List of integers representing the seed melody.
             length (int): Number of notes to generate.
             temperature (float): Sampling temperature for controlling randomness.
-            mode (str): Generation mode ("real-time" or None).
 
         Returns:
             generated_sequence (list): List of integers representing the generated melody.
@@ -115,7 +115,6 @@ class MelodyGenerator:
             seed_sequence (list): List of integers representing the seed melody.
             length (int): Number of notes to generate.
             temperature (float): Sampling temperature for controlling randomness.
-            mode (str): Generation mode ("real-time" or None).
 
         Returns:
             generated_sequence (list): List of integers representing the generated melody.
