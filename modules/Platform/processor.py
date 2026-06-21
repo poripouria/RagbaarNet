@@ -843,7 +843,6 @@ def index():
     </html>
     """
 
-
 @app.route('/ui/')
 def ui_index():
     """Serve the main Platform UI entrypoint (UI.html).
@@ -853,12 +852,10 @@ def ui_index():
     """
     return send_from_directory(PLATFORM_DIR, 'UI.html')
 
-
 @app.route('/ui/<path:filename>')
 def ui_static(filename: str):
     """Serve Platform UI static files (script.js, styles.css, etc.)."""
     return send_from_directory(PLATFORM_DIR, filename)
-
 
 @app.route('/assets/<path:filename>')
 def serve_assets(filename: str):
