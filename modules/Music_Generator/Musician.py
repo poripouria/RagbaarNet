@@ -903,31 +903,29 @@ class LSTMMusician(BaseMusician):
         
         self.generator = MelodyGenerator()
         self.temperature = temperature
-        self.max_notes_per_trigger = 25
+        self.max_notes_per_trigger = 1
         
-        # State management
-        
-        # "67 _ 67 _ 67 _ _ 65 64 _ 64 _ 64 _ _" # ["60", "_", "64", "_", "67", "_", "71"]
         self.last_seed_notes = ["67", "_", "67", "_", "67", "_", "_", "65", "64", "_", "64", "_", "64", "_", "_"]
-        self.active_collision = False
-        self.current_collision_start = None
-        self.active_note = None
         
-        logger.info("🎼 LSTMMusician (Collision-Aware) initialized successfully")
+        # Collision state per class_id
+        self._collision_history: dict = {}   # {class_id: bool}
+        self._note_start_times:  dict = {}   # {class_id: float (timestamp)}
+        self._active_midi:       dict = {}   # {class_id: int   (MIDI note)}
 
     def _check_edge_collision(self, seg_map: np.ndarray) -> bool:
         """Check for collisions with image edges."""
 
-        important_classes = {13, 14, 15, 16, 17}  # car, truck, bus, train, motorcycle
+        important_classes = {13, 14, 15, 16, 17, 18}  # car, truck, bus, train, motorcycle, bicycle
         
         mask = np.isin(seg_map, list(important_classes))
-        if not np.any(mask):
-            return False
-            
-        return (np.any(mask[0, :]) or      # top
-                np.any(mask[-1, :]) or     # bottom
-                np.any(mask[:, 0]) or      # left
-                np.any(mask[:, -1]))       # right
+        h, w = seg_map.shape
+        mask = seg_map == important_classes
+        return {
+            "top":    bool(np.any(mask[0, :])),
+            "bottom": bool(np.any(mask[h - 1, :])),
+            "left":   bool(np.any(mask[:, 0])),
+            "right":  bool(np.any(mask[:, w - 1])),
+        }
 
     def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
         """Generate music based on segmentation data and edge collisions."""
