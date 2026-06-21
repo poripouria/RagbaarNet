@@ -44,7 +44,6 @@ class SegmentationResult:
     masks: Optional[List[np.ndarray]] = None
     metadata: Dict[str, Any] = None
 
-
 class BaseSegmentor(ABC):
     """
     Abstract base class for all segmentation models.
@@ -128,7 +127,6 @@ class BaseSegmentor(ABC):
         if not self.is_loaded:
             self.load_model()
         return self.predict(image)
-
 
 class YOLOSegmentor(BaseSegmentor):
     """
@@ -268,7 +266,6 @@ class YOLOSegmentor(BaseSegmentor):
             self.load_model()
         return list(self.model.names.values())
 
-
 class SegformerSegmentor(BaseSegmentor):
     """
     Segformer-based semantic segmentation implementation.
@@ -304,7 +301,9 @@ class SegformerSegmentor(BaseSegmentor):
 
         # Check and log if GPU is available and will be used
         if torch.cuda.is_available():
-            logger.info("🔥🔥🔥🔥🔥🔥🔥CUDA is available. Segformer will run on GPU.")
+            logger.info("🔥CUDA is available. Segformer will run on GPU.")
+        else:
+            logger.info("⚠️CUDA is NOT available. Segformer will run on CPU, which may be slow.")
 
     def _resolve_model_identifier(self, local_files_only: bool) -> Tuple[str, bool]:
         """Resolve the model identifier/path with offline/online support to load.
@@ -384,6 +383,8 @@ class SegformerSegmentor(BaseSegmentor):
             self.model.eval()
             self.is_loaded = True
 
+            torch.backends.cudnn.benchmark = True
+
             logger.info(f"✅ Segformer ({len(self.cityscapes_labels)} classes) loaded on {self.device}")
 
         except Exception as e:
@@ -449,7 +450,7 @@ class SegformerSegmentor(BaseSegmentor):
         # Perform inference (optimized: inference_mode + autocast on CUDA)
         with torch.inference_mode():
             if self.device == 'cuda' and torch.cuda.is_available():
-                with torch.cuda.amp.autocast(enabled=True): # device_type='cuda', 
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
                     outputs = self.model(**inputs)
             else:
                 outputs = self.model(**inputs)
