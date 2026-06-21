@@ -17,7 +17,6 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.logging_setup import setup_logging
-from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
 
 logger = setup_logging("INFO", name="music_generator.musician")
 
@@ -896,17 +895,123 @@ class LSTMMusician(BaseMusician):
     Uses the trained LSTM_OnEssen model for musically coherent generation. More logical.
     """
 
-    def __init__(self, tempo: int = 120, key_signature: str = "C_major", temperature: float = 0.85):
+    def __init__(self, tempo: int = 128, key_signature: str = "C_major", temperature: float = 1.0):
+
         super().__init__(tempo, key_signature)
+        
+        from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
         
         self.generator = MelodyGenerator()
         self.temperature = temperature
-        self.max_notes = 18
+        self.max_notes_per_trigger = 25
         
+        # State management
+        
+        # "67 _ 67 _ 67 _ _ 65 64 _ 64 _ 64 _ _" # ["60", "_", "64", "_", "67", "_", "71"]
+        self.last_seed_notes = ["67", "_", "67", "_", "67", "_", "_", "65", "64", "_", "64", "_", "64", "_", "_"]
         self.active_collision = False
-        self.last_seed_notes = ["60", "_", "64", "_", "67"]
+        self.current_collision_start = None
+        self.active_note = None
         
-        logger.info("🎼 LSTM Musician initialized")
+        logger.info("🎼 LSTMMusician (Collision-Aware) initialized successfully")
+
+    def _check_edge_collision(self, seg_map: np.ndarray) -> bool:
+        """Check for collisions with image edges."""
+
+        important_classes = {13, 14, 15, 16, 17}  # car, truck, bus, train, motorcycle
+        
+        mask = np.isin(seg_map, list(important_classes))
+        if not np.any(mask):
+            return False
+            
+        return (np.any(mask[0, :]) or      # top
+                np.any(mask[-1, :]) or     # bottom
+                np.any(mask[:, 0]) or      # left
+                np.any(mask[:, -1]))       # right
+
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+        """Generate music based on segmentation data and edge collisions."""
+
+        timestamp = time.time()
+        events = []
+        
+        has_collision = self._check_edge_collision(segmentation_data)
+        
+        if has_collision:
+            if not self.active_collision:
+                logger.info(f"🎹▶️ COLLISION START - LSTM generating melody (frame {frame_id})")
+                self.active_collision = True
+                self.current_collision_start = timestamp
+
+            # Generate melody using LSTM
+            try:
+                seed_str = " ".join(self.last_seed_notes[-10:])
+                
+                generated_notes = list(self.generator.generate_melody_RT(
+                    seed=seed_str,
+                    num_steps=self.max_notes_per_trigger,
+                    temperature=self.temperature
+                ))
+
+                self.last_seed_notes = generated_notes[-12:]   # for continuity
+
+                # Calculate note duration based on collision length
+                collision_duration = timestamp - self.current_collision_start
+                base_duration = max(0.3, min(2.5, collision_duration * 0.8))  # between 0.3 and 2.5 seconds
+
+                step_dur = 60.0 / self.tempo / 3.5
+
+                current_t = timestamp
+                for symbol in generated_notes:
+                    if symbol.isdigit():
+                        note = int(symbol)
+                        duration = base_duration if len(generated_notes) < 8 else step_dur
+                        
+                        event = MusicEvent(
+                            note=note,
+                            velocity=np.random.randint(78, 96),
+                            duration=duration,
+                            channel=0,
+                            timestamp=current_t,
+                            metadata={
+                                "source": "lstm_onessen",
+                                "collision": True,
+                                "collision_duration": collision_duration
+                            }
+                        )
+                        events.append(event)
+                        current_t += duration
+
+            except Exception as e:
+                logger.error(f"LSTM Generation Error: {e}")
+                events.append(MusicEvent(72, 85, 0.6, timestamp))
+
+        else:
+            # Collision ended
+            if self.active_collision:
+                logger.info(f"🎹⏹️ Collision ended - Adding rest to seed")
+                self.active_collision = False
+                self.current_collision_start = None
+                # Add rest to the next seed
+                self.last_seed_notes.extend(["r", "_", "_"])
+
+        # Create MusicFrame
+        music_frame = MusicFrame(
+            events=events,
+            frame_id=frame_id,
+            timestamp=timestamp,
+            tempo=self.tempo,
+            key_signature=self.key_signature,
+            metadata={
+                "musician_type": "LSTMMusician",
+                "collision_active": has_collision,
+                "notes_generated": len(events),
+                "last_seed_length": len(self.last_seed_notes)
+            }
+        )
+        
+        self.frame_counter += 1
+        return music_frame
 
 class LSTMMusician_Test(BaseMusician):
     """
@@ -917,6 +1022,7 @@ class LSTMMusician_Test(BaseMusician):
     def __init__(self, tempo: int = 130, key_signature: str = "C_major", temperature: float = 0.85):
         
         super().__init__(tempo, key_signature)
+        from Models.Music.LSTM_OnEssen.generator  import MelodyGenerator
         
         self.generator = MelodyGenerator()
         self.temperature = temperature
@@ -954,11 +1060,10 @@ class LSTMMusician_Test(BaseMusician):
             try:
                 seed_str = " ".join(self.last_seed_notes[-16:])  # continuity
                 
-                generated = list(self.generator.generate_melody(
+                generated = list(self.generator.generate_melody_RT(
                     seed=seed_str,
                     num_steps=self.max_notes,
-                    temperature=self.temperature,
-                    mode="real-time"
+                    temperature=self.temperature
                 ))
 
                 logger.info(f"✅ LSTM generated {len(generated)} notes successfully!")
