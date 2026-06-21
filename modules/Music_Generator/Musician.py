@@ -890,137 +890,102 @@ class ContinuousPianistMusician(BaseMusician):
         self.collision_history.clear()
         self.note_start_times.clear()
 
-class LSTMMusician1(BaseMusician):
+
+class LSTMMusician_Test(BaseMusician):
     """
-    LSTM-based musician that generates melodic sequences based on visual segmentation.
+    LSTM-based musician that generates melodic sequences based on visual segmentation (Collision Trigger).
     Uses the trained LSTM_OnEssen model for musically coherent generation.
     """
     
-    def __init__(self, 
-                 tempo: int = 120, 
-                 key_signature: str = "C_major",
-                 model_path: str = None,
-                 temperature: float = 0.85,
-                 max_notes_per_frame: int = 12):
+    def __init__(self, tempo: int = 130, key_signature: str = "C_major", 
+                 model_path: str = None, temperature: float = 0.85):
         
         super().__init__(tempo, key_signature)
         
         if model_path is None:
-            model_path = "modules/Models/Music/LSTM-OnEssen/LSTM_OnEssen.pt"
+            model_path = "modules/Models/Music/LSTM_OnEssen/LSTM_OnEssen.pt"
         
         self.generator = MelodyGenerator(model_path)
         self.temperature = temperature
-        self.max_notes_per_frame = max_notes_per_frame
+        self.max_notes = 18
         
-        # State for continuity between frames
-        self.current_seed = None
-        self.last_generated = []
+        self.active_collision = False
+        self.last_seed_notes = ["60", "_", "64", "_", "67"]
         
-        # Mapping segmentation to musical context
-        self.class_to_seed = self._create_visual_to_seed_mapping()
-        
-        logger.info("🎼 LSTM Musician (OnEssen) initialized successfully")
+        logger.info("🎼 LSTM Musician initialized")
 
-    def _create_visual_to_seed_mapping(self):
-        """Map dominant visual elements to good musical seeds"""
-        return {
-            "car": "55 _ _ 52 55 60 _",
-            "truck": "48 _ 50 _ 52 _ 55",
-            "person": "64 _ 67 _ 69 _ 67",
-            "road": "60 _ _ 62 _ _ 64",
-            "building": "55 57 60 _ 62 _",
-            "vegetation": "72 _ 71 _ 69 _ 67",
-            "default": "60 _ 64 _ 67 _ 72"
-        }
-
-    def _analyze_scene(self, segmentation_data: np.ndarray) -> dict:
-        """Analyze segmentation map to extract musical context"""
-
-        unique, counts = np.unique(segmentation_data, return_counts=True)
-        total = segmentation_data.shape[0] * segmentation_data.shape[1]
+    def _check_edge_collision(self, seg_map: np.ndarray) -> bool:
+        important_classes = {11, 13, 14, 15, 16}  # person, car, truck, bus, train
         
-        dominant_class = unique[np.argmax(counts)]
-        presence = {cls: cnt/total for cls, cnt in zip(unique, counts) if cnt/total > 0.05}
-        
-        # Find dominant object
-        dominant_name = "default"
-        if dominant_class < len(self.generator.cityscapes_labels):  # اگر لیست labels موجود بود
-            try:
-                dominant_name = self.generator.cityscapes_labels[dominant_class]
-            except:
-                pass
-        
-        # Check if important objects are present
-        has_vehicle = any(c in presence for c in [13, 14, 15])  # car, truck, bus
-        has_person = 11 in presence  # person
-        
-        return {
-            "dominant_class": dominant_class,
-            "dominant_name": dominant_name,
-            "has_vehicle": has_vehicle,
-            "has_person": has_person,
-            "complexity": len(presence)  # تعداد کلاس‌های مختلف = پیچیدگی صحنه
-        }
+        mask = np.isin(seg_map, list(important_classes))
+        if not np.any(mask):
+            return False
+            
+        return (np.any(mask[0, :]) or          # top
+                np.any(mask[-1, :]) or         # bottom  
+                np.any(mask[:, 0]) or          # left
+                np.any(mask[:, -1]))           # right
 
     def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
-        """
-        Generate music using LSTM model based on current scene.
-        """
         timestamp = time.time()
         events = []
         
-        scene_info = self._analyze_scene(segmentation_data)
+        has_collision = self._check_edge_collision(segmentation_data)
         
-        # Determine seed based on scene
-        if scene_info["dominant_name"] in self.class_to_seed:
-            seed_str = self.class_to_seed[scene_info["dominant_name"]]
+        if has_collision:
+            if not self.active_collision:
+                logger.info(f"🎹▶️ COLLISION START - Generating LSTM melody (frame {frame_id})")
+                self.active_collision = True
+
+            # Generate Melody
+            try:
+                seed_str = " ".join(self.last_seed_notes[-16:])  # continuity
+                
+                generated = list(self.generator.generate_melody(
+                    seed=seed_str,
+                    num_steps=self.max_notes,
+                    temperature=self.temperature,
+                    mode="real-time"
+                ))
+
+                logger.info(f"✅ LSTM generated {len(generated)} notes successfully!")
+                
+                if not generated:
+                    logger.warning("⚠️ Generated notes list is empty!")
+                    generated = ["60", "_", "64", "_", "67", "_", "71"]
+                
+                self.last_seed_notes = generated[-12:]   # For the next frame's seed
+                
+                # Convet to MusicEvent
+                step_dur = 60.0 / self.tempo / 2.8
+                
+                current_t = timestamp
+                for symbol in generated:
+                    if symbol.isdigit():
+                        note = int(symbol)
+                        event = MusicEvent(
+                            note=note,
+                            velocity=np.random.randint(75, 98),
+                            duration=step_dur * (1.0 if note % 3 == 0 else 0.7),
+                            channel=0,
+                            timestamp=current_t,
+                            metadata={"source": "lstm", "collision": True}
+                        )
+                        events.append(event)
+                        current_t += event.duration
+                
+                logger.debug(f"✅ LSTM generated {len(events)} notes (collision active)")
+                
+            except Exception as e:
+                logger.error(f"❌ LSTM Generation Error: {e}")
+        
         else:
-            seed_str = self.class_to_seed["default"]
-        
-        # Use previous melody for better continuity
-        if self.last_generated and len(self.last_generated) > 8:
-            seed_str = " ".join(self.last_generated[-8:])
-        
-        # Generate new notes
-        try:
-            generated_notes = list(self.generator.generate_melody(
-                seed=seed_str,
-                num_steps=self.max_notes_per_frame,
-                temperature=self.temperature
-            ))
-            
-            self.last_generated = generated_notes[-20:]  # keep last part for continuity
-            
-        except Exception as e:
-            logger.warning(f"LSTM generation failed: {e}")
-            generated_notes = ["60", "_", "64", "_", "67"]  # fallback
-        
-        # Convert generated notes to MusicEvent
-        current_time = timestamp
-        step_duration = 60.0 / self.tempo / 2  # quarter note adjusted by tempo
-        
-        for i, symbol in enumerate(generated_notes):
-            if symbol.isdigit():
-                try:
-                    note = int(symbol)
-                    event = MusicEvent(
-                        note=note,
-                        velocity=75 + np.random.randint(-15, 15),
-                        duration=step_duration * (1.2 if i % 3 == 0 else 0.8),
-                        channel=0,  # Piano channel
-                        timestamp=current_time,
-                        metadata={
-                            "class_name": scene_info["dominant_name"],
-                            "source": "lstm_onessen",
-                            "frame_id": frame_id
-                        }
-                    )
-                    events.append(event)
-                    current_time += event.duration
-                except:
-                    continue
-        
-        # Create MusicFrame
+            if self.active_collision:
+                logger.info(f"🎹⏹️ Collision ended")
+                self.active_collision = False
+                self.last_seed_notes = ["60", "_", "64", "_", "67"]
+
+        # Create MusicFrame with generated events
         music_frame = MusicFrame(
             events=events,
             frame_id=frame_id,
@@ -1028,15 +993,14 @@ class LSTMMusician1(BaseMusician):
             tempo=self.tempo,
             key_signature=self.key_signature,
             metadata={
-                "musician_type": "LSTMMusician1",
-                "model": "LSTM_OnEssen",
-                "dominant_class": scene_info["dominant_name"],
-                "generated_notes": len(generated_notes),
-                "temperature": self.temperature
+                "musician_type": "LSTMMusician_Test",
+                "collision_active": has_collision,
+                "notes_generated": len(events)
             }
         )
         
         self.frame_counter += 1
+
         return music_frame
 
 class Musician:
@@ -1074,7 +1038,7 @@ class Musician:
         elif musician_type.lower() == 'continuous_pianist':
             return ContinuousPianistMusician(tempo, key_signature)
         elif musician_type.lower() == 'lstm-onessen':
-            return LSTMMusician1(tempo, key_signature)
+            return LSTMMusician_Test(tempo, key_signature)
         else:
             raise ValueError(f"Unsupported musician type: {musician_type}. " +
                              f"Supported types: 'test', 'pianist', 'continuous_pianist', 'lstm-onEssen'")
