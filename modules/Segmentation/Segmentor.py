@@ -27,7 +27,7 @@ logger = setup_logging("INFO", name="segmentation.segmentor")
 class SegmentationResult:
     """
     Data class to store segmentation results from any model.
-    
+
     Attributes:
         segmentation_map: Numpy array containing pixel-wise class predictions
         confidence_map: Optional confidence scores for each pixel
@@ -47,15 +47,15 @@ class SegmentationResult:
 class BaseSegmentor(ABC):
     """
     Abstract base class for all segmentation models.
-    
+
     This class defines the interface that all segmentation models must implement,
     ensuring consistency and extensibility across different model architectures.
     """
-    
+
     def __init__(self, model_path: str, device: str = 'auto'):
         """
         Initialize the base segmentor.
-        
+
         Args:
             model_path: Path to the model file or model identifier
             device: Device to run the model on ('auto', 'cpu', 'cuda')
@@ -65,7 +65,7 @@ class BaseSegmentor(ABC):
         self.device = self._setup_device(device)
         self.model = None
         self.is_loaded = False
-        
+
     def _setup_device(self, device: str) -> str:
         """Setup the appropriate device for model inference."""
 
@@ -76,50 +76,50 @@ class BaseSegmentor(ABC):
             logger.warning("CUDA requested but not available; falling back to CPU.")
             return 'cpu'
         return device
-    
+
     @abstractmethod
     def load_model(self) -> None:
         """Load the segmentation model."""
         pass
-    
+
     @abstractmethod
     def preprocess_image(self, image: np.ndarray) -> Any:
         """
         Preprocess the input image for the specific model.
-        
+
         Args:
             image: Input image as numpy array (RGB format)
-            
+
         Returns:
             Preprocessed input ready for model inference
         """
         pass
-    
+
     @abstractmethod
     def predict(self, image: np.ndarray) -> SegmentationResult:
         """
         Perform segmentation on the input image.
-        
+
         Args:
             image: Input image as numpy array (RGB format)
-            
+
         Returns:
             SegmentationResult containing all segmentation information
         """
         pass
-    
+
     @abstractmethod
     def get_class_labels(self) -> List[str]:
         """Get the list of class labels for this model."""
         pass
-    
+
     def __call__(self, image: np.ndarray) -> SegmentationResult:
         """
         Convenience method to call predict directly.
-        
+
         Args:
             image: Input image as numpy array (RGB format)
-            
+
         Returns:
             SegmentationResult containing all segmentation information
         """
@@ -131,22 +131,22 @@ class BaseSegmentor(ABC):
 class YOLOSegmentor(BaseSegmentor):
     """
     YOLO-based segmentation implementation.
-    
+
     Supports various YOLO models for instance segmentation with object detection
     capabilities including bounding boxes and individual object masks.
     """
-    
-    def __init__(self, model_path: str = "yolov11s-seg.pt", device: str = 'auto'):
+
+    def __init__(self, model_path: str = "yolo11/yolo11s-seg.pt", device: str = 'auto'):
         """
         Initialize YOLO segmentor.
-        
+
         Args:
             model_path: Path to YOLO model file
             device: Device to run the model on
         """
 
         super().__init__(model_path, device)
-        
+
     def load_model(self) -> None:
         """Load the YOLO model."""
 
@@ -156,36 +156,36 @@ class YOLOSegmentor(BaseSegmentor):
                 pretrained_path = os.path.join("modules/Segmentation/Pre-trained Models", self.model_path)
                 if os.path.exists(pretrained_path):
                     self.model_path = pretrained_path
-            
+
             self.model = YOLO(self.model_path, task='segment')
             self.model.to(self.device)
             self.model.eval()
             self.is_loaded = True
             logger.info("✅ YOLO model loaded on %s", self.device)
-            
+
         except Exception as e:
             raise RuntimeError(f"Failed to load YOLO model: {e}")
-    
+
     def preprocess_image(self, image: np.ndarray) -> np.ndarray:
         """
         Preprocess image for YOLO.
-        
+
         Args:
             image: Input image in RGB format
-            
+
         Returns:
             Image ready for YOLO inference
         """
         # YOLO handles preprocessing internally
         return image
-    
+
     def predict(self, image: np.ndarray) -> SegmentationResult:
         """
         Perform YOLO segmentation.
-        
+
         Args:
             image: Input image as numpy array (RGB format)
-            
+
         Returns:
             SegmentationResult with instance segmentation information
         """
@@ -206,9 +206,9 @@ class YOLOSegmentor(BaseSegmentor):
                 half = (self.device.startswith("cuda") and torch.cuda.is_available()),
                 verbose = False
             )[0]
-        
+
         # Initialize maps and lists for results
-        segmentation_map = np.zeros((h, w), dtype=np.uint16)   # safer for >255 classes
+        segmentation_map = np.full((h, w), 255, dtype=np.uint16)  # 255 = background sentinel (no detection)
         confidence_map   = np.zeros((h, w), dtype=np.float32)
         bounding_boxes = []
         masks = []
@@ -221,8 +221,8 @@ class YOLOSegmentor(BaseSegmentor):
             clss = results.boxes.cls.cpu().numpy()
 
             for mask, box, conf, cls in zip(masks_data, boxes, confs, clss):
-                class_id = int(cls) 
-                
+                class_id = int(cls)
+
                 # Resize mask
                 mask_resized = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
                 mask_binary = (mask_resized > 0.5).astype(np.uint8)
@@ -244,7 +244,7 @@ class YOLOSegmentor(BaseSegmentor):
 
         # Ordered class labels (safe)
         class_labels = [self.model.names[i] for i in sorted(self.model.names.keys())]
-        
+
         return SegmentationResult(
             segmentation_map = segmentation_map,
             confidence_map = confidence_map,
@@ -259,7 +259,7 @@ class YOLOSegmentor(BaseSegmentor):
                 'num_classes': len(class_labels)
             }
         )
-    
+
     def get_class_labels(self) -> List[str]:
         """Get YOLO class labels."""
         if not self.is_loaded:
@@ -269,11 +269,11 @@ class YOLOSegmentor(BaseSegmentor):
 class SegformerSegmentor(BaseSegmentor):
     """
     Segformer-based semantic segmentation implementation.
-    
+
     Provides dense pixel-wise segmentation using transformer-based architecture
     with support for various Segformer model variants.
     """
-    
+
     def __init__(
         self,
         model_path: str = "nvidia/segformer-b2-finetuned-cityscapes-1024-1024",
@@ -283,7 +283,7 @@ class SegformerSegmentor(BaseSegmentor):
     ):
         """
         Initialize Segformer segmentor.
-        
+
         Args:
             model_path: Hugging Face model identifier or local path
             device: Device to run the model on
@@ -321,7 +321,7 @@ class SegformerSegmentor(BaseSegmentor):
 
         if not local_files_only:
             return self.model_path, False
-        
+
         # Offline mode - try common locations
         candidates: List[str] = []
         env_path = os.environ.get("RAGBAARNET_SEGFORMER_PATH") or os.environ.get("SEGFORMER_MODEL_PATH")
@@ -339,7 +339,7 @@ class SegformerSegmentor(BaseSegmentor):
                 return candidate, True
 
         return self.model_path, False
-        
+
     def load_model(self) -> None:
         """Load the Segformer model with safety considerations."""
 
@@ -403,18 +403,18 @@ class SegformerSegmentor(BaseSegmentor):
                     "Set RAGBAARNET_SEGFORMER_PATH or allow network (RAGBAARNET_ALLOW_NET=1)"
                 ) from e
             raise RuntimeError(f"Failed to load Segformer model: {e}") from e
-    
+
     def preprocess_image(self, image: np.ndarray) -> Dict[str, torch.Tensor]:
         """
         Preprocess image for Segformer.
-        
+
         Args:
             image: Input image in RGB format
-            
+
         Returns:
             Preprocessed inputs ready for Segformer
         """
-    
+
         if self.processor is None:
             self.load_model()
 
@@ -422,31 +422,31 @@ class SegformerSegmentor(BaseSegmentor):
 
         if self.device.startswith('cuda') and torch.cuda.is_available():
             inputs = {
-                k: v.pin_memory().to(self.device, non_blocking=True) 
+                k: v.pin_memory().to(self.device, non_blocking=True)
                 for k, v in inputs.items()
             }
         else:
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         return inputs
-    
+
     def predict(self, image: np.ndarray) -> SegmentationResult:
         """
         Perform Segformer segmentation.
-        
+
         Args:
             image: Input image as numpy array (RGB format)
-            
+
         Returns:
             SegmentationResult with semantic segmentation information
         """
         if not self.is_loaded:
             self.load_model()
-            
+
         # Preprocess the image
         h, w = image.shape[:2]
         inputs = self.preprocess_image(image)
-        
+
         # Perform inference (optimized: inference_mode + autocast on CUDA)
         with torch.inference_mode():
             if self.device == 'cuda' and torch.cuda.is_available():
@@ -454,14 +454,14 @@ class SegformerSegmentor(BaseSegmentor):
                     outputs = self.model(**inputs)
             else:
                 outputs = self.model(**inputs)
-        
+
         logits = outputs.logits  # [1, num_classes, height, width]
-        
+
         # Upsample to original image size
         upsampled_logits = torch.nn.functional.interpolate(
             logits, size=(h, w), mode='bilinear', align_corners=False
         )
-        
+
         # Final predictions
         segmentation_map = torch.argmax(upsampled_logits, dim=1).cpu().numpy()[0].astype(np.uint16)
         confidence_map = None
@@ -473,7 +473,7 @@ class SegformerSegmentor(BaseSegmentor):
 
         unique, counts = np.unique(segmentation_map, return_counts=True)
         class_areas = dict(zip(unique.tolist(), counts.tolist()))
-        
+
         return SegmentationResult(
             segmentation_map=segmentation_map,
             confidence_map=confidence_map,
@@ -484,12 +484,12 @@ class SegformerSegmentor(BaseSegmentor):
                 'model_type': 'Segformer',
                 'model_path': self.model_path,
                 'device': self.device,
-                'num_detected': int((segmentation_map > 0).sum()), 
+                'num_detected': int((segmentation_map > 0).sum()),
                 'num_classes': len(self.cityscapes_labels),
                 'class_areas': class_areas
             }
         )
-    
+
     def get_class_labels(self) -> List[str]:
         """Get Segformer class labels."""
 
@@ -501,15 +501,15 @@ class SegformerSegmentor(BaseSegmentor):
 class Segmentor:
     """
     Main Segmentor class that provides a unified interface for different segmentation models.
-    
+
     This class acts as a factory and manager for different segmentation models,
     allowing easy switching between models and unified result handling.
     """
-    
+
     def __init__(self, model_type: str = 'segformer', model_path: str = None, device: str = 'auto'):
         """
         Initialize the main Segmentor.
-        
+
         Args:
             model_type: Type of model ('yolo', 'segformer')
             model_path: Path to model or model identifier
@@ -519,7 +519,7 @@ class Segmentor:
         self.model_type = model_type.lower()
         self.device = device
         self.segmentor = self._create_segmentor(model_type, model_path, device)
-        
+
     def _create_segmentor(self, model_type: str, model_path: str, device: str) -> BaseSegmentor:
         """Create the appropriate segmentor based on model type."""
 
@@ -534,7 +534,7 @@ class Segmentor:
                 model_path = "nvidia/segformer-b2-finetuned-cityscapes-1024-1024"
 
             is_local_path = model_path and os.path.exists(model_path)
-            
+
             return SegformerSegmentor(model_path=model_path, device=device, local_files_only=is_local_path)
 
         else:
@@ -544,10 +544,10 @@ class Segmentor:
     def __call__(self, image: Union[np.ndarray, str]) -> SegmentationResult:
         """
         Perform segmentation on input image.
-        
+
         Args:
             image: Input image as numpy array (RGB) or path to image file
-            
+
         Returns:
             SegmentationResult containing all segmentation information
         """
@@ -564,19 +564,19 @@ class Segmentor:
             pass
         else:
             raise ValueError("Image must be a numpy array (RGB) or path to image file")
-        
+
         return self.segmentor(image)
-    
+
     def get_class_labels(self) -> List[str]:
         """Get class labels for the current model."""
 
         return self.segmentor.get_class_labels()
-    
-    def visualize_results(self, image: np.ndarray, result: SegmentationResult, 
+
+    def visualize_results(self, image: np.ndarray, result: SegmentationResult,
                          show_confidence: bool = False, figsize: Tuple[int, int] = (15, 5)) -> None:
         """
         Visualize segmentation results.
-        
+
         Args:
             image: Original input image
             result: SegmentationResult from segmentation
@@ -590,17 +590,17 @@ class Segmentor:
 
         num_plots = 3 if show_confidence else 2
         fig, axes = plt.subplots(1, num_plots, figsize=figsize)
-        
+
         # Original image
         axes[0].imshow(image)
         axes[0].set_title("Original Image")
         axes[0].axis('off')
-        
+
         # Segmentation map
         if result.class_labels:
             # Generate colors for the segmentation map
             num_classes = len(result.class_labels)
-            
+
             # Try to use tab20 colormap first (works well for up to 20 classes)
             if num_classes <= 20:
                 try:
@@ -613,14 +613,14 @@ class Segmentor:
                 # For more than 20 classes, sample from a continuous colormap
                 base_cmap = plt.colormaps.get_cmap('gist_ncar')
                 colors = [base_cmap(i / num_classes) for i in range(num_classes)]
-            
+
             cmap = mcolors.ListedColormap(colors)
-            
-            im = axes[1].imshow(result.segmentation_map, cmap=cmap, 
+
+            im = axes[1].imshow(result.segmentation_map, cmap=cmap,
                               vmin=0, vmax=len(result.class_labels)-1)
             axes[1].set_title(f"{result.metadata['model_type']} Segmentation")
             axes[1].axis('off')
-            
+
             # Add colorbar with labels
             cbar = plt.colorbar(im, ax=axes[1], ticks=range(len(result.class_labels)))
             cbar.ax.set_yticklabels(result.class_labels, fontsize=8)
@@ -628,21 +628,21 @@ class Segmentor:
             axes[1].imshow(result.segmentation_map, cmap='viridis')
             axes[1].set_title(f"{result.metadata['model_type']} Segmentation")
             axes[1].axis('off')
-        
+
         # Confidence map (if requested and available)
         if show_confidence and result.confidence_map is not None:
             im_conf = axes[2].imshow(result.confidence_map, cmap='hot', vmin=0, vmax=1)
             axes[2].set_title("Confidence Map")
             axes[2].axis('off')
             plt.colorbar(im_conf, ax=axes[2])
-        
+
         plt.tight_layout()
         plt.show()
-    
+
     def switch_model(self, model_type: str, model_path: str = None) -> None:
         """
         Switch to a different segmentation model.
-        
+
         Args:
             model_type: New model type ('yolo', 'segformer')
             model_path: Path to new model

@@ -32,7 +32,7 @@ class VideoProcessor:
     """
     Video Processing Class that handles frame reception, segmentation, and synchronization
     """
-    
+
     def __init__(self, socketio_instance=None):
         """Initialize the video processor with segmentation models"""
         self.socketio = socketio_instance  # Store socketio instance for broadcasting
@@ -80,29 +80,29 @@ class VideoProcessor:
         logger.info("🔄 Initializing segmentation models...")
         try:
             # YOLO model
-            # model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolov8m-seg.pt')
-            # self.segmentor = Segmentor('yolo', model_path)
-            # logger.info("✅ YOLO Segmentor initialized successfully")
+            model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolo11/yolo11m-seg.pt')
+            self.segmentor = Segmentor('yolo', model_path)
+            logger.info("✅ YOLO Segmentor initialized successfully")
 
             # SegFormer model
             # self.segmentor = Segmentor('segformer')
             # logger.info("✅ SegFormer Segmentor initialized successfully")
 
             # Prefer local B2 SegFormer for consistent offline use
-            local_b2_path = os.environ.get(
-                "RAGBAARNET_SEGFORMER_PATH",
-                os.path.abspath(
-                    os.path.join(
-                        os.path.dirname(__file__),
-                        "..",
-                        "Segmentation",
-                        "Pre-trained Models",
-                        "segformer-b2-finetuned-cityscapes-1024-1024",
-                    )
-                )
-            )
-            self.segmentor = Segmentor('segformer', model_path=local_b2_path)
-            logger.info("✅ Local SegFormer (B2) Segmentor initialized successfully")
+            # local_b2_path = os.environ.get(
+            #     "RAGBAARNET_SEGFORMER_PATH",
+            #     os.path.abspath(
+            #         os.path.join(
+            #             os.path.dirname(__file__),
+            #             "..",
+            #             "Segmentation",
+            #             "Pre-trained Models",
+            #             "segformer-b2-finetuned-cityscapes-1024-1024",
+            #         )
+            #     )
+            # )
+            # self.segmentor = Segmentor('segformer', model_path=local_b2_path)
+            # logger.info("✅ Local SegFormer (B2) Segmentor initialized successfully")
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
@@ -123,14 +123,14 @@ class VideoProcessor:
         # Start processing thread
         self.processing_thread = threading.Thread(target=self._processing_loop, daemon=True)
         self.processing_thread.start()
-    
+
     def _create_consistent_color_map(self):
         """Create a consistent color mapping for segmentation classes"""
         # Cityscapes color palette (SegFormer model classes) - Updated to 30 classes
         # These colors match the standard Cityscapes dataset visualization
         color_map = {
             0: [128, 64, 128],    # Road - purple
-            1: [244, 35, 232],    # Sidewalk - magenta  
+            1: [244, 35, 232],    # Sidewalk - magenta
             2: [70, 70, 70],      # Building - gray
             3: [102, 102, 156],   # Wall - blue-gray
             4: [190, 153, 153],   # Fence - pink-gray
@@ -161,17 +161,17 @@ class VideoProcessor:
             29: [111, 74, 0],     # Dynamic - brown
             30: [81, 81, 81],     # Static - dark gray
         }
-        
+
         # Add a background/unlabeled class
         color_map[255] = [0, 0, 0]  # Black for unlabeled regions
-        
+
         # Extend with additional colors for more classes if needed
         for i in range(31, 255):
             # Generate consistent colors using HSV color space
             hue = (i * 137.5) % 360  # Golden angle for good distribution
             saturation = 70 + (i % 3) * 15  # Vary saturation
             value = 180 + (i % 4) * 20       # Vary brightness
-            
+
             # Convert HSV to RGB
             r, g, b = colorsys.hsv_to_rgb(hue/360, saturation/100, value/255)
             color_map[i] = [int(r*255), int(g*255), int(b*255)]
@@ -189,9 +189,9 @@ class VideoProcessor:
         if self.debug_mode:
             for i, label in enumerate(cityscapes_labels):
                 logger.debug("   Class %s: %s → RGB%s", i, label, color_map[i])
-        
+
         return color_map
-    
+
     def _prepare_color_mapping_array(self):
         """Pre-compute color mapping array for vectorized operations"""
         # Create a lookup table for all possible class IDs (0-255)
@@ -238,13 +238,13 @@ class VideoProcessor:
     def _create_generic_color_mapping_array(self):
         """Create a generic per-class color mapping array for non-Cityscapes models (e.g., YOLO/COCO).
 
-        Index 0 is treated as background (black). Remaining IDs get deterministic HSV colors.
+        Index 255 is the background/no-detection sentinel (black). All COCO class IDs (0-79)
+        get deterministic HSV colors via the golden-angle hue spacing.
         """
         mapping = np.zeros((256, 3), dtype=np.uint8)
-        mapping[0] = [0, 0, 0]
-        mapping[255] = [0, 0, 0]
+        mapping[255] = [0, 0, 0]  # 255 = background/no-detection sentinel → black
 
-        for class_id in range(1, 255):
+        for class_id in range(0, 255):  # start at 0 so COCO class 0 (person) gets a colour
             hue = (class_id * 137.5) % 360  # golden angle
             saturation = 80
             value = 220
@@ -252,7 +252,7 @@ class VideoProcessor:
             mapping[class_id] = [int(r * 255), int(g * 255), int(b * 255)]
 
         return mapping
-        
+
     def _processing_loop(self):
         """Main processing loop that runs in a separate thread"""
         logger.info("🚀 Processing loop started")
@@ -396,7 +396,7 @@ class VideoProcessor:
                         if self.music_enabled and self.musician is not None:
                             try:
                                 music_frame = self.musician(result.segmentation_map, frame_id=self.frame_counter)
-                                
+
                                 # Store music data
                                 music_data = {
                                     'frame_id': frame_id,
@@ -407,23 +407,23 @@ class VideoProcessor:
                                     'tempo': music_frame.tempo,
                                     'key_signature': music_frame.key_signature
                                 }
-                                
+
                                 # Add to music queue (remove old ones if full)
                                 if self.music_queue.full():
                                     try:
                                         self.music_queue.get_nowait()
                                     except Empty:
                                         pass
-                                
+
                                 self.music_queue.put(music_data)
                                 self.current_music = music_data
-                                
+
                                 # Broadcast music events to connected clients
                                 self._broadcast_music_update(music_data)
-                                
+
                                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                                     logger.debug("🎵 Generated %s music events for frame %s", len(music_frame.events), self.frame_counter)
-                                    
+
                             except Exception as music_err:
                                 logger.warning("❌ Error generating music: %s", music_err)
 
@@ -440,7 +440,7 @@ class VideoProcessor:
                 continue
             except Exception as e:
                 logger.exception("❌ Error in processing loop: %s", e)
-                
+
     def _broadcast_segmentation_update(self, segmentation_data):
         """Immediately broadcast segmentation update to connected WebSocket clients"""
         try:
@@ -449,16 +449,16 @@ class VideoProcessor:
                 display_data = self.get_synchronized_display(for_main_ui=True)
                 state = self.get_current_state()
                 response_data = {**display_data, 'queue_size': state['queue_size']}
-                
+
                 # Use socketio to broadcast to all connected clients
                 self.socketio.emit('frame_update', response_data)
-                
+
                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                     logger.debug("📡 Broadcasted segmentation update for frame %s", self.frame_counter)
         except Exception as e:
             if self.debug_mode:
                 logger.warning("❌ Error broadcasting update: %s", e)
-    
+
     def _broadcast_music_update(self, music_data):
         """Broadcast music events to connected WebSocket clients"""
         try:
@@ -466,7 +466,7 @@ class VideoProcessor:
                 # Prepare music events data for transmission
                 music_frame = music_data['music_frame']
                 events_data = []
-                
+
                 for event in music_frame.events:
                     event_data = {
                         'note': event.note,
@@ -479,7 +479,7 @@ class VideoProcessor:
                         'presence_ratio': event.metadata.get('presence_ratio', 0.0)
                     }
                     events_data.append(event_data)
-                
+
                 music_response = {
                     'frame_id': music_data['frame_id'],
                     'frame_counter': music_data['frame_counter'],
@@ -489,17 +489,17 @@ class VideoProcessor:
                     'key_signature': music_data['key_signature'],
                     'timestamp': music_data['timestamp']
                 }
-                
+
                 # Emit music events to connected clients
                 self.socketio.emit('music_update', music_response)
-                
+
                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
-                    logger.debug("🎵 Broadcasted music update: %s events for frame %s", 
+                    logger.debug("🎵 Broadcasted music update: %s events for frame %s",
                                len(events_data), music_data['frame_counter'])
         except Exception as e:
             if self.debug_mode:
                 logger.warning("❌ Error broadcasting music update: %s", e)
-    
+
     def _create_segmentation_overlay_optimized(self, frame, result):
         """Create an optimized visualization overlay for the segmentation result"""
         try:
@@ -516,64 +516,64 @@ class VideoProcessor:
                 if self.debug_mode:
                     logger.warning("⚠️ segmentation_map validation failed in overlay: %s", _v)
                 segmentation_map = np.clip(np.asarray(segmentation_map, dtype=np.int32), 0, 255).astype(np.uint8)
-            
+
             # Occasional debug info (not every frame)
             if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                 unique_classes = np.unique(segmentation_map)
                 logger.debug("🔍 Classes: %s, Shape: %s", unique_classes, segmentation_map.shape)
-                
+
                 # Quick road detection check
                 road_pixels = np.sum(segmentation_map == 0)
                 road_percentage = (road_pixels / segmentation_map.size) * 100
                 logger.debug("🛣️ Road: %.1f%% of image", road_percentage)
-            
+
             # Vectorized color mapping using pre-computed lookup table
             model_type = ((getattr(result, 'metadata', None) or {}).get('model_type') or '').lower()
             if model_type == 'yolo' and self.yolo_color_mapping_array is not None:
                 overlay = self.yolo_color_mapping_array[segmentation_map]
             else:
                 overlay = self.color_mapping_array[segmentation_map]
-            
+
             # Resize overlay to match original frame size if needed
             if overlay.shape[:2] != frame.shape[:2]:
-                overlay = cv2.resize(overlay, (frame.shape[1], frame.shape[0]), 
+                overlay = cv2.resize(overlay, (frame.shape[1], frame.shape[0]),
                                    interpolation=cv2.INTER_NEAREST)  # Use nearest neighbor for segmentation
-            
+
             # Optimized blending (reduced alpha for better performance)
             blended = cv2.addWeighted(frame, 0.5, overlay, 0.5, 0)
-            
+
             # Convert back to BGR for encoding
             blended = cv2.cvtColor(blended, cv2.COLOR_RGB2BGR)
-            
+
             return blended
-            
+
         except Exception as e:
             logger.exception("❌ Error creating segmentation overlay: %s", e)
             return frame
-    
+
     def add_frame(self, frame, frame_id=None, timestamp=None):
         """Add a frame to the processing queue"""
         if timestamp is None:
             timestamp = time.time()
-            
+
         if frame_id is None:
             frame_id = f"frame_{self.frame_counter}"
-            
+
         frame_data = {
             'frame': frame,
             'frame_id': frame_id,
             'timestamp': timestamp
         }
-        
+
         # Add to queue (remove old frame if full)
         if self.frame_queue.full():
             try:
                 self.frame_queue.get_nowait()
             except Empty:
                 pass
-                
+
         self.frame_queue.put(frame_data)
-        
+
     def get_current_state(self):
         """Get current processing state for display"""
         return {
@@ -586,7 +586,7 @@ class VideoProcessor:
             'queue_size': self.frame_queue.qsize(),
             'music_queue_size': self.music_queue.qsize() if hasattr(self, 'music_queue') else 0
         }
-    
+
     def get_synchronized_display(self, for_main_ui=True):
         """Get synchronized frame and segmentation data for display - OPTIMIZED"""
         display_data = {
@@ -597,14 +597,14 @@ class VideoProcessor:
             'frame_counter': self.frame_counter,
             'timestamp': time.time()
         }
-        
+
         # Only provide segmentation overlay to main UI to avoid conflicts
         if self.current_segmentation is not None and for_main_ui:
             seg_data = self.current_segmentation
-            
+
             # Check if this segmentation is recent enough (within last 10 frames)
             frame_diff = self.frame_counter - seg_data['frame_counter']
-            
+
             if frame_diff <= 10:  # Only send if recent
                 # Use cached encoded overlay when available to avoid re-encoding
                 if seg_data.get('overlay_b64'):
@@ -614,7 +614,7 @@ class VideoProcessor:
                     _, buffer = cv2.imencode('.jpg', seg_data['overlay'], self.encode_params)
                     overlay_b64 = base64.b64encode(buffer).decode('utf-8')
                     display_data['segmentation_overlay'] = f"data:image/jpeg;base64,{overlay_b64}"
-                
+
                 # Minimal segmentation info
                 display_data['segmentation_info'] = {
                     'frame_id': seg_data['frame_id'],
@@ -624,7 +624,7 @@ class VideoProcessor:
                     'class_labels': seg_data.get('detected_classes') or [],
                     'model_type': seg_data.get('model_type')
                 }
-        
+
         # For status page, provide basic info without heavy data
         elif not for_main_ui and self.current_segmentation is not None:
             seg_data = self.current_segmentation
@@ -635,12 +635,12 @@ class VideoProcessor:
                 'class_labels': seg_data.get('detected_classes') or [],
                 'model_type': seg_data.get('model_type')
             }
-        
+
         # Add music information if available
         if hasattr(self, 'current_music') and self.current_music is not None:
             music_data = self.current_music
             frame_diff = self.frame_counter - music_data['frame_counter']
-            
+
             if frame_diff <= 10:  # Only include recent music data
                 display_data['music_info'] = {
                     'frame_id': music_data['frame_id'],
@@ -651,9 +651,9 @@ class VideoProcessor:
                     'frames_since_music': frame_diff,
                     'timestamp': music_data['timestamp']
                 }
-        
+
         return display_data
-    
+
     def toggle_music_generation(self, enable: bool = None):
         """Enable or disable music generation"""
         if hasattr(self, 'music_enabled'):
@@ -661,12 +661,12 @@ class VideoProcessor:
                 self.music_enabled = not self.music_enabled
             else:
                 self.music_enabled = enable
-            
+
             status = "enabled" if self.music_enabled else "disabled"
             logger.info(f"🎵 Music generation {status}")
             return self.music_enabled
         return False
-    
+
     def set_music_tempo(self, tempo: int):
         """Set music tempo (BPM)"""
         if hasattr(self, 'musician') and self.musician is not None:
@@ -674,7 +674,7 @@ class VideoProcessor:
             logger.info(f"🎵 Music tempo set to {tempo} BPM")
             return True
         return False
-    
+
     def set_music_key(self, key_signature: str):
         """Set music key signature"""
         if hasattr(self, 'musician') and self.musician is not None:
@@ -682,7 +682,7 @@ class VideoProcessor:
             logger.info(f"🎵 Music key signature set to {key_signature}")
             return True
         return False
-    
+
     def get_music_status(self):
         """Get current music generation status"""
         if hasattr(self, 'musician') and self.musician is not None:
@@ -694,14 +694,14 @@ class VideoProcessor:
                 'queue_size': self.music_queue.qsize() if hasattr(self, 'music_queue') else 0
             }
         return {'enabled': False, 'musician_available': False}
-    
+
     def shutdown(self):
         """Shutdown the processor"""
         logger.info("🛑 Shutting down video processor...")
         self.frame_queue.put(None)  # Shutdown signal
         if self.processing_thread.is_alive():
             self.processing_thread.join(timeout=2.0)
-    
+
     def enable_debug_mode(self, enable=True):
         """Enable or disable debug mode for verbose logging"""
         self.debug_mode = enable
@@ -711,7 +711,7 @@ class VideoProcessor:
         else:
             set_level(logger, "INFO")
             logger.info("🔇 Debug mode disabled - minimal logging activated")
-    
+
     def set_main_ui_connected(self, connected=True):
         """Mark main UI as connected/disconnected to prioritize it over status page"""
         self.main_ui_connected = connected
@@ -769,7 +769,7 @@ def index():
             <p>Queue Size: <span id="queueSize">0</span></p>
             <p>Processing Interval: <span id="interval">5</span> frames</p>
         </div>
-        
+
         <div class="frame-display">
             <div class="frame-container">
                 <h3>Original Video</h3>
@@ -782,7 +782,7 @@ def index():
                 <div id="noSegmentation">No segmentation available yet</div>
             </div>
         </div>
-        
+
         <div class="info" id="segmentationInfo" style="display: none;">
             <h3>Segmentation Information</h3>
             <p>Frame ID: <span id="segFrameId">-</span></p>
@@ -792,17 +792,17 @@ def index():
 
         <script>
             const socket = io();
-            
+
             socket.on('connect', function() {
                 console.log('Connected to video processor');
                 document.querySelector('.status h2').textContent = 'Status: Connected';
             });
-            
+
             socket.on('frame_update', function(data) {
                 // Update status
                 document.getElementById('frameCounter').textContent = data.frame_counter;
                 document.getElementById('queueSize').textContent = data.queue_size || 0;
-                
+
                 // Update original frame
                 if (data.original_frame) {
                     const originalImg = document.getElementById('originalFrame');
@@ -810,20 +810,20 @@ def index():
                     originalImg.style.display = 'block';
                     document.getElementById('noOriginal').style.display = 'none';
                 }
-                
+
                 // Update segmentation overlay
                 if (data.segmentation_overlay) {
                     const segImg = document.getElementById('segmentationFrame');
                     segImg.src = data.segmentation_overlay;
                     segImg.style.display = 'block';
                     document.getElementById('noSegmentation').style.display = 'none';
-                    
+
                     // Update segmentation info
                     if (data.segmentation_info) {
                         document.getElementById('segmentationInfo').style.display = 'block';
                         document.getElementById('segFrameId').textContent = data.segmentation_info.frame_id;
                         document.getElementById('framesSince').textContent = data.segmentation_info.frames_since_segmentation;
-                        
+
                         const classes = data.segmentation_info.class_labels || [];
                         document.getElementById('detectedClasses').textContent = classes.join(', ') || 'None';
                     }
@@ -833,7 +833,7 @@ def index():
                     document.getElementById('segmentationInfo').style.display = 'none';
                 }
             });
-            
+
             // Request updates every 100ms
             setInterval(() => {
                 socket.emit('request_update');
@@ -867,43 +867,43 @@ def process_frame():
     """Receive frame data from UI and add to processing queue"""
     try:
         data = request.get_json()
-        
+
         if 'frame' not in data:
             return jsonify({'error': 'No frame data provided'}), 400
-        
+
         # Decode base64 frame
         frame_data = data['frame']
         if frame_data.startswith('data:image'):
             # Remove data URL prefix
             frame_data = frame_data.split(',')[1]
-        
+
         # Decode image
         img_buffer = base64.b64decode(frame_data)
         img_array = np.frombuffer(img_buffer, np.uint8)
         frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-        
+
         if frame is None:
             return jsonify({'error': 'Invalid frame data'}), 400
-        
+
         # Convert BGR to RGB for proper processing
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
+
         # Add frame to processor
         frame_id = data.get('frame_id', f"frame_{int(time.time() * 1000)}")
         timestamp = data.get('timestamp', time.time())
-        
+
         processor.add_frame(frame, frame_id, timestamp)
-        
+
         # Get current state
         state = processor.get_current_state()
-        
+
         return jsonify({
             'success': True,
             'frame_counter': state['frame_counter'],
             'queue_size': state['queue_size'],
             'message': 'Frame processed successfully'
         })
-        
+
     except Exception as e:
         logger.exception("❌ Error processing frame: %s", e)
         return jsonify({'error': str(e)}), 500
@@ -951,7 +951,7 @@ def handle_update_request():
     try:
         # Check if this is from main UI or status page
         is_main_ui = request.sid not in processor.status_page_clients
-        
+
         if is_main_ui:
             # Mark main UI as connected and get full data
             processor.set_main_ui_connected(True)
@@ -959,22 +959,22 @@ def handle_update_request():
         else:
             # Status page gets limited data to avoid conflicts
             display_data = processor.get_synchronized_display(for_main_ui=False)
-        
+
         state = processor.get_current_state()
-        
+
         # Combine display data with state
         response_data = {**display_data, 'queue_size': state['queue_size']}
-        
+
         # Always emit, even if no new segmentation data - client decides what to display
         emit('frame_update', response_data)
-        
+
         # Debug logging (only when enabled)
         if processor.debug_mode:
             has_overlay = 'segmentation_overlay' in response_data and response_data['segmentation_overlay'] is not None
             client_type = "Main UI" if is_main_ui else "Status Page"
             logger.debug("📡 Update sent to %s - Frame: %s, Has overlay: %s, Queue: %s",
                          client_type, response_data.get('frame_counter', 0), has_overlay, response_data.get('queue_size', 0))
-        
+
     except Exception as e:
         logger.exception("❌ Error handling update request: %s", e)
         emit('error', {'message': str(e)})
@@ -1070,7 +1070,7 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     logger.info("   - POST /api/debug/disable - Disable debug logging for performance")
     logger.info("🚀 Performance Mode: Debug logging %s", "ON" if processor.debug_mode else "OFF")
     logger.info("⚡ Optimizations: Reduced queues, vectorized color mapping, throttled updates")
-    
+
     try:
         socketio.run(app, host=host, port=port, debug=debug)
     except KeyboardInterrupt:
@@ -1081,23 +1081,23 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
         processor.shutdown()
 
 if __name__ == '__main__':
-    
+
     parser = argparse.ArgumentParser(description='Video Processing Server')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (use 0.0.0.0 for LAN/mobile access)')
     parser.add_argument('--port', type=int, default=5000, help='Port to bind to')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--interval', type=int, default=5, help='Segmentation processing interval (frames)')
-    
+
     args = parser.parse_args()
-    
+
     # Update processing interval if specified
     if args.interval != 5:
         processor.segmentation_interval = args.interval
         logger.info("🔄 Updated segmentation interval to %s frames", args.interval)
-    
+
     # Set debug mode based on argument
     if args.debug:
         processor.enable_debug_mode(True)
         logger.info("🐛 Debug mode enabled via command line")
-    
+
     run_processor_server(args.host, args.port, args.debug)
