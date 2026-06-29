@@ -80,29 +80,29 @@ class VideoProcessor:
         logger.info("🔄 Initializing segmentation models...")
         try:
             # YOLO model
-            model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolo11/yolo11m-seg.pt')
-            self.segmentor = Segmentor('yolo', model_path)
-            logger.info("✅ YOLO Segmentor initialized successfully")
+            # model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolo11/yolo11l-seg.pt')
+            # self.segmentor = Segmentor('yolo', model_path)
+            # logger.info("✅ YOLO Segmentor initialized successfully")
 
             # SegFormer model
             # self.segmentor = Segmentor('segformer')
             # logger.info("✅ SegFormer Segmentor initialized successfully")
 
             # Prefer local B2 SegFormer for consistent offline use
-            # local_b2_path = os.environ.get(
-            #     "RAGBAARNET_SEGFORMER_PATH",
-            #     os.path.abspath(
-            #         os.path.join(
-            #             os.path.dirname(__file__),
-            #             "..",
-            #             "Segmentation",
-            #             "Pre-trained Models",
-            #             "segformer-b2-finetuned-cityscapes-1024-1024",
-            #         )
-            #     )
-            # )
-            # self.segmentor = Segmentor('segformer', model_path=local_b2_path)
-            # logger.info("✅ Local SegFormer (B2) Segmentor initialized successfully")
+            local_b2_path = os.environ.get(
+                "RAGBAARNET_SEGFORMER_PATH",
+                os.path.abspath(
+                    os.path.join(
+                        os.path.dirname(__file__),
+                        "..",
+                        "Segmentation",
+                        "Pre-trained Models",
+                        "segformer-b2-finetuned-cityscapes-1024-1024",
+                    )
+                )
+            )
+            self.segmentor = Segmentor('segformer', model_path=local_b2_path)
+            logger.info("✅ Local SegFormer (B2) Segmentor initialized successfully")
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
