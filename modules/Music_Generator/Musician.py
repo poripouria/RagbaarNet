@@ -1018,18 +1018,18 @@ class LSTMMusician(BaseMusician):
 
     def _check_edge_collision(self, seg_map: np.ndarray) -> bool:
         """Return True if any important object class touches an image edge."""
-        important_classes = {11, 13, 14, 15, 16}  # person, car, truck, bus, train
+        important_classes = {11, 12, 13, 14, 15, 16, 17, 18}  # person, rider, car, truck, bus, train, motorcycle, bicycle
 
         mask = np.isin(seg_map, list(important_classes))
         if not np.any(mask):
             return False
 
         h, w = seg_map.shape
-        return (
-            bool(np.any(mask[0, :]))
-            or bool(np.any(mask[h - 1, :]))
-            or bool(np.any(mask[:, 0]))
-            or bool(np.any(mask[:, w - 1]))
+        return bool(
+            (np.any(mask[0, :]))
+            or (np.any(mask[h - 1, :]))
+            or (np.any(mask[:, 0]))
+            or (np.any(mask[:, w - 1]))
         )
 
     def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
