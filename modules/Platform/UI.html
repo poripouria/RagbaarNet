@@ -72,7 +72,7 @@
 
     <!-- Main Interface -->
     <div class="menu-frame" id="menuFrame" style="display: none;">
-        <div class="title">RagbaarNet AI<br>Platform</div>
+        <div class="title">RagbaarNet AI</div>
         
         <button class="menu-btn" id="changeSourceBtn" onclick="changeInputSource()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); changeInputSource();}">📂 Change Source</button>
         
@@ -82,8 +82,16 @@
         
         <button class="music-gen-btn" onclick="startMusicGeneration()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); startMusicGeneration();}">🎵 Generate Music</button>
 
-        <div class="button-group button-group--split">
+        <!-- <div class="button-group button-group--split">
             <button class="menu-btn" id="changeMusicianBtn" onclick="openMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openMusicianModal();}">🎭 Change Musician</button>
+            <button class="menu-btn" id="setTempoBtn" onclick="openTempoModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openTempoModal();}">🎛️ Set Tempo</button>
+        </div> -->
+        
+        <div class="button-group">
+            <button class="menu-btn" id="changeMusicianBtn" onclick="openMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openMusicianModal();}">🎭 Change Musician</button>
+        </div>
+        
+        <div class="button-group">
             <button class="menu-btn" id="setTempoBtn" onclick="openTempoModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openTempoModal();}">🎛️ Set Tempo</button>
         </div>
         
