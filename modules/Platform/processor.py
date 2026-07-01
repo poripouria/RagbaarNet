@@ -28,7 +28,7 @@ from utils.logging_setup import setup_logging, set_level
 
 logger = setup_logging("INFO", name="platform.processor")
 
-class VideoProcessor:
+class Processor:
     """
     Video Processing Class that handles frame reception, segmentation, and synchronization
     """
@@ -741,7 +741,7 @@ def after_request(response):
     return response
 
 # Global processor instance - pass socketio for real-time broadcasting
-processor = VideoProcessor(socketio_instance=socketio)
+processor = Processor(socketio_instance=socketio)
 
 @app.route('/')
 def index():
