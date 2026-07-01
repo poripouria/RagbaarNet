@@ -757,7 +757,7 @@ class ContinuousPianistMusician(BaseMusician):
         Returns:
             dict: Which edges are touched {'top': bool, 'bottom': bool, 'left': bool, 'right': bool}
         """
-        
+
         class_mask = seg_map == class_id
         height, width = seg_map.shape
 
@@ -1120,123 +1120,6 @@ class LSTMMusician(BaseMusician):
         )
 
         self.frame_counter += 1
-        return music_frame
-
-class LSTMMusician_Test(BaseMusician):
-    """
-    LSTM-based musician (Collision Trigger) that generates melodic sequences based on visual segmentation.
-    Uses the trained LSTM_OnEssen model for musically coherent generation.
-    """
-
-    def __init__(self, tempo: int = 130, key_signature: str = "C_major", temperature: float = 0.85):
-
-        super().__init__(tempo, key_signature)
-        from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
-
-        self.generator = MelodyGenerator()
-        self.temperature = temperature
-        self.max_notes = 18
-
-        self.active_collision = False
-        self.current_collision_start: float = None
-        self._symbol_buffer: list = []
-        self._rt_generator = None
-        self.last_seed_notes = ["60", "_", "64", "_", "67"]
-
-        logger.info("🎼 LSTM Musician initialized")
-
-    def _check_edge_collision(self, seg_map: np.ndarray) -> bool:
-        important_classes = {11, 13, 14, 15, 16}  # person, car, truck, bus, train
-
-        mask = np.isin(seg_map, list(important_classes))
-        if not np.any(mask):
-            return False
-
-        return (
-            np.any(mask[0, :])  # top
-            or np.any(mask[-1, :])  # bottom
-            or np.any(mask[:, 0])  # left
-            or np.any(mask[:, -1])
-        )  # right
-
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
-        timestamp = time.time()
-        events = []
-
-        has_collision = self._check_edge_collision(segmentation_data)
-
-        if has_collision:
-            if not self.active_collision:
-                logger.info(
-                    f"▶️ COLLISION START - LSTM RT generator started (frame {frame_id})"
-                )
-                self.active_collision = True
-                self.current_collision_start = timestamp
-                seed_str = " ".join(self.last_seed_notes[-16:])
-                self._symbol_buffer = list(self.last_seed_notes[-16:])
-                self._rt_generator = self.generator.generate_melody_RT(
-                    seed=seed_str, num_steps=500, temperature=self.temperature
-                )
-
-            step_dur = 60.0 / self.tempo / 2.8
-
-            # Pull exactly one symbol per frame — monophonic, one step per call.
-            try:
-                symbol = next(self._rt_generator)
-
-                self._symbol_buffer.append(symbol)
-                if len(self._symbol_buffer) > 24:
-                    self._symbol_buffer = self._symbol_buffer[-24:]
-
-                if symbol.isdigit():
-                    event = MusicEvent(
-                        note=int(symbol),
-                        velocity=np.random.randint(75, 98),
-                        duration=step_dur,
-                        channel=0,
-                        timestamp=timestamp,
-                        metadata={"source": "lstm", "collision": True},
-                    )
-                    events.append(event)
-                # '_' (hold) and 'r' (rest) intentionally produce no event.
-
-            except StopIteration:
-                logger.info("🔄 RT generator exhausted, restarting from buffer")
-                seed_str = " ".join(self._symbol_buffer[-15:])
-                self._rt_generator = self.generator.generate_melody_RT(
-                    seed=seed_str, num_steps=500, temperature=self.temperature
-                )
-
-            except Exception as e:
-                logger.error(f"❌ LSTM Generation Error: {e}")
-
-        else:
-            if self.active_collision:
-                logger.info(f"⏹️ Collision ended (frame {frame_id})")
-                self.active_collision = False
-                self.current_collision_start = None
-                if self._symbol_buffer:
-                    self.last_seed_notes = self._symbol_buffer[-15:]
-                self.last_seed_notes.extend(["r", "_", "_"])
-                self._rt_generator = None
-                self._symbol_buffer = []
-
-        # Create MusicFrame with generated events
-        music_frame = MusicFrame(
-            events=events,
-            frame_id=frame_id,
-            timestamp=timestamp,
-            tempo=self.tempo,
-            key_signature=self.key_signature,
-            metadata={
-                "musician_type": "LSTMMusician_Test",
-                "collision_active": has_collision,
-                "notes_generated": len(events),
-            },
-        )
-
-        self.frame_counter += 1
-
         return music_frame
 
 
