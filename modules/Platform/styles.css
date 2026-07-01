@@ -397,6 +397,10 @@ body {
     overflow-y: auto;
 }
 
+.roi-info:empty {
+    display: none;
+}
+
 /* Display Frame */
 .display-frame {
     flex: 1;
@@ -517,6 +521,52 @@ body {
     height: 18px;
     display: block;
     pointer-events: none;
+}
+
+/* Press-and-hold visual feedback for resetting the ROI */
+.roi-fill-toggle--holding {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--accent-color);
+    animation: roiResetHold 600ms ease-in forwards;
+}
+
+@keyframes roiResetHold {
+    from {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 var(--accent-color);
+    }
+    to {
+        transform: scale(0.92);
+        box-shadow: 0 0 0 3px var(--accent-color);
+    }
+}
+
+.roi-fill-toggle--reset {
+    border-color: var(--accent-color);
+    animation: roiResetFlash 200ms ease-out;
+}
+
+@keyframes roiResetFlash {
+    0% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+/* Tooltip showing ROI point coordinates while hovering/dragging */
+.roi-point-tooltip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: translate(-50%, calc(-100% - 14px));
+    background: rgba(0, 0, 0, 0.85);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-color);
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 25;
+    display: none;
 }
 
 /* Hidden Elements */
