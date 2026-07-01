@@ -42,10 +42,6 @@
         <button class="menu-btn" id="changeSourceBtn" onclick="changeInputSource()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); changeInputSource();}">📂 Change Source</button>
         
         <div class="button-group">
-            <button class="menu-btn" onclick="resetRoi()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); resetRoi();}">🔄 Reset ROI</button>
-        </div>
-        
-        <div class="button-group">
             <button class="menu-btn" id="toggleSegmentationBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}">🔍 Segmentation View: OFF</button>
         </div>
         
@@ -55,7 +51,6 @@
             <div class="status-label">Status:</div>
             <div class="status-text" id="statusText">Ready</div>
             
-            <div class="status-label">ROI Points:</div>
             <div class="roi-info" id="roiInfo"></div>
         </div>
     </div>
@@ -65,6 +60,7 @@
             <video id="videoElement" class="video-element" autoplay playsinline muted loop></video>
             <canvas id="roiCanvas" class="canvas-overlay"></canvas>
             <canvas id="segmentationCanvas" class="canvas-overlay" style="display: none; pointer-events: none;"></canvas>
+            <div id="roiPointTooltip" class="roi-point-tooltip"></div>
         </div>
         
         <div class="instructions-wrapper">
@@ -77,8 +73,8 @@
                 type="button"
                 onclick="toggleRoiFill()"
                 ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleRoiFill();}"
-                aria-label="Toggle ROI area transparency"
-                title="ROI area: Filled (click for transparent)"
+                aria-label="Toggle ROI area transparency (hold to reset ROI)"
+                title="ROI area: Filled (tap for transparent, hold to reset ROI)"
             >
                 <img
                     id="toggleRoiFillIconImg"

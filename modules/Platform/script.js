@@ -28,6 +28,9 @@ let isPaused = false;
 let settings = {};
 let showControlPoints = true;
 let roiFillEnabled = true; // When false, ROI area is transparent (outline + vertices still visible)
+let roiFillHoldTimer = null;
+let roiFillLongPressTriggered = false;
+const ROI_RESET_HOLD_DURATION_MS = 600;
 
 // Frame processing variables
 let frameProcessingEnabled = true; // Always keep processing enabled
@@ -1305,6 +1308,9 @@ function setupRoiCanvas() {
     segmentationCanvas.width = container.offsetWidth;
     segmentationCanvas.height = container.offsetHeight;
     
+    // Hide the point tooltip whenever the mouse leaves the canvas
+    canvas.addEventListener('mouseleave', hidePointTooltip);
+    
     // Initialize ROI points based on video/canvas dimensions
     initializeRoiPoints();
     
@@ -1316,6 +1322,9 @@ function setupRoiCanvas() {
 
     // Update ROI fill button state
     updateRoiFillButtonState();
+
+    // Enable press-and-hold on the fill-toggle icon to reset the ROI
+    setupRoiFillHoldToReset();
 }
 
 /**
@@ -1517,7 +1526,6 @@ function startVideoCapture() {
 function updateVideoFeed() {
     if (!isPaused) {
         drawRoi();
-        updateRoiInfo();
         
         // Capture and send frame for processing
         captureAndSendFrame();
@@ -1706,7 +1714,12 @@ function onCanvasMove(event) {
         controlPoints[draggingControl][1] = Math.max(0, Math.min(frameY, maxY));
         
         drawRoi();
-        updateRoiInfo();
+        showPointTooltip(
+            controlPoints[draggingControl][0] * scale.x + offset.x,
+            controlPoints[draggingControl][1] * scale.y + offset.y,
+            controlPoints[draggingControl][0],
+            controlPoints[draggingControl][1]
+        );
     } else if (draggingPoint !== null) {
         // Convert canvas coordinates back to frame coordinates for corner point
         const frameX = (mouseX - offset.x) / scale.x;
@@ -1723,10 +1736,16 @@ function onCanvasMove(event) {
         updateControlPointsForCornerChange(draggingPoint);
         
         drawRoi();
-        updateRoiInfo();
+        showPointTooltip(
+            roiPoints[draggingPoint][0] * scale.x + offset.x,
+            roiPoints[draggingPoint][1] * scale.y + offset.y,
+            roiPoints[draggingPoint][0],
+            roiPoints[draggingPoint][1]
+        );
     } else {
-        // Check if mouse is over any point for cursor change
+        // Check if mouse is over any point for cursor change / coordinate tooltip
         let overPoint = false;
+        let hoveredCanvasX = null, hoveredCanvasY = null, hoveredFrameX = null, hoveredFrameY = null;
         
         // Check control points first
         for (let i = 0; i < controlPoints.length; i++) {
@@ -1735,6 +1754,10 @@ function onCanvasMove(event) {
             
             if (Math.abs(mouseX - canvasX) < 10 && Math.abs(mouseY - canvasY) < 10) {
                 overPoint = true;
+                hoveredCanvasX = canvasX;
+                hoveredCanvasY = canvasY;
+                hoveredFrameX = controlPoints[i][0];
+                hoveredFrameY = controlPoints[i][1];
                 break;
             }
         }
@@ -1747,9 +1770,19 @@ function onCanvasMove(event) {
                 
                 if (Math.abs(mouseX - canvasX) < 12 && Math.abs(mouseY - canvasY) < 12) {
                     overPoint = true;
+                    hoveredCanvasX = canvasX;
+                    hoveredCanvasY = canvasY;
+                    hoveredFrameX = roiPoints[i][0];
+                    hoveredFrameY = roiPoints[i][1];
                     break;
                 }
             }
+        }
+        
+        if (overPoint) {
+            showPointTooltip(hoveredCanvasX, hoveredCanvasY, hoveredFrameX, hoveredFrameY);
+        } else {
+            hidePointTooltip();
         }
         
         canvas.style.cursor = overPoint ? 'pointer' : 'crosshair';
@@ -1804,6 +1837,7 @@ function onCanvasRelease(event) {
     if (canvas) {
         canvas.style.cursor = 'crosshair';
     }
+    hidePointTooltip();
 }
 
 /**
@@ -1825,6 +1859,7 @@ function onCanvasTouch(event) {
         
         if (Math.abs(touchX - canvasX) < 20 && Math.abs(touchY - canvasY) < 20) { // Larger touch area
             draggingControl = i;
+            showPointTooltip(canvasX, canvasY, controlPoints[i][0], controlPoints[i][1]);
             return;
         }
     }
@@ -1836,6 +1871,7 @@ function onCanvasTouch(event) {
         
         if (Math.abs(touchX - canvasX) < 25 && Math.abs(touchY - canvasY) < 25) { // Larger touch area
             draggingPoint = i;
+            showPointTooltip(canvasX, canvasY, roiPoints[i][0], roiPoints[i][1]);
             break;
         }
     }
@@ -1863,7 +1899,12 @@ function onCanvasTouchMove(event) {
         controlPoints[draggingControl][1] = Math.max(0, Math.min(frameY, maxY));
         
         drawRoi();
-        updateRoiInfo();
+        showPointTooltip(
+            controlPoints[draggingControl][0] * scale.x + offset.x,
+            controlPoints[draggingControl][1] * scale.y + offset.y,
+            controlPoints[draggingControl][0],
+            controlPoints[draggingControl][1]
+        );
     } else if (draggingPoint !== null) {
         // Convert canvas coordinates back to frame coordinates for corner point
         const frameX = (touchX - offset.x) / scale.x;
@@ -1880,7 +1921,12 @@ function onCanvasTouchMove(event) {
         updateControlPointsForCornerChange(draggingPoint);
         
         drawRoi();
-        updateRoiInfo();
+        showPointTooltip(
+            roiPoints[draggingPoint][0] * scale.x + offset.x,
+            roiPoints[draggingPoint][1] * scale.y + offset.y,
+            roiPoints[draggingPoint][0],
+            roiPoints[draggingPoint][1]
+        );
     }
 }
 
@@ -1888,6 +1934,7 @@ function onCanvasTouchEnd(event) {
     event.preventDefault();
     draggingPoint = null;
     draggingControl = null;
+    hidePointTooltip();
 }
 
 /**
@@ -1917,44 +1964,25 @@ function onWindowResize() {
 /**
  * UI Update Functions
  */
-function updateRoiInfo() {
-    let roiText = '<table style="width: 100%; border-collapse: collapse; font-size: 10px;">';
-    roiText += '<tr><th style="border: 1px solid #555; padding: 4px; background-color: #444;">Corner Points</th>';
-    
-    if (showControlPoints) {
-        roiText += '<th style="border: 1px solid #555; padding: 4px; background-color: #444;">Curve Controls</th>';
+
+/**
+ * ROI point coordinate tooltip (shown only while hovering/dragging a corner
+ * or curve control point; hidden the rest of the time).
+ */
+function showPointTooltip(canvasX, canvasY, frameX, frameY) {
+    const tooltip = document.getElementById('roiPointTooltip');
+    if (!tooltip) return;
+    tooltip.textContent = `(${Math.round(frameX)}, ${Math.round(frameY)})`;
+    tooltip.style.left = `${canvasX}px`;
+    tooltip.style.top = `${canvasY}px`;
+    tooltip.style.display = 'block';
+}
+
+function hidePointTooltip() {
+    const tooltip = document.getElementById('roiPointTooltip');
+    if (tooltip) {
+        tooltip.style.display = 'none';
     }
-    roiText += '</tr>';
-    
-    const maxRows = Math.max(roiPoints.length, showControlPoints ? controlPoints.length : 0);
-    
-    for (let i = 0; i < maxRows; i++) {
-        roiText += '<tr>';
-        
-        // Corner Points column
-        if (i < roiPoints.length) {
-            const point = roiPoints[i];
-            roiText += `<td style="border: 1px solid #555; padding: 4px;">P${i + 1}: (${Math.round(point[0])}, ${Math.round(point[1])})</td>`;
-        } else {
-            roiText += '<td style="border: 1px solid #555; padding: 4px;"></td>';
-        }
-        
-        // Curve Controls column (only if showControlPoints is true)
-        if (showControlPoints) {
-            if (i < controlPoints.length) {
-                const point = controlPoints[i];
-                roiText += `<td style="border: 1px solid #555; padding: 4px;">C${i + 1}: (${Math.round(point[0])}, ${Math.round(point[1])})</td>`;
-            } else {
-                roiText += '<td style="border: 1px solid #555; padding: 4px;"></td>';
-            }
-        }
-        
-        roiText += '</tr>';
-    }
-    
-    roiText += '</table>';
-    
-    document.getElementById('roiInfo').innerHTML = roiText;
 }
 
 function updateStatus(message) {
@@ -1989,7 +2017,6 @@ function toggleControlPoints() {
     const button = event.target;
     button.textContent = showControlPoints ? '🎛️ Hide Curves' : '🎛️ Show Curves';
     drawRoi();
-    updateRoiInfo();
     updateStatus(showControlPoints ? 'Curve controls visible' : 'Curve controls hidden');
 }
 
@@ -1997,11 +2024,17 @@ function resetRoi() {
     // Reset ROI based on current video dimensions
     initializeRoiPoints();
     drawRoi();
-    updateRoiInfo();
+    hidePointTooltip();
     updateStatus('ROI reset to default');
 }
 
 function toggleRoiFill() {
+    // A completed press-and-hold on this same button resets the ROI instead;
+    // ignore the click/touchend that follows it.
+    if (roiFillLongPressTriggered) {
+        roiFillLongPressTriggered = false;
+        return;
+    }
     roiFillEnabled = !roiFillEnabled;
     updateRoiFillButtonState();
     drawRoi();
@@ -2023,9 +2056,49 @@ function updateRoiFillButtonState() {
         iconButton.dataset.active = transparentEnabled.toString();
         iconButton.setAttribute('aria-pressed', transparentEnabled.toString());
         iconButton.title = roiFillEnabled
-            ? 'ROI area: Filled (click for transparent)'
-            : 'ROI area: Transparent (click for filled)';
+            ? 'ROI area: Filled (tap for transparent, hold to reset ROI)'
+            : 'ROI area: Transparent (tap for filled, hold to reset ROI)';
     }
+}
+
+/**
+ * Pressing and holding the ROI fill-toggle icon resets the ROI to its
+ * default rectangle, instead of toggling fill transparency (a normal
+ * tap/click still toggles fill).
+ */
+function setupRoiFillHoldToReset() {
+    const button = document.getElementById('toggleRoiFillIcon');
+    if (!button || button.dataset.holdToResetBound === 'true') return;
+    button.dataset.holdToResetBound = 'true';
+
+    const startHold = () => {
+        roiFillLongPressTriggered = false;
+        clearTimeout(roiFillHoldTimer);
+        button.classList.add('roi-fill-toggle--holding');
+        roiFillHoldTimer = setTimeout(() => {
+            roiFillLongPressTriggered = true;
+            button.classList.remove('roi-fill-toggle--holding');
+            button.classList.add('roi-fill-toggle--reset');
+            setTimeout(() => button.classList.remove('roi-fill-toggle--reset'), 200);
+            if (navigator.vibrate) {
+                navigator.vibrate(30);
+            }
+            resetRoi();
+        }, ROI_RESET_HOLD_DURATION_MS);
+    };
+
+    const cancelHold = () => {
+        clearTimeout(roiFillHoldTimer);
+        button.classList.remove('roi-fill-toggle--holding');
+    };
+
+    button.addEventListener('mousedown', startHold);
+    button.addEventListener('mouseup', cancelHold);
+    button.addEventListener('mouseleave', cancelHold);
+
+    button.addEventListener('touchstart', startHold, { passive: true });
+    button.addEventListener('touchend', cancelHold);
+    button.addEventListener('touchcancel', cancelHold);
 }
 
 function startMusicGeneration() {
