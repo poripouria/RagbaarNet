@@ -78,6 +78,9 @@ let currentMusicianType = 'lstm-onessen'; // Matches the processor's default mus
 let isSwitchingMusician = false;
 let musicianSwitchTimeoutId = null;
 const MUSICIAN_SWITCH_TIMEOUT_MS = 8000;
+let currentTempo = 120;
+const TEMPO_MIN = 60;
+const TEMPO_MAX = 180;
 
 // Color scheme
 const colors = {
@@ -155,6 +158,25 @@ function setupEventListeners() {
     // Mobile-specific setup for segmentation button
     setupMobileButtons();
     
+    const tempoSlider = document.getElementById('tempoSlider');
+    const tempoNumberInput = document.getElementById('tempoNumberInput');
+
+    if (tempoSlider) {
+        tempoSlider.addEventListener('input', handleTempoSliderInput);
+        tempoSlider.addEventListener('change', () => applyTempoValue(true));
+    }
+
+    if (tempoNumberInput) {
+        tempoNumberInput.addEventListener('input', () => updateTempoControls(tempoNumberInput.value));
+        tempoNumberInput.addEventListener('change', () => applyTempoValue(true));
+        tempoNumberInput.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                applyTempoValue(true);
+            }
+        });
+    }
+
     // Initialize frame processing
     initializeFrameProcessing();
 }
@@ -315,6 +337,7 @@ function initializeSocketConnection() {
             
             // Sync the currently active musician (in case it differs from our default guess)
             segmentationSocket.emit('get_available_musicians');
+            segmentationSocket.emit('get_music_status');
             
             // Start requesting updates
             startRequestingUpdates();
@@ -333,6 +356,13 @@ function initializeSocketConnection() {
         segmentationSocket.on('music_update', function(musicData) {
             if (isMusicGenerationActive) {
                 handleMusicEvents(musicData);
+            }
+        });
+        
+        segmentationSocket.on('music_status', function(data) {
+            if (data && Number.isInteger(data.tempo)) {
+                currentTempo = clampTempoValue(data.tempo);
+                updateTempoControls(currentTempo);
             }
         });
         
@@ -2244,6 +2274,88 @@ function selectMusician(musicianId) {
         setMusicianListInteractive(true);
         setMusicianModalStatus('⚠️ No response from processor - please try again');
     }, MUSICIAN_SWITCH_TIMEOUT_MS);
+}
+
+function clampTempoValue(value) {
+    const parsedValue = Number.parseInt(value, 10);
+    if (Number.isNaN(parsedValue)) {
+        return currentTempo;
+    }
+    return Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, parsedValue));
+}
+
+function calculateAutoTempoFromSpeed(speedKmh) {
+    const v = Number(speedKmh);
+    if (!Number.isFinite(v) || v <= 0) {
+        return TEMPO_MIN;
+    }
+
+    const vMin = 0;
+    const vMax = 160;
+    const bpmMin = 60;
+    const bpmMax = 180;
+
+    const ratio = Math.log(1 + v) / Math.log(1 + vMax);
+    const bpm = bpmMin + (bpmMax - bpmMin) * ratio;
+    return clampTempoValue(Math.round(bpm));
+}
+
+function updateTempoControls(value) {
+    currentTempo = clampTempoValue(value);
+
+    const slider = document.getElementById('tempoSlider');
+    const numberInput = document.getElementById('tempoNumberInput');
+    const label = document.getElementById('tempoValueLabel');
+
+    if (slider) {
+        slider.value = currentTempo;
+    }
+
+    if (numberInput) {
+        numberInput.value = currentTempo;
+    }
+
+    if (label) {
+        label.textContent = `${currentTempo} BPM`;
+    }
+}
+
+function openTempoModal() {
+    const modal = document.getElementById('tempoModal');
+    if (!modal) return;
+
+    updateTempoControls(currentTempo);
+    modal.style.display = 'flex';
+}
+
+function closeTempoModal() {
+    const modal = document.getElementById('tempoModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function handleTempoSliderInput() {
+    updateTempoControls(this.value);
+}
+
+function applyTempoValue(emitToServer = false) {
+    updateTempoControls(document.getElementById('tempoNumberInput')?.value || currentTempo);
+
+    if (emitToServer) {
+        if (!segmentationSocket || !segmentationSocket.connected) {
+            updateStatus('⚠️ Not connected to processor - cannot change tempo');
+            return;
+        }
+
+        segmentationSocket.emit('set_music_tempo', { tempo: currentTempo });
+        updateStatus(`🎵 Tempo set to ${currentTempo} BPM`);
+    }
+}
+
+function applyTempoSetting() {
+    applyTempoValue(true);
+    closeTempoModal();
 }
 
 function startMusicGeneration() {

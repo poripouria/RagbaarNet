@@ -48,6 +48,28 @@
         </div>
     </div>
 
+    <!-- Tempo Control Modal -->
+    <div id="tempoModal" class="tempo-modal">
+        <div class="tempo-modal-content">
+            <h2>🎛️ Set Tempo</h2>
+            <div class="tempo-modal-subtitle">Control the music tempo smoothly between 60 and 180 BPM.</div>
+            <div class="tempo-control-group">
+                <div class="tempo-mode-row">
+                    <button class="tempo-mode-btn" id="tempoAutomaticBtn" disabled>Automatic</button>
+                </div>
+                <div class="tempo-slider-row">
+                    <input type="range" id="tempoSlider" class="tempo-slider" min="60" max="180" step="1" value="120" aria-label="Tempo slider">
+                    <input type="number" id="tempoNumberInput" class="tempo-number-input" min="60" max="180" step="1" value="120" aria-label="Tempo value">
+                </div>
+                <div id="tempoValueLabel" class="tempo-value">120 BPM</div>
+            </div>
+            <div class="tempo-modal-actions">
+                <button class="url-btn confirm-btn" onclick="applyTempoSetting()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); applyTempoSetting();}">Apply</button>
+                <button class="url-btn cancel-btn" onclick="closeTempoModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); closeTempoModal();}">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Interface -->
     <div class="menu-frame" id="menuFrame" style="display: none;">
         <div class="title">RagbaarNet AI<br>Platform</div>
@@ -58,11 +80,12 @@
             <button class="menu-btn" id="toggleSegmentationBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}">🔍 Segmentation View: OFF</button>
         </div>
         
-        <div class="button-group">
-            <button class="menu-btn" id="changeMusicianBtn" onclick="openMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openMusicianModal();}">🎭 Change Musician</button>
-        </div>
-        
         <button class="music-gen-btn" onclick="startMusicGeneration()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); startMusicGeneration();}">🎵 Generate Music</button>
+
+        <div class="button-group button-group--split">
+            <button class="menu-btn" id="changeMusicianBtn" onclick="openMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openMusicianModal();}">🎭 Change Musician</button>
+            <button class="menu-btn" id="setTempoBtn" onclick="openTempoModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openTempoModal();}">🎛️ Set Tempo</button>
+        </div>
         
         <div class="status-section">
             <div class="status-label">Status:</div>
