@@ -12,14 +12,14 @@ import base64
 import time
 import threading
 import argparse
-from queue import Queue, Empty
-from flask import Flask, request, jsonify, send_from_directory
-from flask_socketio import SocketIO, emit
-from flask_cors import CORS
 import colorsys
 import zlib
 import os
 import sys
+from queue import Queue, Empty
+from flask import Flask, request, jsonify, send_from_directory
+from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from Segmentation.Segmentor import Segmentor
@@ -35,6 +35,7 @@ class Processor:
 
     def __init__(self, socketio_instance=None):
         """Initialize the video processor with segmentation models"""
+
         self.socketio = socketio_instance  # Store socketio instance for broadcasting
         self.frame_counter = 0
         # Process segmentation every N frames (higher => higher FPS, lower segmentation refresh rate)
@@ -49,6 +50,7 @@ class Processor:
         self.current_frame = None
         self.current_segmentation = None
         self.is_processing = False
+
         # Cache for last encoded overlay to avoid re-encoding on every websocket tick
         self._last_overlay_b64 = None
         self._last_overlay_counter = -1
@@ -126,6 +128,7 @@ class Processor:
 
     def _create_consistent_color_map(self):
         """Create a consistent color mapping for segmentation classes"""
+
         # Cityscapes color palette (SegFormer model classes) - Updated to 30 classes
         # These colors match the standard Cityscapes dataset visualization
         color_map = {
@@ -194,6 +197,7 @@ class Processor:
 
     def _prepare_color_mapping_array(self):
         """Pre-compute color mapping array for vectorized operations"""
+
         # Create a lookup table for all possible class IDs (0-255)
         self.color_mapping_array = np.zeros((256, 3), dtype=np.uint8)
         for class_id, color in self.color_map.items():
@@ -206,6 +210,7 @@ class Processor:
         - Clips values to [0,255]
         - Converts floats to nearest integers
         """
+
         arr = np.asarray(seg_map)
 
         # Reduce channel dim if present (e.g., HxWx1)
@@ -241,6 +246,7 @@ class Processor:
         Index 255 is the background/no-detection sentinel (black). All COCO class IDs (0-79)
         get deterministic HSV colors via the golden-angle hue spacing.
         """
+
         mapping = np.zeros((256, 3), dtype=np.uint8)
         mapping[255] = [0, 0, 0]  # 255 = background/no-detection sentinel → black
 
@@ -390,7 +396,7 @@ class Processor:
                         self.current_segmentation = segmentation_data
 
                         # Immediately broadcast to connected WebSocket clients for smooth display
-                        self._broadcast_segmentation_update(segmentation_data)
+                        self._broadcast_segmentation_update()
 
                         # Generate music based on segmentation data
                         if self.music_enabled and self.musician is not None:
@@ -441,8 +447,9 @@ class Processor:
             except Exception as e:
                 logger.exception("❌ Error in processing loop: %s", e)
 
-    def _broadcast_segmentation_update(self, segmentation_data):
+    def _broadcast_segmentation_update(self):
         """Immediately broadcast segmentation update to connected WebSocket clients"""
+
         try:
             # Only broadcast to main UI for smooth display
             if self.main_ui_connected and self.socketio:
@@ -502,6 +509,7 @@ class Processor:
 
     def _create_segmentation_overlay_optimized(self, frame, result):
         """Create an optimized visualization overlay for the segmentation result"""
+
         try:
             segmentation_map = getattr(result, 'segmentation_map', None)
             if segmentation_map is None:
@@ -553,6 +561,7 @@ class Processor:
 
     def add_frame(self, frame, frame_id=None, timestamp=None):
         """Add a frame to the processing queue"""
+
         if timestamp is None:
             timestamp = time.time()
 
@@ -576,6 +585,7 @@ class Processor:
 
     def get_current_state(self):
         """Get current processing state for display"""
+
         return {
             'frame_counter': self.frame_counter,
             'current_frame_available': self.current_frame is not None,
@@ -588,7 +598,8 @@ class Processor:
         }
 
     def get_synchronized_display(self, for_main_ui=True):
-        """Get synchronized frame and segmentation data for display - OPTIMIZED"""
+        """Get synchronized frame and segmentation data for display"""
+
         display_data = {
             'original_frame': None,
             'segmentation_overlay': None,
@@ -656,6 +667,7 @@ class Processor:
 
     def toggle_music_generation(self, enable: bool = None):
         """Enable or disable music generation"""
+
         if hasattr(self, 'music_enabled'):
             if enable is None:
                 self.music_enabled = not self.music_enabled
@@ -669,6 +681,7 @@ class Processor:
 
     def set_music_tempo(self, tempo: int):
         """Set music tempo (BPM)"""
+
         if hasattr(self, 'musician') and self.musician is not None:
             self.musician.tempo = tempo
             logger.info(f"🎵 Music tempo set to {tempo} BPM")
@@ -677,6 +690,7 @@ class Processor:
 
     def set_music_key(self, key_signature: str):
         """Set music key signature"""
+
         if hasattr(self, 'musician') and self.musician is not None:
             self.musician.key_signature = key_signature
             logger.info(f"🎵 Music key signature set to {key_signature}")
@@ -685,6 +699,7 @@ class Processor:
 
     def get_music_status(self):
         """Get current music generation status"""
+
         if hasattr(self, 'musician') and self.musician is not None:
             return {
                 'enabled': getattr(self, 'music_enabled', False),
@@ -697,13 +712,15 @@ class Processor:
 
     def shutdown(self):
         """Shutdown the processor"""
-        logger.info("🛑 Shutting down video processor...")
+
+        logger.info("🛑 Shutting down Main processor...")
         self.frame_queue.put(None)  # Shutdown signal
         if self.processing_thread.is_alive():
             self.processing_thread.join(timeout=2.0)
 
     def enable_debug_mode(self, enable=True):
         """Enable or disable debug mode for verbose logging"""
+
         self.debug_mode = enable
         if enable:
             set_level(logger, "DEBUG")
@@ -746,6 +763,7 @@ processor = Processor(socketio_instance=socketio)
 @app.route('/')
 def index():
     """Serve a simple test page"""
+    
     return """
     <!DOCTYPE html>
     <html>
@@ -855,16 +873,19 @@ def ui_index():
 @app.route('/ui/<path:filename>')
 def ui_static(filename: str):
     """Serve Platform UI static files (script.js, styles.css, etc.)."""
+
     return send_from_directory(PLATFORM_DIR, filename)
 
 @app.route('/assets/<path:filename>')
 def serve_assets(filename: str):
     """Serve shared project assets (icons, etc.) referenced by UI.html."""
+
     return send_from_directory(ASSETS_DIR, filename)
 
 @app.route('/api/process_frame', methods=['POST'])
 def process_frame():
     """Receive frame data from UI and add to processing queue"""
+
     try:
         data = request.get_json()
 
@@ -911,6 +932,7 @@ def process_frame():
 @app.route('/api/get_display', methods=['GET'])
 def get_display():
     """Get synchronized display data - prioritized for main UI"""
+
     try:
         # Mark main UI as connected when it requests data
         processor.set_main_ui_connected(True)
@@ -923,6 +945,7 @@ def get_display():
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """Get processor status"""
+
     try:
         state = processor.get_current_state()
         return jsonify(state)
@@ -933,6 +956,7 @@ def get_status():
 @app.route('/api/debug/<action>', methods=['POST'])
 def toggle_debug(action):
     """Toggle debug mode for performance monitoring"""
+
     try:
         if action == 'enable':
             processor.enable_debug_mode(True)
@@ -948,6 +972,7 @@ def toggle_debug(action):
 @socketio.on('request_update')
 def handle_update_request():
     """Handle real-time update requests via WebSocket - PRIORITIZED FOR MAIN UI"""
+
     try:
         # Check if this is from main UI or status page
         is_main_ui = request.sid not in processor.status_page_clients
@@ -982,6 +1007,7 @@ def handle_update_request():
 @socketio.on('connect')
 def handle_connect():
     """Handle client connection"""
+
     # Determine if this is status page or main UI based on referrer
     referrer = (request.headers.get('Referer', '') or '').lower()
 
@@ -999,6 +1025,7 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle client disconnection"""
+
     if request.sid in processor.status_page_clients:
         processor.status_page_clients.remove(request.sid)
         logger.info("📄 Status page disconnected: %s", request.sid)
@@ -1012,6 +1039,7 @@ def handle_disconnect():
 @socketio.on('toggle_music')
 def handle_toggle_music(data):
     """Handle music generation toggle from client"""
+
     try:
         enabled = data.get('enabled', True)
         result = processor.toggle_music_generation(enabled)
@@ -1024,6 +1052,7 @@ def handle_toggle_music(data):
 @socketio.on('set_music_tempo')
 def handle_set_music_tempo(data):
     """Handle music tempo change from client"""
+
     try:
         tempo = data.get('tempo', 120)
         result = processor.set_music_tempo(tempo)
@@ -1036,6 +1065,7 @@ def handle_set_music_tempo(data):
 @socketio.on('set_music_key')
 def handle_set_music_key(data):
     """Handle music key change from client"""
+
     try:
         key_signature = data.get('key_signature', 'C_major')
         result = processor.set_music_key(key_signature)
@@ -1048,6 +1078,7 @@ def handle_set_music_key(data):
 @socketio.on('get_music_status')
 def handle_get_music_status():
     """Get current music generation status"""
+
     try:
         status = processor.get_music_status()
         emit('music_status', status)
@@ -1057,6 +1088,7 @@ def handle_get_music_status():
 
 def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     """Run the processor server"""
+
     logger.info("🚀 Starting Video Processor Server on %s:%s", host, port)
     logger.info("📊 Processing every %s frames for optimal performance", processor.segmentation_interval)
     logger.info("🌐 Web interface available at:")
@@ -1082,7 +1114,7 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Video Processing Server')
+    parser = argparse.ArgumentParser(description='Main Processing Server')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (use 0.0.0.0 for LAN/mobile access)')
     parser.add_argument('--port', type=int, default=5000, help='Port to bind to')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
