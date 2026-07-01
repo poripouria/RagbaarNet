@@ -710,6 +710,35 @@ class Processor:
             }
         return {'enabled': False, 'musician_available': False}
 
+    def get_available_musicians(self):
+        """Get the list of musician types the UI can offer, plus the current selection"""
+
+        try:
+            musicians = Musician.list_available_musicians()
+        except Exception as e:
+            logger.exception("❌ Error listing available musicians: %s", e)
+            musicians = []
+
+        current = None
+        if hasattr(self, 'musician') and self.musician is not None:
+            current = self.musician.musician_type
+
+        return {'musicians': musicians, 'current': current}
+
+    def switch_musician(self, musician_type: str):
+        """Switch to a different music generation model (keeps current tempo/key)"""
+
+        if not hasattr(self, 'musician') or self.musician is None:
+            return {'success': False, 'error': 'Musician system not initialized'}
+
+        try:
+            self.musician.switch_musician(musician_type)
+            logger.info(f"🔄 Musician switched to: {self.musician.musician_type}")
+            return {'success': True, 'musician_type': self.musician.musician_type}
+        except Exception as e:
+            logger.error(f"❌ Error switching musician: {e}")
+            return {'success': False, 'error': str(e)}
+
     def shutdown(self):
         """Shutdown the processor"""
 
@@ -1090,6 +1119,35 @@ def handle_get_music_status():
     except Exception as e:
         emit('music_status', {'error': str(e), 'success': False})
         logger.error("❌ Error getting music status: %s", e)
+
+@socketio.on('get_available_musicians')
+def handle_get_available_musicians():
+    """Send the list of available musicians (for the "Change Musician" picker) to the client"""
+
+    try:
+        data = processor.get_available_musicians()
+        emit('musicians_list', data)
+    except Exception as e:
+        emit('musicians_list', {'error': str(e), 'musicians': [], 'current': None})
+        logger.error("❌ Error getting available musicians: %s", e)
+
+@socketio.on('switch_musician')
+def handle_switch_musician(data):
+    """Handle musician switch request from client"""
+
+    try:
+        musician_type = (data or {}).get('musician_type')
+        if not musician_type:
+            emit('musician_switched', {'success': False, 'error': 'musician_type is required'})
+            return
+
+        result = processor.switch_musician(musician_type)
+        emit('musician_switched', result)
+        if result.get('success'):
+            logger.info("🎭 Musician switched to: %s", result.get('musician_type'))
+    except Exception as e:
+        emit('musician_switched', {'success': False, 'error': str(e)})
+        logger.error("❌ Error switching musician: %s", e)
 
 def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     """Run the processor server"""
