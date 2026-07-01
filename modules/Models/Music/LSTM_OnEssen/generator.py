@@ -56,7 +56,7 @@ class MelodyGenerator:
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.eval()
 
-        logger.info(f"✅ Model loaded successfully from {model_path} (Best loss: {checkpoint.get('best_loss', 'N/A')})")
+        logger.info(f"✅ Model loaded successfully (Best loss: {checkpoint.get('best_loss', 'N/A')})")
 
     def generate_melody_RT(self, seed: str, num_steps: int = 500, temperature: float = 0.8):
         """Generates a melody using the trained LSTM model. 
