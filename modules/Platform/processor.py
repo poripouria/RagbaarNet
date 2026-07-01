@@ -26,7 +26,7 @@ from Segmentation.Segmentor import Segmentor
 from Music_Generator.Musician import Musician
 from utils.logging_setup import setup_logging, set_level
 
-logger = setup_logging("INFO", name="platform.processor")
+logger = setup_logging("INFO", name="Platform.Processor")
 
 class Processor:
     """
@@ -731,11 +731,16 @@ class Processor:
 
     def set_main_ui_connected(self, connected=True):
         """Mark main UI as connected/disconnected to prioritize it over status page"""
-        self.main_ui_connected = connected
-        if connected:
-            logger.info("🎯 Main UI connected - prioritizing segmentation data for main interface")
+
+        if self.main_ui_connected != connected:
+            self.main_ui_connected = connected
+            
+            if connected:
+                logger.info("🎯 Main UI connected - prioritizing segmentation data for main interface")
+            else:
+                logger.info("📄 Main UI disconnected - status page can receive data")
         else:
-            logger.info("📄 Main UI disconnected - status page can receive data")
+            self.main_ui_connected = connected
 
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
