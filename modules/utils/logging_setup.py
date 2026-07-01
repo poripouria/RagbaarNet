@@ -20,10 +20,19 @@ def setup_logging(level: str = "INFO", name: Optional[str] = None) -> logging.Lo
         # Default level can be raised/lowered later per logger
         root.setLevel(getattr(logging, level.upper(), logging.INFO))
 
+    werkzeug_logger = logging.getLogger('werkzeug')
+    werkzeug_logger.setLevel(logging.WARNING)
+
+    werkzeug_logger.addFilter(lambda record: 
+        "development server" not in record.getMessage() and 
+        "Press CTRL+C" not in record.getMessage()
+    )
+
     # Return a namespaced logger for the caller
     return logging.getLogger(name or __name__)
 
 
 def set_level(logger: logging.Logger, level: str) -> None:
     """Set the level on the provided logger and keep propagation to root."""
+    
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))

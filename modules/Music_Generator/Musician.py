@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Union
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
 
-logger = setup_logging("INFO", name="music_generator.musician")
+logger = setup_logging("INFO", name="Music_Generator.Musician")
 
 
 @dataclass
@@ -1044,7 +1044,7 @@ class LSTMMusician(BaseMusician):
         if has_collision:
             if not self.active_collision:
                 logger.info(
-                    f"🎹▶️ COLLISION START - LSTM RT generator started (frame {frame_id})"
+                    f"▶️ COLLISION START - LSTM RT generator started (frame {frame_id})"
                 )
                 self.active_collision = True
                 self.current_collision_start = timestamp
@@ -1096,7 +1096,7 @@ class LSTMMusician(BaseMusician):
 
         else:
             if self.active_collision:
-                logger.info(f"🎹⏹️ Collision ended (frame {frame_id})")
+                logger.info(f"⏹️ Collision ended (frame {frame_id})")
                 self.active_collision = False
                 self.current_collision_start = None
                 # Save accumulated symbols as the seed for the next collision.
@@ -1169,7 +1169,7 @@ class LSTMMusician_Test(BaseMusician):
         if has_collision:
             if not self.active_collision:
                 logger.info(
-                    f"🎹▶️ COLLISION START - LSTM RT generator started (frame {frame_id})"
+                    f"▶️ COLLISION START - LSTM RT generator started (frame {frame_id})"
                 )
                 self.active_collision = True
                 self.current_collision_start = timestamp
@@ -1213,7 +1213,7 @@ class LSTMMusician_Test(BaseMusician):
 
         else:
             if self.active_collision:
-                logger.info(f"🎹⏹️ Collision ended (frame {frame_id})")
+                logger.info(f"⏹️ Collision ended (frame {frame_id})")
                 self.active_collision = False
                 self.current_collision_start = None
                 if self._symbol_buffer:
