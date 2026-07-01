@@ -757,6 +757,7 @@ class ContinuousPianistMusician(BaseMusician):
         Returns:
             dict: Which edges are touched {'top': bool, 'bottom': bool, 'left': bool, 'right': bool}
         """
+        
         class_mask = seg_map == class_id
         height, width = seg_map.shape
 
@@ -779,6 +780,7 @@ class ContinuousPianistMusician(BaseMusician):
 
     def _has_edge_collision(self, edges_touched: dict) -> bool:
         """Check if any edge collision exists."""
+
         return any(edges_touched.values())
 
     def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
@@ -792,9 +794,6 @@ class ContinuousPianistMusician(BaseMusician):
         Returns:
             MusicFrame containing continuous piano music events
         """
-
-        if not self.is_initialized:
-            self.initialize()
 
         timestamp = time.time()
         events = []
@@ -1249,12 +1248,38 @@ class Musician:
     allowing easy switching between models and unified result handling.
     """
 
+    # Single source of truth for every musician type that can be created/switched to.
+    # Keys are the canonical (lowercase) musician_type identifiers used everywhere
+    # (constructor, switch_musician, and the Platform UI's musician picker).
+    MUSICIAN_REGISTRY = {
+        "test": {
+            "class": TestMusician,
+            "label": "Test Musician",
+            "description": "Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).",
+        },
+        "pianist": {
+            "class": PianistTestMusician,
+            "label": "Pianist (Rule-Based)",
+            "description": "Rule-based musician that renders segmentation events as solo piano.",
+        },
+        "continuous_pianist": {
+            "class": ContinuousPianistMusician,
+            "label": "Continuous Pianist",
+            "description": "Piano musician with sustained/continuous note playback for smoother phrasing.",
+        },
+        "lstm-onessen": {
+            "class": LSTMMusician,
+            "label": "LSTM (Essen Folk Song)",
+            "description": "Neural LSTM model trained on the Essen folk song collection.",
+        },
+    }
+
     def __init__(self, musician_type: str = "test", tempo: int = 120, key_signature: str = "C_major"):
         """
         Initialize the main Musician.
 
         Args:
-            musician_type: Type of musician ('test', 'pianist', 'continuous_pianist', 'lstm', future:  'transformer', etc.)
+            musician_type: Type of musician, see Musician.MUSICIAN_REGISTRY for supported values.
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
         """
@@ -1269,20 +1294,27 @@ class Musician:
     def _create_musician(self, musician_type: str, tempo: int, key_signature: str) -> BaseMusician:
         """Create the appropriate musician based on type."""
 
-        if musician_type.lower() == "test":
-            return TestMusician(tempo, key_signature)
-        elif musician_type.lower() == "pianist":
-            return PianistTestMusician(tempo, key_signature)
-        elif musician_type.lower() == "continuous_pianist":
-            return ContinuousPianistMusician(tempo, key_signature)
-        elif musician_type.lower() == "lstm-onessen":
-            return LSTMMusician(tempo, key_signature)
-            # return LSTMMusician_Test(tempo, key_signature)
-        else:
+        entry = self.MUSICIAN_REGISTRY.get(musician_type.lower())
+        if entry is None:
+            available = ", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))
             raise ValueError(
-                f"Unsupported musician type: {musician_type}. "
-                + f"Supported types: 'test', 'pianist', 'continuous_pianist', 'lstm-onEssen'"
+                f"Unsupported musician type: {musician_type}. Supported types: {available}"
             )
+        return entry["class"](tempo, key_signature)
+
+    @classmethod
+    def list_available_musicians(cls) -> List[dict]:
+        """
+        Return metadata for every musician type that can be selected/switched to.
+
+        Used by the Platform UI to populate the "Change Musician" picker without
+        duplicating the list of supported types.
+        """
+
+        return [
+            {"id": musician_id, "label": info["label"], "description": info["description"]}
+            for musician_id, info in cls.MUSICIAN_REGISTRY.items()
+        ]
 
     def __call__(self, segmentation_data: Union[np.ndarray], frame_id: int = 0) -> MusicFrame:
         """

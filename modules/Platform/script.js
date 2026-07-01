@@ -65,6 +65,20 @@ let instrumentVoices = {}; // Store instrument voice settings
 let musicEventQueue = []; // Queue for scheduling music events
 let lastMusicEventTime = 0;
 
+// Musician selection variables
+// Fallback list (mirrors Musician.MUSICIAN_REGISTRY) used until the server responds,
+// so the "Change Musician" modal is usable even before/without a socket round-trip.
+let availableMusicians = [
+    { id: 'test', label: 'Test Musician', description: 'Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).' },
+    { id: 'pianist', label: 'Pianist (Rule-Based)', description: 'Rule-based musician that renders segmentation events as solo piano.' },
+    { id: 'continuous_pianist', label: 'Continuous Pianist', description: 'Piano musician with sustained/continuous note playback for smoother phrasing.' },
+    { id: 'lstm-onessen', label: 'LSTM (Essen Folk Song)', description: 'Neural LSTM model trained on the Essen folk song collection.' }
+];
+let currentMusicianType = 'lstm-onessen'; // Matches the processor's default musician on startup
+let isSwitchingMusician = false;
+let musicianSwitchTimeoutId = null;
+const MUSICIAN_SWITCH_TIMEOUT_MS = 8000;
+
 // Color scheme
 const colors = {
     bg: '#2b2b2b',
@@ -299,6 +313,9 @@ function initializeSocketConnection() {
             // Maintain button state after connection
             updateSegmentationButtonState();
             
+            // Sync the currently active musician (in case it differs from our default guess)
+            segmentationSocket.emit('get_available_musicians');
+            
             // Start requesting updates
             startRequestingUpdates();
         });
@@ -316,6 +333,34 @@ function initializeSocketConnection() {
         segmentationSocket.on('music_update', function(musicData) {
             if (isMusicGenerationActive) {
                 handleMusicEvents(musicData);
+            }
+        });
+        
+        segmentationSocket.on('musicians_list', function(data) {
+            if (data && Array.isArray(data.musicians) && data.musicians.length > 0) {
+                availableMusicians = data.musicians;
+            }
+            if (data && data.current) {
+                currentMusicianType = data.current;
+            }
+            renderMusicianList();
+        });
+        
+        segmentationSocket.on('musician_switched', function(data) {
+            clearTimeout(musicianSwitchTimeoutId);
+            isSwitchingMusician = false;
+            setMusicianListInteractive(true);
+            
+            if (data && data.success) {
+                currentMusicianType = data.musician_type;
+                renderMusicianList();
+                const label = getMusicianLabel(currentMusicianType);
+                setMusicianModalStatus(`✅ Now using: ${label}`);
+                updateStatus(`🎭 Musician switched to ${label}`);
+            } else {
+                const errorMessage = (data && data.error) || 'Unknown error';
+                setMusicianModalStatus(`❌ Failed to switch musician: ${errorMessage}`);
+                console.error('❌ Musician switch failed:', errorMessage);
             }
         });
         
@@ -2099,6 +2144,106 @@ function setupRoiFillHoldToReset() {
     button.addEventListener('touchstart', startHold, { passive: true });
     button.addEventListener('touchend', cancelHold);
     button.addEventListener('touchcancel', cancelHold);
+}
+
+/**
+ * Musician Selection Modal
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text == null ? '' : String(text);
+    return div.innerHTML;
+}
+
+function getMusicianLabel(musicianId) {
+    const found = availableMusicians.find(m => m.id === musicianId);
+    return found ? found.label : (musicianId || 'Unknown');
+}
+
+function setMusicianModalStatus(text) {
+    const statusEl = document.getElementById('musicianModalStatus');
+    if (statusEl) {
+        statusEl.textContent = text || '';
+    }
+}
+
+function setMusicianListInteractive(interactive) {
+    const container = document.getElementById('musicianList');
+    if (container) {
+        container.classList.toggle('musician-list--busy', !interactive);
+    }
+}
+
+function renderMusicianList() {
+    const container = document.getElementById('musicianList');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    availableMusicians.forEach(musician => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'musician-option' + (musician.id === currentMusicianType ? ' selected' : '');
+        option.setAttribute('aria-pressed', (musician.id === currentMusicianType).toString());
+        option.innerHTML = `
+            <div class="musician-option-name">
+                <span>${escapeHtml(musician.label)}</span>
+                <span class="musician-option-badge">✓ Active</span>
+            </div>
+            <div class="musician-option-desc">${escapeHtml(musician.description || '')}</div>
+        `;
+        option.addEventListener('click', () => selectMusician(musician.id));
+        container.appendChild(option);
+    });
+}
+
+function openMusicianModal() {
+    const modal = document.getElementById('musicianModal');
+    if (!modal) return;
+
+    renderMusicianList();
+    setMusicianModalStatus('');
+    setMusicianListInteractive(!isSwitchingMusician);
+    modal.style.display = 'flex';
+
+    // Refresh from the server in case the list or current selection changed elsewhere
+    if (segmentationSocket && segmentationSocket.connected) {
+        segmentationSocket.emit('get_available_musicians');
+    }
+}
+
+function closeMusicianModal() {
+    const modal = document.getElementById('musicianModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function selectMusician(musicianId) {
+    if (isSwitchingMusician) return;
+
+    if (musicianId === currentMusicianType) {
+        closeMusicianModal();
+        return;
+    }
+
+    if (!segmentationSocket || !segmentationSocket.connected) {
+        setMusicianModalStatus('⚠️ Not connected to processor - cannot switch musician');
+        return;
+    }
+
+    isSwitchingMusician = true;
+    setMusicianListInteractive(false);
+    setMusicianModalStatus(`Switching to ${getMusicianLabel(musicianId)}...`);
+    segmentationSocket.emit('switch_musician', { musician_type: musicianId });
+
+    clearTimeout(musicianSwitchTimeoutId);
+    musicianSwitchTimeoutId = setTimeout(() => {
+        if (!isSwitchingMusician) return;
+        isSwitchingMusician = false;
+        setMusicianListInteractive(true);
+        setMusicianModalStatus('⚠️ No response from processor - please try again');
+    }, MUSICIAN_SWITCH_TIMEOUT_MS);
 }
 
 function startMusicGeneration() {

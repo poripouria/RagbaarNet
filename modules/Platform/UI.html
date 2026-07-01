@@ -35,6 +35,19 @@
         </div>
     </div>
 
+    <!-- Musician Selection Modal -->
+    <div id="musicianModal" class="musician-modal">
+        <div class="musician-modal-content">
+            <h2>🎭 Choose Musician</h2>
+            <div class="musician-modal-subtitle">Select the music generation model used to turn the ROI into music.</div>
+            <div id="musicianList" class="musician-list"></div>
+            <div id="musicianModalStatus" class="musician-modal-status"></div>
+            <div class="musician-modal-actions">
+                <button class="url-btn cancel-btn" onclick="closeMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); closeMusicianModal();}">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Interface -->
     <div class="menu-frame" id="menuFrame" style="display: none;">
         <div class="title">RagbaarNet AI<br>Platform</div>
@@ -43,6 +56,10 @@
         
         <div class="button-group">
             <button class="menu-btn" id="toggleSegmentationBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}">🔍 Segmentation View: OFF</button>
+        </div>
+        
+        <div class="button-group">
+            <button class="menu-btn" id="changeMusicianBtn" onclick="openMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openMusicianModal();}">🎭 Change Musician</button>
         </div>
         
         <button class="music-gen-btn" onclick="startMusicGeneration()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); startMusicGeneration();}">🎵 Generate Music</button>
