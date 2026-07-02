@@ -4,6 +4,11 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
 import android.webkit.ConsoleMessage
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -15,7 +20,6 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 
@@ -29,6 +33,11 @@ class MainActivity : AppCompatActivity() {
 
     private val PREFS_NAME = "RagbaarPrefs"
     private val KEY_URL = "last_url"
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val showInputRunnable = Runnable {
+        inputContainer.visibility = View.VISIBLE
+    }
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -46,7 +55,7 @@ class MainActivity : AppCompatActivity() {
         callback.onReceiveValue(uris)
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -74,10 +83,26 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Long press on WebView to show the URL bar again
-        webView.setOnLongClickListener {
-            inputContainer.visibility = View.VISIBLE
-            true
+        // Two-finger long press on WebView to show the URL bar again
+        webView.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (event.pointerCount == 2) {
+                        handler.postDelayed(showInputRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                    } else {
+                        handler.removeCallbacks(showInputRunnable)
+                    }
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (event.pointerCount != 2) {
+                        handler.removeCallbacks(showInputRunnable)
+                    }
+                }
+                MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    handler.removeCallbacks(showInputRunnable)
+                }
+            }
+            false
         }
 
         // Runtime permissions for getUserMedia() (camera/mic)
@@ -131,7 +156,7 @@ class MainActivity : AppCompatActivity() {
                             "<p><b>Tips:</b><br>1. Check if the server is running.<br>" +
                             "2. Ensure ADB Reverse is active (if using USB).<br>" +
                             "3. Check Wi-Fi connection.<br>" +
-                            "4. <b>Long-press anywhere</b> to show the URL bar again.</p>" +
+                            "4. <b>Long-press with two fingers</b> to show the URL bar again.</p>" +
                             "</div></body></html>"
                     view?.loadData(errorHtml, "text/html", "UTF-8")
                 }
