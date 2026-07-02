@@ -775,6 +775,26 @@ class Processor:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'video_processing_secret'
 CORS(app)  # Enable CORS for all routes
+
+
+class ClientDisconnectSafeMiddleware:
+    """Gracefully ignore client disconnects that happen during streaming or polling."""
+
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, environ, start_response):
+        try:
+            return self.app(environ, start_response)
+        except Exception as exc:
+            if isinstance(exc, (BrokenPipeError, ConnectionResetError, OSError, AssertionError, RuntimeError)):
+                logger.debug("Client disconnected while serving a response: %s", exc)
+                return []
+            raise
+
+
+app.wsgi_app = ClientDisconnectSafeMiddleware(app.wsgi_app)
+
 # Reduce Socket.IO/engineio log noise in production
 socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
 
@@ -934,7 +954,13 @@ def handle_update_request():
         response_data = {**display_data, 'queue_size': state['queue_size']}
 
         # Always emit, even if no new segmentation data - client decides what to display
-        emit('frame_update', response_data)
+        try:
+            emit('frame_update', response_data)
+        except Exception as emit_err:
+            if isinstance(emit_err, (BrokenPipeError, ConnectionResetError, OSError, RuntimeError)):
+                logger.debug("Client disconnected while emitting frame update: %s", emit_err)
+            else:
+                logger.exception("❌ Error emitting frame update: %s", emit_err)
 
         # Debug logging (only when enabled)
         if processor.debug_mode:
