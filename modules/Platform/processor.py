@@ -1159,12 +1159,12 @@ if __name__ == '__main__':
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (use 0.0.0.0 for LAN/mobile access)')
     parser.add_argument('--port', type=int, default=5000, help='Port to bind to')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    parser.add_argument('--interval', type=int, default=5, help='Segmentation processing interval (frames)')
+    parser.add_argument('--interval', type=int, default=2, help='Segmentation processing interval (frames)')
 
     args = parser.parse_args()
 
     # Update processing interval if specified
-    if args.interval != 5:
+    if args.interval != 2:
         processor.segmentation_interval = args.interval
         logger.info("🔄 Updated segmentation interval to %s frames", args.interval)
 
