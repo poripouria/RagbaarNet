@@ -67,13 +67,9 @@ class Processor:
 
         # Pre-compute color mapping arrays for faster lookup
         self.color_mapping_array = None
-        self.yolo_color_mapping_array = None
-
-        # Create consistent color mapping for segmentation classes
+        self._color_mapping_cache = {}
         self.color_map = self._create_consistent_color_map()
-        self._prepare_color_mapping_array()
-        # YOLO uses a different label space (COCO) than Cityscapes, so keep a separate palette.
-        self.yolo_color_mapping_array = self._create_generic_color_mapping_array()
+        self.color_mapping_array = self._get_color_mapping_array()
 
         # Cache for image encoding to avoid repeated allocations
         self.encode_params = [cv2.IMWRITE_JPEG_QUALITY, 75]
@@ -81,30 +77,37 @@ class Processor:
         # Initialize segmentation models
         logger.info("🔄 Initializing segmentation models...")
         try:
-            # YOLO model
-            # model_path = os.path.join(os.path.dirname(__file__), '..', 'Segmentation', 'Pre-trained Models', 'yolo11/yolo11l-seg.pt')
-            # self.segmentor = Segmentor('yolo', model_path)
-            # logger.info("✅ YOLO Segmentor initialized successfully")
+            model_type = os.environ.get('RAGBAARNET_SEGMENTATION_MODEL', 'segformer').strip().lower() or 'segformer'
+            model_path = os.environ.get('RAGBAARNET_SEGMENTATION_MODEL_PATH', '').strip()
 
-            # SegFormer model
-            # self.segmentor = Segmentor('segformer')
-            # logger.info("✅ SegFormer Segmentor initialized successfully")
-
-            # Prefer local B2 SegFormer for consistent offline use
-            local_b2_path = os.environ.get(
-                "RAGBAARNET_SEGFORMER_PATH",
-                os.path.abspath(
-                    os.path.join(
+            if model_type == 'yolo':
+                if not model_path:
+                    model_path = os.path.join(
                         os.path.dirname(__file__),
-                        "..",
-                        "Segmentation",
-                        "Pre-trained Models",
-                        "segformer-b2-finetuned-cityscapes-1024-1024",
+                        '..',
+                        'Segmentation',
+                        'Pre-trained Models',
+                        'yolo11',
+                        'yolo11s-seg.pt',
                     )
-                )
-            )
-            self.segmentor = Segmentor('segformer', model_path=local_b2_path)
-            logger.info("✅ Local SegFormer (B2) Segmentor initialized successfully")
+                self.segmentor = Segmentor('yolo', model_path=model_path)
+                logger.info("✅ YOLO Segmentor initialized successfully")
+            else:
+                if not model_path:
+                    model_path = os.environ.get(
+                        'RAGBAARNET_SEGFORMER_PATH',
+                        os.path.abspath(
+                            os.path.join(
+                                os.path.dirname(__file__),
+                                '..',
+                                'Segmentation',
+                                'Pre-trained Models',
+                                'segformer-b2-finetuned-cityscapes-1024-1024',
+                            )
+                        )
+                    )
+                self.segmentor = Segmentor('segformer', model_path=model_path)
+                logger.info("✅ SegFormer Segmentor initialized successfully")
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
@@ -126,82 +129,110 @@ class Processor:
         self.processing_thread = threading.Thread(target=self._processing_loop, daemon=True)
         self.processing_thread.start()
 
-    def _create_consistent_color_map(self):
-        """Create a consistent color mapping for segmentation classes"""
+    def _create_consistent_color_map(self, class_labels=None):
+        """Create a deterministic color mapping for any segmentation label set."""
 
-        # Cityscapes color palette (SegFormer model classes) - Updated to 30 classes
-        # These colors match the standard Cityscapes dataset visualization
-        color_map = {
-            0: [128, 64, 128],    # Road - purple
-            1: [244, 35, 232],    # Sidewalk - magenta
-            2: [70, 70, 70],      # Building - gray
-            3: [102, 102, 156],   # Wall - blue-gray
-            4: [190, 153, 153],   # Fence - pink-gray
-            5: [153, 153, 153],   # Pole - light gray
-            6: [250, 170, 30],    # Traffic light - orange
-            7: [220, 220, 0],     # Traffic sign - yellow
-            8: [107, 142, 35],    # Vegetation - olive green
-            9: [152, 251, 152],   # Terrain - light green
-            10: [70, 130, 180],   # Sky - sky blue
-            11: [220, 20, 60],    # Person - red
-            12: [255, 0, 0],      # Rider - bright red
-            13: [0, 0, 142],      # Car - dark blue
-            14: [0, 0, 70],       # Truck - darker blue
-            15: [0, 60, 100],     # Bus - blue
-            16: [0, 80, 100],     # Train - teal
-            17: [0, 0, 230],      # Motorcycle - blue
-            18: [119, 11, 32],    # Bicycle - dark red
-            19: [160, 160, 160],  # Parking - light gray
-            20: [230, 150, 140],  # Rail track - light red
-            21: [128, 128, 128],  # On rails - gray
-            22: [0, 0, 90],       # Caravan - dark blue
-            23: [0, 0, 110],      # Trailer - medium blue
-            24: [180, 165, 180],  # Guard rail - light purple
-            25: [150, 100, 100],  # Bridge - brown
-            26: [150, 120, 90],   # Tunnel - brown-orange
-            27: [153, 153, 153],  # Pole group - light gray (same as pole)
-            28: [81, 0, 81],      # Ground - dark purple
-            29: [111, 74, 0],     # Dynamic - brown
-            30: [81, 81, 81],     # Static - dark gray
+        labels = [str(label).strip() for label in (class_labels or []) if str(label).strip()]
+        normalized_labels = [label.lower() for label in labels]
+
+        # Preserve the familiar Cityscapes palette for the common semantic labels.
+        palette = {
+            "road": [128, 64, 128],
+            "sidewalk": [244, 35, 232],
+            "building": [70, 70, 70],
+            "wall": [102, 102, 156],
+            "fence": [190, 153, 153],
+            "pole": [153, 153, 153],
+            "traffic light": [250, 170, 30],
+            "traffic sign": [220, 220, 0],
+            "vegetation": [107, 142, 35],
+            "terrain": [152, 251, 152],
+            "sky": [70, 130, 180],
+            "person": [220, 20, 60],
+            "rider": [255, 0, 0],
+            "car": [0, 0, 142],
+            "truck": [0, 0, 70],
+            "bus": [0, 60, 100],
+            "train": [0, 80, 100],
+            "motorcycle": [0, 0, 230],
+            "bicycle": [119, 11, 32],
+            "parking": [160, 160, 160],
+            "rail track": [230, 150, 140],
+            "on rails": [128, 128, 128],
+            "caravan": [0, 0, 90],
+            "trailer": [0, 0, 110],
+            "guard rail": [180, 165, 180],
+            "bridge": [150, 100, 100],
+            "tunnel": [150, 120, 90],
+            "pole group": [153, 153, 153],
+            "ground": [81, 0, 81],
+            "dynamic": [111, 74, 0],
+            "static": [81, 81, 81],
         }
 
-        # Add a background/unlabeled class
-        color_map[255] = [0, 0, 0]  # Black for unlabeled regions
+        color_map = {}
+        for class_id, label in enumerate(normalized_labels):
+            color_map[class_id] = palette.get(label, None)
 
-        # Extend with additional colors for more classes if needed
-        for i in range(31, 255):
-            # Generate consistent colors using HSV color space
-            hue = (i * 137.5) % 360  # Golden angle for good distribution
-            saturation = 70 + (i % 3) * 15  # Vary saturation
-            value = 180 + (i % 4) * 20       # Vary brightness
+        for class_id in range(len(normalized_labels), 255):
+            hue = (class_id * 137.5) % 360
+            saturation = 70 + (class_id % 3) * 15
+            value = 180 + (class_id % 4) * 20
+            r, g, b = colorsys.hsv_to_rgb(hue / 360.0, saturation / 100.0, value / 255.0)
+            color_map[class_id] = [int(r * 255), int(g * 255), int(b * 255)]
 
-            # Convert HSV to RGB
-            r, g, b = colorsys.hsv_to_rgb(hue/360, saturation/100, value/255)
-            color_map[i] = [int(r*255), int(g*255), int(b*255)]
+        for class_id, label in enumerate(normalized_labels):
+            if color_map[class_id] is None:
+                hue = (class_id * 137.5) % 360
+                saturation = 80
+                value = 220
+                r, g, b = colorsys.hsv_to_rgb(hue / 360.0, saturation / 100.0, value / 255.0)
+                color_map[class_id] = [int(r * 255), int(g * 255), int(b * 255)]
 
-        # Optional verbose logging for color mapping (debug mode only)
-        if self.debug_mode:
-            logger.debug("🎨 Color mapping for Cityscapes classes (30 classes):")
-        cityscapes_labels = [
-            "road", "sidewalk", "building", "wall", "fence", "pole", "traffic light",
-            "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
-            "truck", "bus", "train", "motorcycle", "bicycle", "parking", "rail track",
-            "on rails", "caravan", "trailer", "guard rail", "bridge", "tunnel",
-            "pole group", "ground", "dynamic", "static"
-        ]
-        if self.debug_mode:
-            for i, label in enumerate(cityscapes_labels):
-                logger.debug("   Class %s: %s → RGB%s", i, label, color_map[i])
+        color_map[255] = [0, 0, 0]
+
+        if self.debug_mode and labels:
+            logger.debug("🎨 Color mapping generated for %s labels", len(labels))
 
         return color_map
 
-    def _prepare_color_mapping_array(self):
-        """Pre-compute color mapping array for vectorized operations"""
+    def _get_color_mapping_array(self, class_labels=None):
+        """Return a cached lookup table for the current label set."""
 
-        # Create a lookup table for all possible class IDs (0-255)
-        self.color_mapping_array = np.zeros((256, 3), dtype=np.uint8)
-        for class_id, color in self.color_map.items():
-            self.color_mapping_array[class_id] = color
+        key = tuple(str(label) for label in (class_labels or []))
+        if key in self._color_mapping_cache:
+            return self._color_mapping_cache[key]
+
+        color_map = self._create_consistent_color_map(class_labels)
+        mapping = np.zeros((256, 3), dtype=np.uint8)
+        for class_id, color in color_map.items():
+            if color is not None:
+                mapping[class_id] = color
+
+        self._color_mapping_cache[key] = mapping
+        return mapping
+
+    def _derive_detected_classes(self, segmentation_map, class_labels=None):
+        """Build a stable list of class names from a segmentation map and model labels."""
+
+        labels = list(class_labels or [])
+        if not labels or segmentation_map is None:
+            return []
+
+        try:
+            unique_ids = np.unique(np.asarray(segmentation_map))
+        except Exception:
+            return []
+
+        detected = []
+        for class_id in unique_ids:
+            class_id_int = int(class_id)
+            if 0 <= class_id_int < len(labels):
+                label = labels[class_id_int]
+                if label:
+                    detected.append(label)
+
+        return sorted(set(detected))
 
     def _validate_segmentation_map(self, seg_map):
         """Normalize and validate segmentation map into a 2D uint8 index array.
@@ -299,15 +330,20 @@ class Processor:
 
                         result = self.segmentor(seg_frame)
 
-                        # Derive a small, UI-friendly list of detected class names from bounding boxes only.
-                        # For segmentation-based class extraction we wait until segmentation_map is normalized below.
+                        # Derive a small, UI-friendly list of detected class names from the segmentation output.
                         detected_classes = []
                         try:
+                            class_labels = list(getattr(result, 'class_labels', None) or [])
+                            if not class_labels and getattr(self, 'segmentor', None) is not None:
+                                class_labels = self.segmentor.get_class_labels()
+                            detected_classes = self._derive_detected_classes(result.segmentation_map, class_labels)
+
                             if getattr(result, 'bounding_boxes', None):
-                                detected_classes = sorted({b.get('class_name') for b in result.bounding_boxes if b.get('class_name')})
+                                detected_from_boxes = sorted({b.get('class_name') for b in result.bounding_boxes if b.get('class_name')})
+                                detected_classes = sorted(set(detected_classes) | set(detected_from_boxes))
                         except Exception as cls_err:
                             if self.debug_mode:
-                                logger.debug("Failed to derive detected classes from bounding boxes: %s", cls_err)
+                                logger.debug("Failed to derive detected classes: %s", cls_err)
 
                         # Resize outputs back to original frame size for consistent downstream processing.
                         if seg_frame is not frame:
@@ -334,14 +370,12 @@ class Processor:
                                 if self.debug_mode:
                                     logger.warning("❌ Failed to resize segmentation outputs: %s", resize_err)
 
-                        # After resizing/validation, derive detected classes from segmentation map if available
+                        # After resizing/validation, update detected classes from the normalized segmentation map.
                         try:
-                            if getattr(result, 'class_labels', None) is not None and getattr(result, 'segmentation_map', None) is not None:
-                                labels = result.class_labels or []
-                                unique_ids = np.unique(result.segmentation_map)
-                                detected_from_seg = [labels[int(i)] for i in unique_ids if 0 <= int(i) < len(labels)]
-                                # Merge with bounding box-derived classes and keep unique
-                                detected_classes = sorted(set(detected_classes) | set(detected_from_seg))
+                            class_labels = list(getattr(result, 'class_labels', None) or [])
+                            if not class_labels and getattr(self, 'segmentor', None) is not None:
+                                class_labels = self.segmentor.get_class_labels()
+                            detected_classes = sorted(set(detected_classes) | set(self._derive_detected_classes(result.segmentation_map, class_labels)))
                         except Exception as cls_err:
                             if self.debug_mode:
                                 logger.debug("Failed to derive detected classes from segmentation: %s", cls_err)
@@ -401,7 +435,12 @@ class Processor:
                         # Generate music based on segmentation data
                         if self.music_enabled and self.musician is not None:
                             try:
-                                music_frame = self.musician(result.segmentation_map, frame_id=self.frame_counter)
+                                music_frame = self.musician(
+                                    result.segmentation_map,
+                                    frame_id=self.frame_counter,
+                                    class_labels=getattr(result, 'class_labels', None),
+                                    metadata=getattr(result, 'metadata', None),
+                                )
 
                                 # Store music data
                                 music_data = {
@@ -535,12 +574,16 @@ class Processor:
                 road_percentage = (road_pixels / segmentation_map.size) * 100
                 logger.debug("🛣️ Road: %.1f%% of image", road_percentage)
 
-            # Vectorized color mapping using pre-computed lookup table
-            model_type = ((getattr(result, 'metadata', None) or {}).get('model_type') or '').lower()
-            if model_type == 'yolo' and self.yolo_color_mapping_array is not None:
-                overlay = self.yolo_color_mapping_array[segmentation_map]
-            else:
-                overlay = self.color_mapping_array[segmentation_map]
+            # Vectorized color mapping using a lookup table derived from the model labels.
+            class_labels = list(getattr(result, 'class_labels', None) or [])
+            if not class_labels and getattr(self, 'segmentor', None) is not None:
+                try:
+                    class_labels = self.segmentor.get_class_labels()
+                except Exception:
+                    class_labels = []
+
+            color_mapping_array = self._get_color_mapping_array(class_labels)
+            overlay = color_mapping_array[segmentation_map]
 
             # Resize overlay to match original frame size if needed
             if overlay.shape[:2] != frame.shape[:2]:

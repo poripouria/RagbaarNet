@@ -85,7 +85,7 @@ class BaseMusician(ABC):
         self.frame_counter = 0
 
     @abstractmethod
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
         """
         Generate music based on segmentation data.
 
@@ -98,7 +98,7 @@ class BaseMusician(ABC):
         """
         pass
 
-    def __call__(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+    def __call__(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
         """
         Convenience method to call generate_music directly.
 
@@ -109,7 +109,7 @@ class BaseMusician(ABC):
         Returns:
             MusicFrame containing generated music events
         """
-        return self.generate_music(segmentation_data, frame_id)
+        return self.generate_music(segmentation_data, frame_id, class_labels=class_labels, metadata=metadata)
 
 class TestMusician(BaseMusician):
     """
@@ -155,15 +155,20 @@ class TestMusician(BaseMusician):
             "motorcycle",
             "bicycle",
         ]
+        self.class_labels = list(self.cityscapes_labels)
 
         # Musical mappings for different object classes
         self.class_to_music = {}
-        self._setup_music_mappings()
+        self._setup_music_mappings(self.class_labels)
 
         logger.info("✅ Test Musician initialized successfully")
 
-    def _setup_music_mappings(self) -> None:
+    def _setup_music_mappings(self, class_labels: List[str] = None) -> None:
         """Setup deterministic mappings from segmentation classes to musical elements."""
+
+        labels = list(class_labels or self.class_labels or self.cityscapes_labels)
+        self.class_labels = labels
+        self.class_to_music = {}
 
         # C Major scale notes (MIDI numbers)
         c_major_scale = [60, 62, 64, 65, 67, 69, 71]  # C4, D4, E4, F4, G4, A4, B4
@@ -186,7 +191,7 @@ class TestMusician(BaseMusician):
         }
 
         # Map each class to specific musical elements
-        for i, class_name in enumerate(self.cityscapes_labels):
+        for i, class_name in enumerate(labels):
             if class_name == "car":
                 # Cars get C major scale notes
                 note_idx = i % len(c_major_scale)
@@ -281,7 +286,7 @@ class TestMusician(BaseMusician):
                     "instrument": "synth",
                 }
 
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
         """
         Generate music based on segmentation data.
 
@@ -292,6 +297,10 @@ class TestMusician(BaseMusician):
         Returns:
             MusicFrame containing generated music events
         """
+
+        resolved_class_labels = list(class_labels or self.class_labels or self.cityscapes_labels)
+        if resolved_class_labels != self.class_labels:
+            self._setup_music_mappings(resolved_class_labels)
 
         timestamp = time.time()
         events = []
@@ -330,8 +339,8 @@ class TestMusician(BaseMusician):
                         timestamp=timestamp,
                         metadata={
                             "class_id": int(class_id),
-                            "class_name": self.cityscapes_labels[class_id]
-                            if class_id < len(self.cityscapes_labels)
+                            "class_name": resolved_class_labels[class_id]
+                            if class_id < len(resolved_class_labels)
                             else "unknown",
                             "presence_ratio": float(presence_ratio),
                             "pixel_count": int(pixel_count),
@@ -411,15 +420,20 @@ class PianistTestMusician(BaseMusician):
             "motorcycle",
             "bicycle",
         ]
+        self.class_labels = list(self.cityscapes_labels)
 
         # Piano-only musical mappings
         self.class_to_piano = {}
-        self._setup_piano_mappings()
+        self._setup_piano_mappings(self.class_labels)
 
         logger.info("✅ Pianist Test Musician initialized successfully")
 
-    def _setup_piano_mappings(self) -> None:
+    def _setup_piano_mappings(self, class_labels: List[str] = None) -> None:
         """Setup piano-only mappings from segmentation classes to piano notes."""
+
+        labels = list(class_labels or self.class_labels or self.cityscapes_labels)
+        self.class_labels = labels
+        self.class_to_piano = {}
 
         # Different piano note ranges and patterns
         c_major_scale = [60, 62, 64, 65, 67, 69, 71]  # C4, D4, E4, F4, G4, A4, B4
@@ -429,7 +443,7 @@ class PianistTestMusician(BaseMusician):
         high_notes = [72, 74, 76, 77, 79, 81, 83]  # High octave
 
         # Map each class to specific piano elements
-        for i, class_name in enumerate(self.cityscapes_labels):
+        for i, class_name in enumerate(labels):
             if class_name in ["car", "truck", "bus"]:
                 # Vehicles get C major scale - mid range
                 note_idx = i % len(c_major_scale)
@@ -510,7 +524,7 @@ class PianistTestMusician(BaseMusician):
                     "scale_type": "default",
                 }
 
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
         """
         Generate piano music based on segmentation data.
 
@@ -521,6 +535,10 @@ class PianistTestMusician(BaseMusician):
         Returns:
             MusicFrame containing generated piano music events
         """
+
+        resolved_class_labels = list(class_labels or self.class_labels or self.cityscapes_labels)
+        if resolved_class_labels != self.class_labels:
+            self._setup_piano_mappings(resolved_class_labels)
 
         timestamp = time.time()
         events = []
@@ -561,8 +579,8 @@ class PianistTestMusician(BaseMusician):
                         timestamp=timestamp,
                         metadata={
                             "class_id": int(class_id),
-                            "class_name": self.cityscapes_labels[class_id]
-                            if class_id < len(self.cityscapes_labels)
+                            "class_name": resolved_class_labels[class_id]
+                            if class_id < len(resolved_class_labels)
                             else "unknown",
                             "presence_ratio": float(presence_ratio),
                             "pixel_count": int(pixel_count),
@@ -643,9 +661,11 @@ class ContinuousPianistMusician(BaseMusician):
             "bicycle",
         ]
 
+        self.class_labels = list(self.cityscapes_labels)
+
         # Piano-only musical mappings
         self.class_to_piano = {}
-        self._setup_piano_mappings()
+        self._setup_piano_mappings(self.class_labels)
 
         # Continuous playback state tracking
         self.active_notes = {}  # Track currently playing notes per class
@@ -654,8 +674,12 @@ class ContinuousPianistMusician(BaseMusician):
 
         logger.info("✅ Continuous Pianist Musician initialized successfully")
 
-    def _setup_piano_mappings(self) -> None:
+    def _setup_piano_mappings(self, class_labels: List[str] = None) -> None:
         """Setup piano-only mappings from segmentation classes to piano notes."""
+
+        labels = list(class_labels or self.class_labels or self.cityscapes_labels)
+        self.class_labels = labels
+        self.class_to_piano = {}
 
         # Different piano note ranges and patterns
         c_major_scale = [60, 62, 64, 65, 67, 69, 71]  # C4, D4, E4, F4, G4, A4, B4
@@ -665,7 +689,7 @@ class ContinuousPianistMusician(BaseMusician):
         high_notes = [72, 74, 76, 77, 79, 81, 83]  # High octave
 
         # Map each class to specific piano elements
-        for i, class_name in enumerate(self.cityscapes_labels):
+        for i, class_name in enumerate(labels):
             if class_name in ["car", "truck", "bus"]:
                 # Vehicles get C major scale - mid range
                 note_idx = i % len(c_major_scale)
@@ -783,7 +807,7 @@ class ContinuousPianistMusician(BaseMusician):
 
         return any(edges_touched.values())
 
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
         """
         Generate continuous piano music based on edge collisions.
 
@@ -794,6 +818,10 @@ class ContinuousPianistMusician(BaseMusician):
         Returns:
             MusicFrame containing continuous piano music events
         """
+
+        resolved_class_labels = list(class_labels or self.class_labels or self.cityscapes_labels)
+        if resolved_class_labels != self.class_labels:
+            self._setup_piano_mappings(resolved_class_labels)
 
         timestamp = time.time()
         events = []
@@ -832,8 +860,8 @@ class ContinuousPianistMusician(BaseMusician):
             if class_id in self.class_to_piano:
                 mapping = self.class_to_piano[class_id]
                 class_name = (
-                    self.cityscapes_labels[class_id]
-                    if class_id < len(self.cityscapes_labels)
+                    resolved_class_labels[class_id]
+                    if class_id < len(resolved_class_labels)
                     else "unknown"
                 )
 
@@ -1015,9 +1043,28 @@ class LSTMMusician(BaseMusician):
         self._symbol_buffer: list = []
         self._rt_generator = None
 
-    def _check_edge_collision(self, seg_map: np.ndarray) -> bool:
+    def _resolve_important_class_ids(self, class_labels: List[str] = None) -> set:
+        """Resolve the collision-relevant class IDs from model labels when available."""
+
+        important_labels = {"person", "rider", "car", "truck", "bus", "train", "motorcycle", "bicycle"}
+
+        if class_labels:
+            normalized = {
+                str(label).strip().lower()
+                for label in class_labels
+                if str(label).strip()
+            }
+            return {
+                idx
+                for idx, label in enumerate(class_labels)
+                if str(label).strip().lower() in important_labels
+            }
+
+        return {11, 12, 13, 14, 15, 16, 17, 18}
+
+    def _check_edge_collision(self, seg_map: np.ndarray, class_labels: List[str] = None) -> bool:
         """Return True if any important object class touches an image edge."""
-        important_classes = {11, 12, 13, 14, 15, 16, 17, 18}  # person, rider, car, truck, bus, train, motorcycle, bicycle
+        important_classes = self._resolve_important_class_ids(class_labels)
 
         mask = np.isin(seg_map, list(important_classes))
         if not np.any(mask):
@@ -1031,14 +1078,14 @@ class LSTMMusician(BaseMusician):
             or (np.any(mask[:, w - 1]))
         )
 
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0) -> MusicFrame:
+    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
         """Generate music based on segmentation data and edge collisions."""
 
         timestamp = time.time()
         events = []
         step_dur = 60.0 / self.tempo / 3.5
 
-        has_collision = self._check_edge_collision(segmentation_data)
+        has_collision = self._check_edge_collision(segmentation_data, class_labels=class_labels)
 
         if has_collision:
             if not self.active_collision:
@@ -1199,7 +1246,7 @@ class Musician:
             for musician_id, info in cls.MUSICIAN_REGISTRY.items()
         ]
 
-    def __call__(self, segmentation_data: Union[np.ndarray], frame_id: int = 0) -> MusicFrame:
+    def __call__(self, segmentation_data: Union[np.ndarray], frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
         """
         Generate music based on segmentation data.
 
@@ -1214,7 +1261,7 @@ class Musician:
         if not isinstance(segmentation_data, np.ndarray):
             raise ValueError("Segmentation data must be a numpy array")
 
-        return self.musician(segmentation_data, frame_id)
+        return self.musician(segmentation_data, frame_id, class_labels=class_labels, metadata=metadata)
 
     def switch_musician(self, musician_type: str, tempo: int = None, key_signature: str = None) -> None:
         """
