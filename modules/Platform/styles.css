@@ -298,9 +298,20 @@ body {
     transform: scale(0.99);
 }
 
+.musician-option:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
 .musician-option.selected {
     border-color: var(--accent-color);
     background: rgba(0, 255, 136, 0.08);
+}
+
+.url-btn.is-disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .musician-option-name {

@@ -75,6 +75,7 @@ let availableMusicians = [
     { id: 'lstm-onessen', label: 'LSTM (Essen Folk Song)', description: 'Neural LSTM model trained on the Essen folk song collection.' }
 ];
 let currentMusicianType = 'lstm-onessen'; // Matches the processor's default musician on startup
+let pendingMusicianSelection = null;
 let isSwitchingMusician = false;
 let musicianSwitchTimeoutId = null;
 const MUSICIAN_SWITCH_TIMEOUT_MS = 8000;
@@ -2213,27 +2214,52 @@ function renderMusicianList() {
     availableMusicians.forEach(musician => {
         const option = document.createElement('button');
         option.type = 'button';
-        option.className = 'musician-option' + (musician.id === currentMusicianType ? ' selected' : '');
-        option.setAttribute('aria-pressed', (musician.id === currentMusicianType).toString());
+        const isSelected = musician.id === pendingMusicianSelection;
+        option.className = 'musician-option' + (isSelected ? ' selected' : '');
+        option.setAttribute('aria-pressed', isSelected.toString());
         option.innerHTML = `
             <div class="musician-option-name">
                 <span>${escapeHtml(musician.label)}</span>
-                <span class="musician-option-badge">✓ Active</span>
+                <span class="musician-option-badge">✓ Selected</span>
             </div>
             <div class="musician-option-desc">${escapeHtml(musician.description || '')}</div>
         `;
-        option.addEventListener('click', () => selectMusician(musician.id));
+
+        const selectHandler = (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (isSwitchingMusician) return;
+            pendingMusicianSelection = musician.id;
+            renderMusicianList();
+            setMusicianModalStatus(`Selected: ${getMusicianLabel(musician.id)}`);
+            updateMusicianApplyButton();
+        };
+
+        option.addEventListener('click', selectHandler);
+        option.addEventListener('touchend', selectHandler);
         container.appendChild(option);
     });
+}
+
+function updateMusicianApplyButton() {
+    const applyBtn = document.getElementById('musicianApplyBtn');
+    if (!applyBtn) return;
+
+    const hasSelection = !!pendingMusicianSelection;
+    const isSameAsCurrent = pendingMusicianSelection === currentMusicianType;
+    applyBtn.disabled = !hasSelection || isSameAsCurrent || isSwitchingMusician;
+    applyBtn.classList.toggle('is-disabled', applyBtn.disabled);
 }
 
 function openMusicianModal() {
     const modal = document.getElementById('musicianModal');
     if (!modal) return;
 
+    pendingMusicianSelection = currentMusicianType;
     renderMusicianList();
-    setMusicianModalStatus('');
+    setMusicianModalStatus('Select a musician and tap Apply.');
     setMusicianListInteractive(!isSwitchingMusician);
+    updateMusicianApplyButton();
     modal.style.display = 'flex';
 
     // Refresh from the server in case the list or current selection changed elsewhere
@@ -2245,14 +2271,19 @@ function openMusicianModal() {
 function closeMusicianModal() {
     const modal = document.getElementById('musicianModal');
     if (modal) {
+        pendingMusicianSelection = currentMusicianType;
+        updateMusicianApplyButton();
         modal.style.display = 'none';
     }
 }
 
-function selectMusician(musicianId) {
-    if (isSwitchingMusician) return;
+function applyMusicianSelection() {
+    if (!pendingMusicianSelection) {
+        setMusicianModalStatus('Please select a musician first.');
+        return;
+    }
 
-    if (musicianId === currentMusicianType) {
+    if (pendingMusicianSelection === currentMusicianType) {
         closeMusicianModal();
         return;
     }
@@ -2264,16 +2295,28 @@ function selectMusician(musicianId) {
 
     isSwitchingMusician = true;
     setMusicianListInteractive(false);
-    setMusicianModalStatus(`Switching to ${getMusicianLabel(musicianId)}...`);
-    segmentationSocket.emit('switch_musician', { musician_type: musicianId });
+    updateMusicianApplyButton();
+    setMusicianModalStatus(`Switching to ${getMusicianLabel(pendingMusicianSelection)}...`);
+    segmentationSocket.emit('switch_musician', { musician_type: pendingMusicianSelection });
 
     clearTimeout(musicianSwitchTimeoutId);
     musicianSwitchTimeoutId = setTimeout(() => {
         if (!isSwitchingMusician) return;
         isSwitchingMusician = false;
         setMusicianListInteractive(true);
+        updateMusicianApplyButton();
         setMusicianModalStatus('⚠️ No response from processor - please try again');
     }, MUSICIAN_SWITCH_TIMEOUT_MS);
+
+    closeMusicianModal();
+}
+
+function selectMusician(musicianId) {
+    if (isSwitchingMusician) return;
+    pendingMusicianSelection = musicianId;
+    renderMusicianList();
+    setMusicianModalStatus(`Selected: ${getMusicianLabel(musicianId)}`);
+    updateMusicianApplyButton();
 }
 
 function clampTempoValue(value) {

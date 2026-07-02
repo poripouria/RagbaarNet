@@ -43,8 +43,8 @@
             <div id="musicianList" class="musician-list"></div>
             <div id="musicianModalStatus" class="musician-modal-status"></div>
             <div class="musician-modal-actions">
-                <button class="url-btn confirm-btn" onclick="applyMusicianSelection()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); applyMusicianSelection();}">Apply</button>
-                <button class="url-btn cancel-btn" onclick="closeMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); closeMusicianModal();}">Close</button>
+                <button id="musicianApplyBtn" class="url-btn confirm-btn" onclick="applyMusicianSelection()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); applyMusicianSelection();}">Apply</button>
+                <button id="musicianCloseBtn" class="url-btn cancel-btn" onclick="closeMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); closeMusicianModal();}">Close</button>
             </div>
         </div>
     </div>
