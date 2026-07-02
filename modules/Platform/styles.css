@@ -341,6 +341,7 @@ body {
 .musician-modal-actions {
     display: flex;
     justify-content: center;
+    gap: 12px;
     margin-top: 16px;
 }
 
