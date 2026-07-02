@@ -17,7 +17,7 @@ import zlib
 import os
 import sys
 from queue import Queue, Empty
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, redirect
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
@@ -796,104 +796,13 @@ processor = Processor(socketio_instance=socketio)
 
 @app.route('/')
 def index():
-    """Serve a simple test page"""
-    
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Video Processor Status</title>
-        <style>
-            body { font-family: Arial, sans-serif; margin: 40px; background: #2b2b2b; color: white; }
-            .status { background: #1e1e1e; padding: 20px; border-radius: 10px; margin: 20px 0; }
-            .frame-display { display: flex; gap: 20px; }
-            .frame-container { flex: 1; text-align: center; }
-            .frame-container img { max-width: 100%; border-radius: 5px; }
-            .info { background: #333; padding: 10px; border-radius: 5px; margin: 10px 0; }
-        </style>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    </head>
-    <body>
-        <h1>🎥 Video Processor Status</h1>
-        <div class="status" id="status">
-            <h2>Status: Waiting for connection...</h2>
-            <p>Frame Counter: <span id="frameCounter">0</span></p>
-            <p>Queue Size: <span id="queueSize">0</span></p>
-            <p>Processing Interval: <span id="interval">5</span> frames</p>
-        </div>
+    """Redirect the root URL to the main UI so the processor server is usable directly."""
+    return redirect('/ui/', code=302)
 
-        <div class="frame-display">
-            <div class="frame-container">
-                <h3>Original Video</h3>
-                <img id="originalFrame" src="" alt="Original frame will appear here" style="display: none;">
-                <div id="noOriginal">No frame received yet</div>
-            </div>
-            <div class="frame-container">
-                <h3>Segmentation Overlay</h3>
-                <img id="segmentationFrame" src="" alt="Segmentation will appear here" style="display: none;">
-                <div id="noSegmentation">No segmentation available yet</div>
-            </div>
-        </div>
-
-        <div class="info" id="segmentationInfo" style="display: none;">
-            <h3>Segmentation Information</h3>
-            <p>Frame ID: <span id="segFrameId">-</span></p>
-            <p>Frames since last segmentation: <span id="framesSince">-</span></p>
-            <p>Detected classes: <span id="detectedClasses">-</span></p>
-        </div>
-
-        <script>
-            const socket = io();
-
-            socket.on('connect', function() {
-                console.log('Connected to video processor');
-                document.querySelector('.status h2').textContent = 'Status: Connected';
-            });
-
-            socket.on('frame_update', function(data) {
-                // Update status
-                document.getElementById('frameCounter').textContent = data.frame_counter;
-                document.getElementById('queueSize').textContent = data.queue_size || 0;
-
-                // Update original frame
-                if (data.original_frame) {
-                    const originalImg = document.getElementById('originalFrame');
-                    originalImg.src = data.original_frame;
-                    originalImg.style.display = 'block';
-                    document.getElementById('noOriginal').style.display = 'none';
-                }
-
-                // Update segmentation overlay
-                if (data.segmentation_overlay) {
-                    const segImg = document.getElementById('segmentationFrame');
-                    segImg.src = data.segmentation_overlay;
-                    segImg.style.display = 'block';
-                    document.getElementById('noSegmentation').style.display = 'none';
-
-                    // Update segmentation info
-                    if (data.segmentation_info) {
-                        document.getElementById('segmentationInfo').style.display = 'block';
-                        document.getElementById('segFrameId').textContent = data.segmentation_info.frame_id;
-                        document.getElementById('framesSince').textContent = data.segmentation_info.frames_since_segmentation;
-
-                        const classes = data.segmentation_info.class_labels || [];
-                        document.getElementById('detectedClasses').textContent = classes.join(', ') || 'None';
-                    }
-                } else {
-                    document.getElementById('segmentationFrame').style.display = 'none';
-                    document.getElementById('noSegmentation').style.display = 'block';
-                    document.getElementById('segmentationInfo').style.display = 'none';
-                }
-            });
-
-            // Request updates every 100ms
-            setInterval(() => {
-                socket.emit('request_update');
-            }, 100);
-        </script>
-    </body>
-    </html>
-    """
+@app.route('/ui')
+def ui_redirect():
+    """Redirect /ui to /ui/ so static assets resolve correctly."""
+    return redirect('/ui/', code=302)
 
 @app.route('/ui/')
 def ui_index():
