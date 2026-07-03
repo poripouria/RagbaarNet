@@ -1195,7 +1195,7 @@ class Musician:
         "continuous_pianist": {
             "class": ContinuousPianistMusician,
             "label": "Continuous Pianist",
-            "description": "Piano musician with sustained/continuous note playback for smoother phrasing.",
+            "description": "Piano musician with sustained/continuous note playback.",
         },
         "lstm-onessen": {
             "class": LSTMMusician,
