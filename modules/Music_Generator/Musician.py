@@ -12,8 +12,8 @@ import sys
 import time
 import numpy as np
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Dict, List, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
@@ -24,28 +24,33 @@ logger = setup_logging("INFO", name="Music_Generator.Musician")
 @dataclass
 class MusicEvent:
     """
-    Data class to store individual music events.
+    Core atomic event in the music system.
 
-    Attributes:
-        note: MIDI note number (0-127)
-        velocity: Note velocity (0-127)
-        duration: Note duration in seconds
+    This represents a single musical action (NOT only MIDI note).
+    Designed to be extendable for future MIDI CC, pitch bend, etc.
+
+    Attributed:
+        event_type: Type of the event (e.g., "note_on", "note_off", "control_change")
+        timestamp: Time at which the event occurs
         channel: MIDI channel (0-15)
-        timestamp: Event timestamp
+        note: MIDI note number (0-127), optional depending on event_type
+        velocity: Note velocity (0-127), optional depending on event_type
         metadata: Additional event-specific information
     """
 
-    note: int
-    velocity: int = 64
-    duration: float = 0.5
-    channel: int = 0
+    event_type: str  # e.g. "note_on", "note_off"
     timestamp: float = 0.0
-    metadata: Dict[str, Any] = None
+    channel: int = 0
+    # Note-related fields (optional depending on event_type)
+    note: Optional[int] = None
+    velocity: Optional[int] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class MusicFrame:
     """
     Data class to store music generation results for a frame.
+    Represents generated musical content at a single timestep.
 
     Attributes:
         events: List of music events for this frame
@@ -61,12 +66,32 @@ class MusicFrame:
     timestamp: float = 0.0
     tempo: int = 120
     key_signature: str = "C_major"
-    metadata: Dict[str, Any] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class MusicianState:
+    """
+    Persistent state across frames for temporal coherence.
+    Used to preserve musical continuity in real-time generation.
+
+    Attributes:
+        last_notes: List of last played notes
+        current_beat: Current beat position in the bar
+        current_bar: Current bar number
+        memory: Arbitrary state storage for musician-specific data
+    """
+
+    last_notes: List[int] = field(default_factory=list)
+    current_beat: float = 0.0
+    current_bar: int = 0
+    memory: Dict[str, Any] = field(default_factory=dict)
+    # last_velocity: int = 64
+    # active_chords: List[int] = field(default_factory=list)
+    # tension: float = 0.0
 
 class BaseMusician(ABC):
     """
     Abstract base class for all music generation models.
-
     This class defines the interface that all music generation models must implement,
     ensuring consistency and extensibility across different generation strategies.
     """
@@ -82,34 +107,66 @@ class BaseMusician(ABC):
 
         self.tempo = tempo
         self.key_signature = key_signature
+
         self.frame_counter = 0
+        self.state = MusicianState()
+
+    def __call__(self,
+        segmentation_data: np.ndarray,
+        frame_id: int = 0,
+        class_labels: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> MusicFrame:
+        
+        if not isinstance(segmentation_data, np.ndarray):
+            raise ValueError("segmentation_data must be a numpy array")
+
+        return self.generate_music(segmentation_data, frame_id, class_labels, metadata)
 
     @abstractmethod
-    def generate_music(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
-        """
-        Generate music based on segmentation data.
-
-        Args:
-            segmentation_data: Segmentation map as numpy array
-            frame_id: Frame identifier for tracking
-
-        Returns:
-            MusicFrame containing generated music events
-        """
-        pass
-
-    def __call__(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
+    def generate_music(self,
+        segmentation_data: np.ndarray,
+        frame_id: int = 0,
+        class_labels: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> MusicFrame:
         """
         Convenience method to call generate_music directly.
 
         Args:
             segmentation_data: Segmentation map as numpy array
             frame_id: Frame identifier for tracking
+            class_labels: Optional list of class labels
+            metadata: Optional dictionary of metadata
 
         Returns:
             MusicFrame containing generated music events
         """
-        return self.generate_music(segmentation_data, frame_id, class_labels=class_labels, metadata=metadata)
+        pass
+
+    def extract_features(self, segmentation_data: np.ndarray) -> Dict[str, Any]:
+        """
+        Default feature extractor (can be overridden).
+
+        Args:
+            segmentation_data: Segmentation map as numpy array
+        """
+
+        return {
+            "raw_shape": segmentation_data.shape,
+            "unique_classes": np.unique(segmentation_data).tolist(),
+        }
+
+    def update_state(self, features: Dict[str, Any]):
+        """
+        Update temporal memory.
+        Override if needed.
+
+        Args:
+            features: Dictionary of extracted features from the current frame
+        """
+        self.state.memory["last_features"] = features
+
 
 class TestMusician(BaseMusician):
     """
@@ -1178,9 +1235,6 @@ class Musician:
     allowing easy switching between models and unified result handling.
     """
 
-    # Single source of truth for every musician type that can be created/switched to.
-    # Keys are the canonical (lowercase) musician_type identifiers used everywhere
-    # (constructor, switch_musician, and the Platform UI's musician picker).
     MUSICIAN_REGISTRY = {
         "test": {
             "class": TestMusician,
@@ -1227,26 +1281,11 @@ class Musician:
         entry = self.MUSICIAN_REGISTRY.get(musician_type.lower())
         if entry is None:
             available = ", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))
-            raise ValueError(
-                f"Unsupported musician type: {musician_type}. Supported types: {available}"
-            )
+            raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: {available}")
+        
         return entry["class"](tempo, key_signature)
 
-    @classmethod
-    def list_available_musicians(cls) -> List[dict]:
-        """
-        Return metadata for every musician type that can be selected/switched to.
-
-        Used by the Platform UI to populate the "Change Musician" picker without
-        duplicating the list of supported types.
-        """
-
-        return [
-            {"id": musician_id, "label": info["label"], "description": info["description"]}
-            for musician_id, info in cls.MUSICIAN_REGISTRY.items()
-        ]
-
-    def __call__(self, segmentation_data: Union[np.ndarray], frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
+    def __call__(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
         """
         Generate music based on segmentation data.
 
@@ -1279,24 +1318,20 @@ class Musician:
         if key_signature is not None:
             self.key_signature = key_signature
 
-        self.musician = self._create_musician(
-            musician_type, self.tempo, self.key_signature
-        )
+        self.musician = self._create_musician(musician_type, self.tempo, self.key_signature)
+
         logger.info(f"🔄 Switched to {musician_type} musician")
 
-    def export_events_to_midi(self, music_frames: List[MusicFrame], output_path: str) -> None:
+    @classmethod
+    def list_available_musicians(cls) -> List[dict]:
         """
-        Export generated music events to MIDI file.
+        Return metadata for every musician type that can be selected/switched to.
 
-        Args:
-            music_frames: List of MusicFrame objects
-            output_path: Path to save MIDI file
+        Used by the Platform UI to populate the "Change Musician" picker without
+        duplicating the list of supported types.
         """
 
-        # TODO: Implement MIDI export functionality
-        logger.info(
-            f"📝 MIDI export functionality not yet implemented. Would export to: {output_path}"
-        )
-        logger.info(f"📊 Total frames to export: {len(music_frames)}")
-        total_events = sum(len(frame.events) for frame in music_frames)
-        logger.info(f"🎵 Total events to export: {total_events}")
+        return [
+            {"id": musician_id, "label": info["label"], "description": info["description"]}
+            for musician_id, info in cls.MUSICIAN_REGISTRY.items()
+        ]
