@@ -82,6 +82,12 @@ const MUSICIAN_SWITCH_TIMEOUT_MS = 8000;
 let currentTempo = 120;
 const TEMPO_MIN = 60;
 const TEMPO_MAX = 180;
+let lastMusicStatus = {
+    eventCount: 0,
+    tempo: currentTempo,
+    keySignature: 'C_major',
+    instruments: []
+};
 
 // Color scheme
 const colors = {
@@ -363,7 +369,13 @@ function initializeSocketConnection() {
         segmentationSocket.on('music_status', function(data) {
             if (data && Number.isInteger(data.tempo)) {
                 currentTempo = clampTempoValue(data.tempo);
+                lastMusicStatus.tempo = currentTempo;
                 updateTempoControls(currentTempo);
+                updateMusicStatusDisplay();
+            }
+            if (data && data.key_signature) {
+                lastMusicStatus.keySignature = data.key_signature;
+                updateMusicStatusDisplay();
             }
         });
         
@@ -758,33 +770,74 @@ function stopAllActiveNotes() {
     }
 }
 
+function normalizeInstrumentName(instrument, fallback = 'piano') {
+    const raw = String(instrument || '').trim().toLowerCase();
+    if (!raw || raw === 'unknown' || raw === 'none' || raw === 'null') {
+        return fallback;
+    }
+    if (raw === 'piano_only') {
+        return 'piano';
+    }
+    return raw;
+}
+
+function formatInstrumentName(instrument) {
+    const normalized = normalizeInstrumentName(instrument);
+    return normalized
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function updateMusicStatusDisplay() {
+    const parts = [];
+    if (lastMusicStatus.eventCount > 0) {
+        parts.push(`${lastMusicStatus.eventCount} events`);
+    }
+    parts.push(`${clampTempoValue(lastMusicStatus.tempo)} BPM`);
+
+    const keyLabel = String(lastMusicStatus.keySignature || 'C_major').replace(/_/g, ' ');
+    if (keyLabel) {
+        parts.push(keyLabel);
+    }
+
+    if (lastMusicStatus.instruments.length > 0) {
+        const instrumentLabel = lastMusicStatus.instruments.join(', ');
+        parts.push(`Instruments: ${instrumentLabel}`);
+    }
+
+    const message = parts.length > 0 ? `🎵 ${parts.join(' • ')}` : `🎵 Tempo ${lastMusicStatus.tempo} BPM`;
+    updateStatus(message);
+}
+
 function updateMusicInfo(musicData) {
-    // Update status with music information
-    const eventCount = musicData.events.length;
-    const tempo = musicData.tempo;
-    const key = musicData.key_signature;
-    
-    updateStatus(`🎵 Playing: ${eventCount} events | ${tempo} BPM | ${key}`);
-    
-    // Update ROI info section with music data
-    const roiInfo = document.getElementById('roiInfo');
-    if (roiInfo && eventCount > 0) {
-        const instruments = {};
+    const eventCount = (musicData && Array.isArray(musicData.events)) ? musicData.events.length : 0;
+    const tempo = clampTempoValue((musicData && Number.isInteger(musicData.tempo)) ? musicData.tempo : currentTempo);
+    const key = (musicData && musicData.key_signature) ? musicData.key_signature : lastMusicStatus.keySignature;
+
+    const instruments = {};
+    if (musicData && Array.isArray(musicData.events)) {
         musicData.events.forEach(event => {
-            const instr = event.instrument || 'unknown';
+            const instr = normalizeInstrumentName(event.instrument, 'piano');
             instruments[instr] = (instruments[instr] || 0) + 1;
         });
-        
-        const instrText = Object.entries(instruments)
-            .map(([instr, count]) => `${instr}: ${count}`)
-            .join(', ');
-        
-        roiInfo.innerHTML = `
-            <div style="color: #00ff88; font-size: 12px; margin-top: 5px;">
-                <div>🎵 Music: ${eventCount} events</div>
-                <div>${instrText}</div>
-            </div>
-        `;
+    }
+
+    const instrumentSummary = Object.entries(instruments)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([instr, count]) => `${formatInstrumentName(instr)} (${count})`);
+
+    lastMusicStatus = {
+        eventCount,
+        tempo: currentTempo,
+        keySignature: key,
+        instruments: instrumentSummary
+    };
+
+    updateMusicStatusDisplay();
+
+    const roiInfo = document.getElementById('roiInfo');
+    if (roiInfo) {
+        roiInfo.innerHTML = '';
     }
 }
 
@@ -2384,6 +2437,8 @@ function handleTempoSliderInput() {
 
 function applyTempoValue(emitToServer = false) {
     updateTempoControls(document.getElementById('tempoNumberInput')?.value || currentTempo);
+    lastMusicStatus.tempo = currentTempo;
+    updateMusicStatusDisplay();
 
     if (emitToServer) {
         if (!segmentationSocket || !segmentationSocket.connected) {
@@ -2392,7 +2447,6 @@ function applyTempoValue(emitToServer = false) {
         }
 
         segmentationSocket.emit('set_music_tempo', { tempo: currentTempo });
-        updateStatus(`🎵 Tempo set to ${currentTempo} BPM`);
     }
 }
 
