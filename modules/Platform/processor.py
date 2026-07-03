@@ -816,7 +816,7 @@ class Processor:
             if connected:
                 logger.info("🎯 Main UI connected - prioritizing segmentation data for main interface")
             else:
-                logger.info("📄 Main UI disconnected - status page can receive data")
+                logger.info("📄 Main UI disconnected")
         else:
             self.main_ui_connected = connected
 
