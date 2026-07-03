@@ -782,7 +782,6 @@ class Processor:
 
         try:
             self.musician.switch_musician(musician_type)
-            logger.info(f"🔄 Musician switched to: {self.musician.musician_type}")
             return {'success': True, 'musician_type': self.musician.musician_type}
         except Exception as e:
             logger.error(f"❌ Error switching musician: {e}")
