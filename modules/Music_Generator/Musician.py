@@ -548,7 +548,7 @@ class Musician:
     """
 
     MUSICIAN_REGISTRY = {
-        "test": {
+        "rule-based": {
             "class": RuleBasedMusician,
             "label": "Rule-Based Musician",
             "description": "Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).",
