@@ -111,31 +111,40 @@ class BaseMusician(ABC):
         self.state = MusicianState()
 
     def __call__(self,
-        segmentation_data: np.ndarray,
+        segmentation_map: np.ndarray,
         frame_id: int = 0,
-        class_labels: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> MusicFrame:
+        class_labels: List[str] = None,
+        confidence_map: np.ndarray = None,
+        bounding_boxes: List[Dict] = None,
+        masks: List[np.ndarray] = None,
+        metadata: Dict[str, Any] = None
+    ):
         
-        if not isinstance(segmentation_data, np.ndarray):
-            raise ValueError("segmentation_data must be a numpy array")
+        if not isinstance(segmentation_map, np.ndarray):
+            raise ValueError("segmentation_map must be a numpy array")
 
-        return self.generate_music(segmentation_data, frame_id, class_labels, metadata)
+        return self.generate_music(segmentation_map, frame_id, class_labels, confidence_map, bounding_boxes, masks, metadata)
 
     @abstractmethod
     def generate_music(self,
-        segmentation_data: np.ndarray,
+        segmentation_map: np.ndarray,
         frame_id: int = 0,
-        class_labels: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> MusicFrame:
+        class_labels: List[str] = None,
+        confidence_map: np.ndarray = None,
+        bounding_boxes: List[Dict] = None,
+        masks: List[np.ndarray] = None,
+        metadata: Dict[str, Any] = None
+    ):
         """
         Convenience method to call generate_music directly.
 
         Args:
-            segmentation_data: Segmentation map as numpy array
+            segmentation_map: Segmentation map as numpy array
             frame_id: Frame identifier for tracking
             class_labels: Optional list of class labels
+            confidence_map: Optional confidence map for segmentation
+            bounding_boxes: Optional list of bounding boxes for detected objects
+            masks: Optional list of binary masks for detected objects
             metadata: Optional dictionary of metadata
 
         Returns:
