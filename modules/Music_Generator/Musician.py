@@ -13,7 +13,7 @@ import time
 import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
@@ -167,6 +167,211 @@ class BaseMusician(ABC):
         """
         self.state.memory["last_features"] = features
 
+
+class RuleBasedMusician(BaseMusician):
+
+    def __init__(self, tempo: int = 120, key_signature: str = "C_major", roi=None):
+        """
+        Initialize the rule-based musician.
+        
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+            roi: Region of interest (polygon points) for scene event detection
+        """
+
+        super().__init__(tempo, key_signature)
+
+        self.roi = roi  # polygon / bezier converted to polygon points
+        self.state = {
+            "active_notes": {},   # object_id -> note
+        }
+
+    def extract_features(self, segmentation_data: np.ndarray) -> Dict[str, Any]:
+
+        unique, counts = np.unique(segmentation_data, return_counts=True)
+
+        total = segmentation_data.size
+
+        class_pixels = {str(k): int(v) for k, v in zip(unique, counts)}
+        class_ratios = {k: v / total for k, v in class_pixels.items()}
+
+        return {
+            "class_pixels": class_pixels,
+            "class_ratios": class_ratios
+        }
+
+    # ------------------------------------------------------------
+    # 2) SCENE EVENT DETECTION (ROI-based)
+    # ------------------------------------------------------------
+    def detect_scene_events(self, features: Dict[str, Any], frame_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        frame_data must include object blobs:
+        [
+            {object_id, class, mask, bbox, centroid}
+        ]
+        """
+
+        events = []
+
+        objects = frame_data.get("objects", [])
+
+        for obj in objects:
+            obj_id = obj["object_id"]
+            obj_class = obj["class"]
+            centroid = obj["centroid"]
+
+            inside = self._inside_roi(centroid)
+
+            prev_state = self.state["active_notes"].get(obj_id, None)
+
+            # ENTER
+            if inside and prev_state is None:
+                events.append({
+                    "type": "ROI_ENTER",
+                    "object_id": obj_id,
+                    "class": obj_class,
+                    "centroid": centroid
+                })
+                self.state["active_notes"][obj_id] = None
+
+            # EXIT
+            elif not inside and prev_state is not None:
+                events.append({
+                    "type": "ROI_EXIT",
+                    "object_id": obj_id,
+                    "class": obj_class,
+                    "centroid": centroid
+                })
+                del self.state["active_notes"][obj_id]
+
+        return events
+
+    # ------------------------------------------------------------
+    # 3) MUSIC DECISION
+    # ------------------------------------------------------------
+    def decide_music(self, scene_events: List[Dict[str, Any]]) -> List[MusicEvent]:
+
+        music_events = []
+
+        for e in scene_events:
+
+            obj_class = e["class"]
+
+            # mapping rule (can later be replaced by LSTM/Transformer)
+            note = self._map_class_to_note(obj_class)
+
+            if e["type"] == "ROI_ENTER":
+
+                music_events.append(
+                    MusicEvent(
+                        note=note,
+                        velocity=self._velocity(obj_class, entering=True),
+                        channel=0,
+                        timestamp=self.frame_counter,
+                        metadata={"event": "note_on", "object_id": e["object_id"]}
+                    )
+                )
+
+                self.state["active_notes"][e["object_id"]] = note
+
+            elif e["type"] == "ROI_EXIT":
+
+                music_events.append(
+                    MusicEvent(
+                        note=self.state["active_notes"].get(e["object_id"], note),
+                        velocity=0,
+                        channel=0,
+                        timestamp=self.frame_counter,
+                        metadata={"event": "note_off", "object_id": e["object_id"]}
+                    )
+                )
+
+        return music_events
+
+    # ------------------------------------------------------------
+    # 4) MAIN PIPELINE
+    # ------------------------------------------------------------
+    def generate_music(
+        self,
+        segmentation_data: np.ndarray,
+        frame_data: Dict[str, Any],
+        frame_id: int = 0,
+        class_labels: List[str] = None,
+        metadata: Dict[str, Any] = None
+    ) -> MusicFrame:
+
+        self.frame_counter = frame_id
+
+        features = self.extract_features(segmentation_data)
+
+        scene_events = self.detect_scene_events(features, frame_data)
+
+        music_events = self.decide_music(scene_events)
+
+        return MusicFrame(
+            events=music_events,
+            frame_id=frame_id,
+            timestamp=float(frame_id),
+            tempo=self.tempo,
+            key_signature=self.key_signature,
+            metadata={
+                "features": features,
+                "scene_events": scene_events,
+                "extra": metadata or {}
+            }
+        )
+
+    # ------------------------------------------------------------
+    # HELPERS
+    # ------------------------------------------------------------
+    def _inside_roi(self, point: Tuple[float, float]) -> bool:
+        """
+        simple polygon test (ray casting placeholder)
+        """
+
+        if self.roi is None:
+            return True
+
+        x, y = point
+        poly = self.roi
+
+        inside = False
+        j = len(poly) - 1
+
+        for i in range(len(poly)):
+            xi, yi = poly[i]
+            xj, yj = poly[j]
+
+            intersect = ((yi > y) != (yj > y)) and \
+                        (x < (xj - xi) * (y - yi) / (yj - yi + 1e-6) + xi)
+
+            if intersect:
+                inside = not inside
+
+            j = i
+
+        return inside
+
+    def _map_class_to_note(self, obj_class: str) -> int:
+        mapping = {
+            "car": 60,
+            "truck": 48,
+            "person": 72,
+            "road": 36,
+            "traffic_sign": 76
+        }
+        return mapping.get(obj_class, 60)
+
+    def _velocity(self, obj_class: str, entering: bool = True) -> int:
+        base = {
+            "car": 90,
+            "truck": 70,
+            "person": 100,
+            "road": 50
+        }
+        v = base.get(obj_class, 80)
+        return v if entering else int(v * 0.6)
 
 class TestMusician(BaseMusician):
     """
