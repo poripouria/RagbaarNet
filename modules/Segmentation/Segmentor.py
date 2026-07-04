@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Union, Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from ultralytics import YOLO
 from transformers import SegformerConfig, SegformerImageProcessor, SegformerForSemanticSegmentation
 import os
@@ -21,7 +21,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="segmentation.segmentor")
-
 
 @dataclass
 class SegmentationResult:
@@ -39,10 +38,10 @@ class SegmentationResult:
 
     segmentation_map: np.ndarray
     confidence_map: Optional[np.ndarray] = None
-    class_labels: List[str] = None
-    bounding_boxes: Optional[List[Dict]] = None
-    masks: Optional[List[np.ndarray]] = None
-    metadata: Dict[str, Any] = None
+    class_labels: List[str] = field(default_factory=list)
+    bounding_boxes: List[Dict[str, Any]] = field(default_factory=list)
+    masks: List[np.ndarray] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 class BaseSegmentor(ABC):
     """

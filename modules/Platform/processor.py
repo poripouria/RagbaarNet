@@ -438,8 +438,11 @@ class Processor:
                                 music_frame = self.musician(
                                     result.segmentation_map,
                                     frame_id=self.frame_counter,
-                                    class_labels=getattr(result, 'class_labels', None),
-                                    metadata=getattr(result, 'metadata', None),
+                                    class_labels=result.class_labels,
+                                    confidence_map=result.confidence_map,
+                                    bounding_boxes=result.bounding_boxes,
+                                    masks=result.masks,
+                                    metadata=result.metadata,
                                 )
 
                                 # Store music data
@@ -901,7 +904,7 @@ def process_frame():
         data = request.get_json()
         roi_points = data.get("roi_points", [])
         roi_controls = data.get("roi_controls", [])
-        
+
         if 'frame' not in data:
             return jsonify({'error': 'No frame data provided'}), 400
 
