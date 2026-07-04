@@ -410,17 +410,10 @@ class RuleBasedMusician(BaseMusician):
         if bounding_boxes is None:
             return events
 
-        for obj in bounding_boxes:
+        for i, obj in enumerate(bounding_boxes):
 
-            obj_id = obj["object_id"]
-            class_id = obj.get("class_id", None)
-
-            obj_class = (
-                class_labels[class_id]
-                if class_labels and class_id is not None
-                else "unknown"
-            )
-
+            obj_id = obj.get("object_id", i)
+            obj_class = obj.get("class", "unknown")
             bbox = obj["bbox"]
 
             touching = self._intersects_roi(bbox)
@@ -601,22 +594,30 @@ class Musician:
         
         return entry["class"](tempo, key_signature)
 
-    def __call__(self, segmentation_data: np.ndarray, frame_id: int = 0, class_labels: List[str] = None, metadata: Dict[str, Any] = None) -> MusicFrame:
+    def __call__(self, 
+                 segmentation_map: np.ndarray, 
+                 frame_id: int = 0, 
+                 class_labels: List[str] = None, 
+                 confidence_map: np.ndarray = None,
+                 bounding_boxes: List[Dict] = None,
+                 masks: List[np.ndarray] = None,
+                 metadata: Dict[str, Any] = None
+                 ) -> MusicFrame:
         """
         Generate music based on segmentation data.
 
         Args:
-            segmentation_data: Segmentation map as numpy array
+            segmentation_map: Segmentation map as numpy array
             frame_id: Frame identifier for tracking
 
         Returns:
             MusicFrame containing generated music events
         """
 
-        if not isinstance(segmentation_data, np.ndarray):
-            raise ValueError("Segmentation data must be a numpy array")
+        if not isinstance(segmentation_map, np.ndarray):
+            raise ValueError("Segmentation map must be a numpy array")
 
-        return self.musician(segmentation_data, frame_id, class_labels=class_labels, metadata=metadata)
+        return self.musician(segmentation_map, frame_id, class_labels, confidence_map, bounding_boxes, masks, metadata)
 
     def switch_musician(self, musician_type: str, tempo: int = None, key_signature: str = None) -> None:
         """
