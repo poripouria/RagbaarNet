@@ -2,13 +2,11 @@
  * AI Music Generation Platform - Main JavaScript Module
  * Handles video input sources, ROI drawing, and music generation
  * 
- * PERFORMANCE OPTIMIZATIONS (2025):
+ * PERFORMANCE OPTIMIZATIONS:
  * - Reduced frame send interval to 150ms for better responsiveness
  * - Added throttling to prevent concurrent frame processing
  * - Optimized canvas operations and reduced logging
  * - Implemented update throttling for smoother display
- * 
- * For monitoring performance, use: python performance_monitor.py
  */
 
 // Global variables
@@ -71,7 +69,7 @@ let lastMusicEventTime = 0;
 let availableMusicians = [
     { id: 'test', label: 'Test Musician', description: 'Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).' },
     { id: 'pianist', label: 'Pianist (Rule-Based)', description: 'Rule-based musician that renders segmentation events as solo piano.' },
-    { id: 'continuous_pianist', label: 'Continuous Pianist', description: 'Piano musician with sustained/continuous note playback for smoother phrasing.' },
+    { id: 'continuous_pianist', label: 'Continuous Pianist', description: 'Piano musician with sustained/continuous note playback.' },
     { id: 'lstm-onessen', label: 'LSTM (Essen Folk Song)', description: 'Neural LSTM model trained on the Essen folk song collection.' }
 ];
 let currentMusicianType = 'lstm-onessen'; // Matches the processor's default musician on startup
@@ -2174,7 +2172,7 @@ function updateRoiFillButtonState() {
     // Legacy menu button (if present)
     const legacyButton = document.getElementById('toggleRoiFillBtn');
     if (legacyButton) {
-        legacyButton.textContent = roiFillEnabled ? '⬜ ROI Area: Filled' : '🫥 ROI Area: Transparent';
+        legacyButton.textContent = roiFillEnabled ? '⬜ ROI Area: Filled' : '🔳 ROI Area: Transparent';
     }
 
     // New compact icon in the instructions pill
