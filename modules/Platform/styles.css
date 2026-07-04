@@ -608,6 +608,7 @@ body {
     white-space: nowrap;
     text-overflow: ellipsis;
     display: block;
+    flex: 0 0 auto;
 }
 
 .music-gen-btn::before {
