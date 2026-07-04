@@ -565,7 +565,7 @@ class Musician:
         # },
     }
 
-    def __init__(self, musician_type: str = "test", tempo: int = 120, key_signature: str = "C_major"):
+    def __init__(self, musician_type: str = "rule-based", tempo: int = 120, key_signature: str = "C_major"):
         """
         Initialize the main Musician.
 

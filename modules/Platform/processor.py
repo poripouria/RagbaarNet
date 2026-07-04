@@ -611,7 +611,7 @@ class Processor:
             logger.exception("❌ Error creating segmentation overlay: %s", e)
             return frame
 
-    def add_frame(self, frame, frame_id=None, timestamp=None):
+    def add_frame(self, frame, frame_id=None, timestamp=None, roi_points=None, roi_controls=None):
         """Add a frame to the processing queue"""
 
         if timestamp is None:
@@ -623,7 +623,9 @@ class Processor:
         frame_data = {
             'frame': frame,
             'frame_id': frame_id,
-            'timestamp': timestamp
+            'timestamp': timestamp,
+            'roi_points': roi_points,
+            'roi_controls': roi_controls
         }
 
         # Add to queue (remove old frame if full)
