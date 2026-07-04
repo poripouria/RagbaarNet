@@ -9,7 +9,6 @@ generation strategies with easy integration for additional models.
 
 import os
 import sys
-import time
 import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -167,178 +166,85 @@ class BaseMusician(ABC):
         """
         self.state.memory["last_features"] = features
 
+class ROI:
+    """
+    ROI defined by 4 corner points + 4 bezier control points
+    """
 
-class RuleBasedMusician(BaseMusician):
-
-    def __init__(self, tempo: int = 120, key_signature: str = "C_major", roi=None):
+    def __init__(self, corners: List[Tuple[float, float]], controls: List[Tuple[float, float]]):
         """
-        Initialize the rule-based musician.
-        
         Args:
-            tempo: Music tempo in BPM
-            key_signature: Key signature for music generation
-            roi: Region of interest (polygon points) for scene event detection
+            corners: List of 4 corner points (x, y)
+            controls: List of 4 bezier control points (x, y)
         """
 
-        super().__init__(tempo, key_signature)
+        if len(corners) != 4 or len(controls) != 4:
+            raise ValueError("ROI must have exactly 4 corners and 4 control points")
+        
+        self.corners = corners
+        self.controls = controls
 
-        self.roi = roi  # polygon / bezier converted to polygon points
-        self.state = {
-            "active_notes": {},   # object_id -> note
-        }
+        self.polygon = self._build_polygon()
+        self.edges = self._build_edges()
 
-    def extract_features(self, segmentation_data: np.ndarray) -> Dict[str, Any]:
+    def _quad_bezier(self, p0, p1, p2, t):
 
-        unique, counts = np.unique(segmentation_data, return_counts=True)
-
-        total = segmentation_data.size
-
-        class_pixels = {str(k): int(v) for k, v in zip(unique, counts)}
-        class_ratios = {k: v / total for k, v in class_pixels.items()}
-
-        return {
-            "class_pixels": class_pixels,
-            "class_ratios": class_ratios
-        }
-
-    # ------------------------------------------------------------
-    # 2) SCENE EVENT DETECTION (ROI-based)
-    # ------------------------------------------------------------
-    def detect_scene_events(self, features: Dict[str, Any], frame_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        frame_data must include object blobs:
-        [
-            {object_id, class, mask, bbox, centroid}
-        ]
-        """
-
-        events = []
-
-        objects = frame_data.get("objects", [])
-
-        for obj in objects:
-            obj_id = obj["object_id"]
-            obj_class = obj["class"]
-            centroid = obj["centroid"]
-
-            inside = self._inside_roi(centroid)
-
-            prev_state = self.state["active_notes"].get(obj_id, None)
-
-            # ENTER
-            if inside and prev_state is None:
-                events.append({
-                    "type": "ROI_ENTER",
-                    "object_id": obj_id,
-                    "class": obj_class,
-                    "centroid": centroid
-                })
-                self.state["active_notes"][obj_id] = None
-
-            # EXIT
-            elif not inside and prev_state is not None:
-                events.append({
-                    "type": "ROI_EXIT",
-                    "object_id": obj_id,
-                    "class": obj_class,
-                    "centroid": centroid
-                })
-                del self.state["active_notes"][obj_id]
-
-        return events
-
-    # ------------------------------------------------------------
-    # 3) MUSIC DECISION
-    # ------------------------------------------------------------
-    def decide_music(self, scene_events: List[Dict[str, Any]]) -> List[MusicEvent]:
-
-        music_events = []
-
-        for e in scene_events:
-
-            obj_class = e["class"]
-
-            # mapping rule (can later be replaced by LSTM/Transformer)
-            note = self._map_class_to_note(obj_class)
-
-            if e["type"] == "ROI_ENTER":
-
-                music_events.append(
-                    MusicEvent(
-                        note=note,
-                        velocity=self._velocity(obj_class, entering=True),
-                        channel=0,
-                        timestamp=self.frame_counter,
-                        metadata={"event": "note_on", "object_id": e["object_id"]}
-                    )
-                )
-
-                self.state["active_notes"][e["object_id"]] = note
-
-            elif e["type"] == "ROI_EXIT":
-
-                music_events.append(
-                    MusicEvent(
-                        note=self.state["active_notes"].get(e["object_id"], note),
-                        velocity=0,
-                        channel=0,
-                        timestamp=self.frame_counter,
-                        metadata={"event": "note_off", "object_id": e["object_id"]}
-                    )
-                )
-
-        return music_events
-
-    # ------------------------------------------------------------
-    # 4) MAIN PIPELINE
-    # ------------------------------------------------------------
-    def generate_music(
-        self,
-        segmentation_data: np.ndarray,
-        frame_data: Dict[str, Any],
-        frame_id: int = 0,
-        class_labels: List[str] = None,
-        metadata: Dict[str, Any] = None
-    ) -> MusicFrame:
-
-        self.frame_counter = frame_id
-
-        features = self.extract_features(segmentation_data)
-
-        scene_events = self.detect_scene_events(features, frame_data)
-
-        music_events = self.decide_music(scene_events)
-
-        return MusicFrame(
-            events=music_events,
-            frame_id=frame_id,
-            timestamp=float(frame_id),
-            tempo=self.tempo,
-            key_signature=self.key_signature,
-            metadata={
-                "features": features,
-                "scene_events": scene_events,
-                "extra": metadata or {}
-            }
+        return (
+            (1 - t)**2 * np.array(p0)
+            + 2 * (1 - t) * t * np.array(p1)
+            + t**2 * np.array(p2)
         )
 
-    # ------------------------------------------------------------
-    # HELPERS
-    # ------------------------------------------------------------
-    def _inside_roi(self, point: Tuple[float, float]) -> bool:
-        """
-        simple polygon test (ray casting placeholder)
-        """
+    def _build_polygon(self):
 
-        if self.roi is None:
-            return True
+        poly = []
 
-        x, y = point
-        poly = self.roi
+        n = len(self.corners)
 
+        for i in range(n):
+
+            p0 = self.corners[i]
+            p2 = self.corners[(i + 1) % n]
+            p1 = self.controls[i]
+
+            for t in np.linspace(0, 1, 20):
+                pt = self._quad_bezier(p0, p1, p2, t)
+                poly.append((pt[0], pt[1]))
+
+        return poly
+
+    def _build_edges(self):
+
+        edges = []
+
+        for i in range(len(self.polygon)):
+
+            a = self.polygon[i]
+            b = self.polygon[(i + 1) % len(self.polygon)]
+
+            edges.append((a, b))
+
+        return edges
+
+class ROIGrid:
+    """
+    Converts ROI polygon into spatial occupancy grid for fast lookup
+    """
+
+    def __init__(self, polygon, grid_size=(64, 64), width=1280, height=720):
+        self.polygon = polygon
+        self.grid_size = grid_size
+        self.width = width
+        self.height = height
+
+        self.grid = self._build_grid()
+
+    # point in polygon (cheap)
+    def _point_in_poly(self, x, y):
+        poly = self.polygon
         inside = False
-        j = len(poly) - 1
 
+        j = len(poly) - 1
         for i in range(len(poly)):
             xi, yi = poly[i]
             xj, yj = poly[j]
@@ -353,25 +259,285 @@ class RuleBasedMusician(BaseMusician):
 
         return inside
 
-    def _map_class_to_note(self, obj_class: str) -> int:
-        mapping = {
-            "car": 60,
-            "truck": 48,
-            "person": 72,
-            "road": 36,
-            "traffic_sign": 76
-        }
-        return mapping.get(obj_class, 60)
+    # build grid mask once (IMPORTANT)
+    def _build_grid(self):
 
-    def _velocity(self, obj_class: str, entering: bool = True) -> int:
+        gw, gh = self.grid_size
+        grid = np.zeros((gw, gh), dtype=np.bool_)
+
+        for i in range(gw):
+            for j in range(gh):
+
+                x = int(i * self.width / gw)
+                y = int(j * self.height / gh)
+
+                if self._point_in_poly(x, y):
+                    grid[i, j] = True
+
+        return grid
+
+    # fast bbox check
+    def intersects_bbox(self, bbox):
+        x1, y1, x2, y2 = bbox
+
+        gw, gh = self.grid_size
+
+        gx1 = int(x1 / self.width * gw)
+        gx2 = int(x2 / self.width * gw)
+        gy1 = int(y1 / self.height * gh)
+        gy2 = int(y2 / self.height * gh)
+
+        gx1 = max(0, min(gw - 1, gx1))
+        gx2 = max(0, min(gw - 1, gx2))
+        gy1 = max(0, min(gh - 1, gy1))
+        gy2 = max(0, min(gh - 1, gy2))
+
+        # check only small region
+        return np.any(self.grid[gx1:gx2+1, gy1:gy2+1])
+
+class RuleBasedMusician(BaseMusician):
+    """
+    Rule-based musician that maps scene events to music events.
+    This musician uses simple rules to generate music based on detected scene events,
+    particularly focusing on objects interacting with a defined Region of Interest (ROI).
+    """
+
+    def __init__(self, tempo=120, key_signature="C_major", roi=None):
+        """
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+            roi: Optional ROI definition (corners + controls)
+        """
+        super().__init__(tempo, key_signature)
+        
+        self.roi = None
+        self.roi_grid = None
+
+        # state: keeps track of objects currently touching ROI boundary
+        self.state = {
+            "touching": {}  # object_id -> bool
+        }
+
+        if roi:
+            self._set_roi(roi)
+
+    def _set_roi(self, roi_payload):
+        
+        if not roi_payload:
+            return
+
+        corners = roi_payload.get("corners", [])
+        controls = roi_payload.get("controls", [])
+
+        if len(corners) != len(controls):
+            return
+
+        self.roi = ROI(corners=corners, controls=controls)
+
+    # ROI boundary check (bbox-based)
+    def _bbox_edges(self, bbox):
+        x1, y1, x2, y2 = bbox
+
+        return [
+            ((x1, y1), (x2, y1)),   # top edge
+            ((x2, y1), (x2, y2)),   # right edge
+            ((x2, y2), (x1, y2)),   # bottom edge
+            ((x1, y2), (x1, y1)),   # left edge
+        ]
+
+    def _segments_intersect(self, a, b):
+        """
+        Check if two line segments intersect.
+        Each segment is defined by two endpoints: a = (A, B), b = (C, D)
+        """
+
+        def ccw(A, B, C):
+            """
+            Check if the points A, B, C are listed in counter-clockwise order.
+            """
+            return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
+
+        A, B = a
+        C, D = b
+
+        return (ccw(A, C, D) != ccw(B, C, D)) and (ccw(A, B, C) != ccw(A, B, D))
+
+    def _intersects_roi(self, bbox=None, mask=None):
+        """
+        Supports both:
+        - YOLO: bbox-based
+        - SegFormer: mask-based
+        """
+
+        # CASE 1: MASK (SegFormer)
+        if mask is not None:
+            return self._mask_intersects_roi(mask)
+
+        # CASE 2: BBOX (YOLO)
+        if bbox is not None:
+            return self._bbox_intersects_roi(bbox)
+
+        return False
+
+    def _mask_intersects_roi(self, mask: np.ndarray):
+
+        roi_grid = self.roi_grid.grid  # precomputed ROI mask (same resolution)
+
+        return np.logical_and(mask, roi_grid).any()
+
+    def _bbox_intersects_roi(self, bbox):
+        return self.roi_grid.intersects_bbox(bbox)
+
+    # FEATURE (optional lightweight)
+    def extract_features(self, segmentation_result):
+        return segmentation_result.metadata
+
+    # SCENE EVENT DETECTION (ONLY ROI boundary)
+    def detect_scene_events(self, bounding_boxes, class_labels):
+
+        events = []
+
+        if bounding_boxes is None:
+            return events
+
+        for obj in bounding_boxes:
+
+            obj_id = obj["object_id"]
+            class_id = obj.get("class_id", None)
+
+            obj_class = (
+                class_labels[class_id]
+                if class_labels and class_id is not None
+                else "unknown"
+            )
+
+            bbox = obj["bbox"]
+
+            touching = self._intersects_roi(bbox)
+            prev = self.state["touching"].get(obj_id, False)
+
+            if touching and not prev:
+                events.append({
+                    "type": "ROI_TOUCH",
+                    "object_id": obj_id,
+                    "class": obj_class
+                })
+                self.state["touching"][obj_id] = True
+
+            elif not touching and prev:
+                events.append({
+                    "type": "ROI_RELEASE",
+                    "object_id": obj_id,
+                    "class": obj_class
+                })
+                self.state["touching"][obj_id] = False
+
+        return events
+
+    # MUSIC MAPPING (rule-based)
+    def decide_music(self, scene_events, class_labels=None):
+
+        music_events = []
+
+        for e in scene_events:
+
+            obj_class = e["class"]
+
+            note = self._map_class_to_note(obj_class)
+
+            velocity = self._velocity_from_class(obj_class)
+
+            if e["type"] == "ROI_TOUCH":
+
+                music_events.append(
+                    MusicEvent(
+                        note=note,
+                        velocity=velocity,
+                        channel=0,
+                        timestamp=self.frame_counter,
+                        metadata=e
+                    )
+                )
+
+            elif e["type"] == "ROI_RELEASE":
+
+                music_events.append(
+                    MusicEvent(
+                        note=note,
+                        velocity=0,
+                        channel=0,
+                        timestamp=self.frame_counter,
+                        metadata=e
+                    )
+                )
+
+        return music_events
+
+    # MAIN PIPELINE
+    def generate_music(
+        self,
+        segmentation_map: np.ndarray,
+        frame_id: int = 0,
+        class_labels: List[str] = None,
+        confidence_map: np.ndarray = None,
+        bounding_boxes: List[Dict] = None,
+        masks: List[np.ndarray] = None,
+        metadata: Dict[str, Any] = None
+    ):
+
+        self.frame_counter = frame_id
+        
+        
+        self.roi_grid = ROIGrid(
+            polygon=self.roi.polygon if self.roi else [],
+            grid_size=(64, 64),
+            width=segmentation_map.shape[1],
+            height=segmentation_map.shape[0]
+        )
+
+        scene_events = self.detect_scene_events(
+            bounding_boxes=bounding_boxes,
+            class_labels=class_labels
+        )
+
+        music_events = self.decide_music(scene_events, class_labels)
+
+        return MusicFrame(
+            events=music_events,
+            frame_id=frame_id,
+            tempo=self.tempo,
+            key_signature=self.key_signature,
+            metadata={
+                "scene_events": scene_events,
+                "extra": metadata or {}
+            }
+        )
+    
+    # SIMPLE MAPPING
+    def _map_class_to_note(self, obj_class):
+
+        mapping = {
+            "car": 60,      # Middle C
+            "truck": 48,    # C2
+            "bicycle": 64,  # E4
+            "person": 72,   # C5
+            "road": 36      # C1
+        }
+
+        return mapping.get(obj_class, 60)
+    
+    def _velocity_from_class(self, obj_class: str):
+
         base = {
-            "car": 90,
-            "truck": 70,
-            "person": 100,
+            "car": 100,
+            "truck": 80,
+            "person": 110,
             "road": 50
         }
-        v = base.get(obj_class, 80)
-        return v if entering else int(v * 0.6)
+
+        return base.get(obj_class, 70)
+
 
 class Musician:
     """
