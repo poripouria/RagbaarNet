@@ -899,7 +899,9 @@ def process_frame():
 
     try:
         data = request.get_json()
-
+        roi_points = data.get("roi_points", [])
+        roi_controls = data.get("roi_controls", [])
+        
         if 'frame' not in data:
             return jsonify({'error': 'No frame data provided'}), 400
 
@@ -924,7 +926,13 @@ def process_frame():
         frame_id = data.get('frame_id', f"frame_{int(time.time() * 1000)}")
         timestamp = data.get('timestamp', time.time())
 
-        processor.add_frame(frame, frame_id, timestamp)
+        processor.add_frame(
+            frame,
+            frame_id,
+            timestamp,
+            roi_points=roi_points,
+            roi_controls=roi_controls
+        )
 
         # Get current state
         state = processor.get_current_state()

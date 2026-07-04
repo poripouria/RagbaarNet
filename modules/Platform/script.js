@@ -878,7 +878,8 @@ function captureAndSendFrame() {
             frame: frameData,
             frame_id: `frame_${frameCounter}`,
             timestamp: now / 1000,
-            roi_points: roiPoints
+            roi_points: roiPoints,        // 4 corners
+            roi_controls: controlPoints   // 4 curve handles
         };
         
         // Reduced logging for performance - only log every 10th frame
