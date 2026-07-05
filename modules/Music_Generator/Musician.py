@@ -347,7 +347,7 @@ class RuleBasedMusician(BaseMusician):
 
             for i, obj in enumerate(bounding_boxes):
 
-                obj_id = obj.get("class_id", i)
+                obj_id = obj.get(i, "class_id")
                 obj_class = obj.get("class_name", "unknown")
                 bbox = obj["bbox"]
 
