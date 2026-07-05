@@ -367,8 +367,8 @@ class RuleBasedMusician(BaseMusician):
 
             for i, obj in enumerate(bounding_boxes):
 
-                obj_id = obj.get("object_id", i)
-                obj_class = obj.get("class", "unknown")
+                obj_id = obj.get("class_id", i)
+                obj_class = obj.get("class_name", "unknown")
                 bbox = obj["bbox"]
 
                 touching = self._intersects_roi(bbox)
@@ -438,26 +438,16 @@ class RuleBasedMusician(BaseMusician):
             note = self._map_class_to_note(obj_class)
             velocity = self._velocity_from_class(obj_class)
 
-            if e["type"] == "ROI_TOUCH":
-                music_events.append(
-                    MusicEvent(
-                        note=note,
-                        velocity=velocity,
-                        channel=0,
-                        timestamp=self.frame_counter,
-                        metadata=e
-                    )
+            music_events.append(
+                MusicEvent(
+                    event_type="note_on" if e["type"] == "ROI_TOUCH" else "note_off",
+                    note=note,
+                    velocity=velocity if e["type"] == "ROI_TOUCH" else 0,
+                    channel=0,
+                    timestamp=self.frame_counter,
+                    metadata=e
                 )
-            elif e["type"] == "ROI_RELEASE":
-                music_events.append(
-                    MusicEvent(
-                        note=note,
-                        velocity=0,
-                        channel=0,
-                        timestamp=self.frame_counter,
-                        metadata=e
-                    )
-                )
+            )
             
             logger.info(f"Mapped scene event {e} to music event: note={note}, velocity={velocity}")
 
@@ -470,38 +460,23 @@ class RuleBasedMusician(BaseMusician):
         return music_events
 
     # MAIN PIPELINE
-    def generate_music(
-        self,
-        segmentation_map: np.ndarray,
-        frame_id: int = 0,
-        class_labels: List[str] = None,
-        confidence_map: np.ndarray = None,
-        bounding_boxes: List[Dict] = None,
-        masks: List[np.ndarray] = None,
-        metadata: Dict[str, Any] = None,
-        roi=None
-    ):
+    def generate_music(self, result, frame_id, roi):
         """
         Generate music based on the input scene data.
         """
 
         logger.info(f"🎵 Generating music for frame {frame_id}")
-        print(f"Segmentation map shape: {segmentation_map.shape}",
-              f"Num Class labels: {len(class_labels) if class_labels else 0}",
-              f"Num Bounding boxes: {len(bounding_boxes) if bounding_boxes else 0}",
-              f"Num Masks: {len(masks) if masks else 0}",
+        print(f"Segmentation map shape: {result.segmentation_map.shape}",
+              f"Num Class labels: {len(result.class_labels) if result.class_labels else 0}",
+              f"Num Bounding boxes: {len(result.bounding_boxes) if result.bounding_boxes else 0}",
+              f"Num Masks: {len(result.masks) if result.masks else 0}",
               )
 
         self.frame_counter = frame_id
         
-        self.roi_grid = ROIGrid(
-            polygon=self.roi.polygon if self.roi else [],
-            grid_size=(64, 64),
-            width=segmentation_map.shape[1],
-            height=segmentation_map.shape[0]
-        )
+        self._set_roi(roi, result.segmentation_map.shape)
 
-        scene_events = self.detect_scene_events(bounding_boxes)
+        scene_events = self.detect_scene_events(result.bounding_boxes)
 
         music_events = self.decide_music(scene_events, frame_id)
 
@@ -512,7 +487,7 @@ class RuleBasedMusician(BaseMusician):
             key_signature=self.key_signature,
             metadata={
                 "scene_events": scene_events,
-                "extra": metadata or {}
+                "extra": result.metadata or {}
             }
         )
     
@@ -534,6 +509,7 @@ class RuleBasedMusician(BaseMusician):
         base = {
             "car": 100,
             "truck": 80,
+            "bicycle": 90,
             "person": 110,
             "road": 50
         }
