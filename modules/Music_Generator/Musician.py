@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
+from Segmentation.Segmentor import SegmentationResult
 
 logger = setup_logging("INFO", name="Music_Generator.Musician")
 
@@ -110,41 +111,29 @@ class BaseMusician(ABC):
         self.state = MusicianState()
 
     def __call__(self,
-        segmentation_map: np.ndarray,
+        input: SegmentationResult,
         frame_id: int = 0,
-        class_labels: List[str] = None,
-        confidence_map: np.ndarray = None,
-        bounding_boxes: List[Dict] = None,
-        masks: List[np.ndarray] = None,
-        metadata: Dict[str, Any] = None
+        roi: Dict[str, Any] = None
     ):
         
-        if not isinstance(segmentation_map, np.ndarray):
-            raise ValueError("segmentation_map must be a numpy array")
+        if not isinstance(input, SegmentationResult):
+            raise ValueError("Input must be a SegmentationResult instance")
 
-        return self.generate_music(segmentation_map, frame_id, class_labels, confidence_map, bounding_boxes, masks, metadata)
+        return self.generate_music(input, frame_id, roi)
 
     @abstractmethod
     def generate_music(self,
-        segmentation_map: np.ndarray,
+        input: SegmentationResult,
         frame_id: int = 0,
-        class_labels: List[str] = None,
-        confidence_map: np.ndarray = None,
-        bounding_boxes: List[Dict] = None,
-        masks: List[np.ndarray] = None,
-        metadata: Dict[str, Any] = None
+        roi: Dict[str, Any] = None
     ):
         """
         Convenience method to call generate_music directly.
 
         Args:
-            segmentation_map: Segmentation map as numpy array
+            input: Segmentation result instance
             frame_id: Frame identifier for tracking
-            class_labels: Optional list of class labels
-            confidence_map: Optional confidence map for segmentation
-            bounding_boxes: Optional list of bounding boxes for detected objects
-            masks: Optional list of binary masks for detected objects
-            metadata: Optional dictionary of metadata
+            roi: Region of interest for music generation
 
         Returns:
             MusicFrame containing generated music events
@@ -303,6 +292,10 @@ class ROIGrid:
         # check only small region
         return np.any(self.grid[gx1:gx2+1, gy1:gy2+1])
 
+    # fast mask check
+    def intersects_mask(self, mask):
+        return np.logical_and(mask, self.grid).any()
+
 class RuleBasedMusician(BaseMusician):
     """
     Rule-based musician that maps scene events to music events.
@@ -310,7 +303,7 @@ class RuleBasedMusician(BaseMusician):
     particularly focusing on objects interacting with a defined Region of Interest (ROI).
     """
 
-    def __init__(self, tempo=120, key_signature="C_major", roi=None):
+    def __init__(self, tempo=120, key_signature="C_major"):
         """
         Args:
             tempo: Music tempo in BPM
@@ -319,59 +312,29 @@ class RuleBasedMusician(BaseMusician):
         """
         super().__init__(tempo, key_signature)
         
-        self.roi = None
-        self.roi_grid = None
-
         # state: keeps track of objects currently touching ROI boundary
         self.state = {
             "touching": {}  # object_id -> bool
         }
-
-        if roi:
-            self._set_roi(roi)
+        self.roi_grid = None
 
         logger.info(f"🎵 RuleBasedMusician initialized with tempo={tempo}, key_signature={key_signature}")
 
-    def _set_roi(self, roi_payload):
+    def _set_roi(self, roi_payload, input_shape):
         
         if not roi_payload:
             return
 
-        corners = roi_payload.get("corners", [])
-        controls = roi_payload.get("controls", [])
+        self.roi = ROI(corners=roi_payload.get("corners", []), 
+                       controls=roi_payload.get("controls", []))
 
-        if len(corners) != len(controls):
-            return
-
-        self.roi = ROI(corners=corners, controls=controls)
-
-    # ROI boundary check (bbox-based)
-    def _bbox_edges(self, bbox):
-        x1, y1, x2, y2 = bbox
-
-        return [
-            ((x1, y1), (x2, y1)),   # top edge
-            ((x2, y1), (x2, y2)),   # right edge
-            ((x2, y2), (x1, y2)),   # bottom edge
-            ((x1, y2), (x1, y1)),   # left edge
-        ]
-
-    def _segments_intersect(self, a, b):
-        """
-        Check if two line segments intersect.
-        Each segment is defined by two endpoints: a = (A, B), b = (C, D)
-        """
-
-        def ccw(A, B, C):
-            """
-            Check if the points A, B, C are listed in counter-clockwise order.
-            """
-            return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
-
-        A, B = a
-        C, D = b
-
-        return (ccw(A, C, D) != ccw(B, C, D)) and (ccw(A, B, C) != ccw(A, B, D))
+        if self.roi_grid == None:
+            self.roi_grid = ROIGrid(
+                polygon=self.roi.polygon,
+                grid_size=(64, 64),
+                width=input_shape[1] if input_shape is not None else 1280,
+                height=input_shape[0] if input_shape is not None else 720
+            )
 
     def _intersects_roi(self, bbox=None, mask=None):
         """
@@ -382,24 +345,14 @@ class RuleBasedMusician(BaseMusician):
 
         # CASE 1: MASK (SegFormer)
         if mask is not None:
-            return self._mask_intersects_roi(mask)
+            return self.roi_grid.intersects_mask(mask)
 
         # CASE 2: BBOX (YOLO)
         if bbox is not None:
-            return self._bbox_intersects_roi(bbox)
+            return self.roi_grid.intersects_bbox(bbox)
 
         return False
-
-    def _mask_intersects_roi(self, mask: np.ndarray):
-
-        roi_grid = self.roi_grid.grid  # precomputed ROI mask (same resolution)
-
-        return np.logical_and(mask, roi_grid).any()
-
-    def _bbox_intersects_roi(self, bbox):
-        return self.roi_grid.intersects_bbox(bbox)
-
-    # FEATURE (optional lightweight)
+    
     def extract_features(self, segmentation_result):
         return segmentation_result.metadata
 
@@ -525,7 +478,8 @@ class RuleBasedMusician(BaseMusician):
         confidence_map: np.ndarray = None,
         bounding_boxes: List[Dict] = None,
         masks: List[np.ndarray] = None,
-        metadata: Dict[str, Any] = None
+        metadata: Dict[str, Any] = None,
+        roi=None
     ):
         """
         Generate music based on the input scene data.
@@ -641,29 +595,26 @@ class Musician:
         return entry["class"](tempo, key_signature)
 
     def __call__(self, 
-                 segmentation_map: np.ndarray, 
-                 frame_id: int = 0, 
-                 class_labels: List[str] = None, 
-                 confidence_map: np.ndarray = None,
-                 bounding_boxes: List[Dict] = None,
-                 masks: List[np.ndarray] = None,
-                 metadata: Dict[str, Any] = None
+                 input,  # result
+                 frame_id: int = 0,
+                 roi: Dict[str, Any] = None,
                  ) -> MusicFrame:
         """
         Generate music based on segmentation data.
 
         Args:
-            segmentation_map: Segmentation map as numpy array
+            input: Segmentation result
             frame_id: Frame identifier for tracking
+            roi: Region of interest data
 
         Returns:
             MusicFrame containing generated music events
         """
 
-        if not isinstance(segmentation_map, np.ndarray):
-            raise ValueError("Segmentation map must be a numpy array")
+        if not isinstance(input, SegmentationResult):
+            raise ValueError("Input must be a SegmentationResult instance")
 
-        return self.musician(segmentation_map, frame_id, class_labels, confidence_map, bounding_boxes, masks, metadata)
+        return self.musician(input, frame_id, roi)
 
     def switch_musician(self, musician_type: str, tempo: int = None, key_signature: str = None) -> None:
         """

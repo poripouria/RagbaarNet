@@ -305,6 +305,8 @@ class Processor:
                 frame = frame_data['frame']
                 frame_id = frame_data['frame_id']
                 timestamp = frame_data['timestamp']
+                roi_points = frame_data['roi_points']
+                roi_controls = frame_data['roi_controls']
 
                 self.current_frame = frame
 
@@ -436,13 +438,12 @@ class Processor:
                         if self.music_enabled and self.musician is not None:
                             try:
                                 music_frame = self.musician(
-                                    result.segmentation_map,
+                                    input=result,
                                     frame_id=self.frame_counter,
-                                    class_labels=result.class_labels,
-                                    confidence_map=result.confidence_map,
-                                    bounding_boxes=result.bounding_boxes,
-                                    masks=result.masks,
-                                    metadata=result.metadata,
+                                    roi={
+                                        'corners': roi_points,
+                                        'controls': roi_controls
+                                    }
                                 )
 
                                 # Store music data
