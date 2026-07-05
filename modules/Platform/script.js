@@ -625,6 +625,7 @@ function handleMusicEvents(musicData) {
 }
 
 function playMusicEvent(event, scheduleTime) {
+    if (!isMusicGenerationActive) return;   // 🔥 HARD GATE
     try {
         const frequency = midiNoteToFrequency(event.note);
         const instrument = event.instrument || 'synth';
@@ -743,6 +744,7 @@ function stopNote(event) {
     if (osc) {
         try {
             osc.stop();
+            osc.disconnect();
         } catch (e) {}
 
         activeNotes.delete(event.note);
@@ -772,6 +774,7 @@ function stopAllActiveNotes() {
                 if (noteData.gainNode) {
                     noteData.gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
                 }
+                noteData.stop(audioContext.currentTime + 0.1);
             } catch (e) {
                 // Note may have already ended
             }
