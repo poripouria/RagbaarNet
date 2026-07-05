@@ -629,6 +629,11 @@ function playMusicEvent(event, scheduleTime) {
         const frequency = midiNoteToFrequency(event.note);
         const instrument = event.instrument || 'synth';
         const voice = instrumentVoices[instrument] || instrumentVoices.synth;
+
+        if  (event.type === 'note_off') {
+            stopNote(event);
+            return;
+        }
         
         // Create oscillator and envelope for the note
         if (instrument === 'drums') {
@@ -657,7 +662,6 @@ function playTonalInstrument(event, frequency, voice, scheduleTime) {
     gainNode.gain.setValueAtTime(0, scheduleTime);
     gainNode.gain.linearRampToValueAtTime(velocity * 0.8, scheduleTime + voice.attack);
     gainNode.gain.linearRampToValueAtTime(velocity * voice.sustain, scheduleTime + voice.attack + voice.decay);
-    gainNode.gain.linearRampToValueAtTime(0, scheduleTime + duration);
     
     // Create filter for timbre
     const filter = audioContext.createBiquadFilter();
@@ -671,7 +675,6 @@ function playTonalInstrument(event, frequency, voice, scheduleTime) {
     
     // Schedule playback
     osc.start(scheduleTime);
-    osc.stop(scheduleTime + duration);
     
     // Track active note for cleanup
     const noteKey = `${event.note}-${scheduleTime}`;
@@ -680,7 +683,7 @@ function playTonalInstrument(event, frequency, voice, scheduleTime) {
     // Clean up after playback
     setTimeout(() => {
         activeNotes.delete(noteKey);
-    }, (duration + 0.1) * 1000);
+    }, (0.1) * 1000);
 }
 
 function playDrumSound(event, scheduleTime) {
@@ -732,6 +735,18 @@ function playDrumSound(event, scheduleTime) {
     
     noise.start(scheduleTime);
     noise.stop(scheduleTime + 0.2);
+}
+
+function stopNote(event) {
+    const osc = activeNotes.get(event.note);
+
+    if (osc) {
+        try {
+            osc.stop();
+        } catch (e) {}
+
+        activeNotes.delete(event.note);
+    }
 }
 
 function midiNoteToFrequency(note) {
