@@ -28,21 +28,20 @@ class MusicEvent:
     This represents a single musical action (NOT only MIDI note).
     Designed to be extendable for future MIDI CC, pitch bend, etc.
 
-    Attributed:
+    Attributes:
         event_type: Type of the event (e.g., "note_on", "note_off", "control_change")
-        timestamp: Time at which the event occurs
-        channel: MIDI channel (0-15)
         note: MIDI note number (0-127), optional depending on event_type
+        channel: MIDI channel (0-15)
         velocity: Note velocity (0-127), optional depending on event_type
+        timestamp: Time at which the event occurs
         metadata: Additional event-specific information
     """
 
-    event_type: str  # e.g. "note_on", "note_off"
-    timestamp: float = 0.0
-    channel: int = 0
-    # Note-related fields (optional depending on event_type)
+    event_type: str     # e.g. "note_on", "note_off"
     note: Optional[int] = None
+    channel: int = 0
     velocity: Optional[int] = None
+    timestamp: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
@@ -331,6 +330,8 @@ class RuleBasedMusician(BaseMusician):
         if roi:
             self._set_roi(roi)
 
+        logger.info(f"🎵 RuleBasedMusician initialized with tempo={tempo}, key_signature={key_signature}")
+
     def _set_roi(self, roi_payload):
         
         if not roi_payload:
@@ -403,55 +404,88 @@ class RuleBasedMusician(BaseMusician):
         return segmentation_result.metadata
 
     # SCENE EVENT DETECTION (ONLY ROI boundary)
-    def detect_scene_events(self, bounding_boxes, class_labels):
+    def detect_scene_events(self, bounding_boxes=None, masks=None):
+
+        logger.info(f"Detecting scene events for {len(bounding_boxes) if bounding_boxes else 0} bounding boxes")
 
         events = []
 
-        if bounding_boxes is None:
-            return events
+        if bounding_boxes is not None:
 
-        for i, obj in enumerate(bounding_boxes):
+            for i, obj in enumerate(bounding_boxes):
 
-            obj_id = obj.get("object_id", i)
-            obj_class = obj.get("class", "unknown")
-            bbox = obj["bbox"]
+                obj_id = obj.get("object_id", i)
+                obj_class = obj.get("class", "unknown")
+                bbox = obj["bbox"]
 
-            touching = self._intersects_roi(bbox)
-            prev = self.state["touching"].get(obj_id, False)
+                touching = self._intersects_roi(bbox)
+                prev = self.state["touching"].get(obj_id, False)
 
-            if touching and not prev:
-                events.append({
-                    "type": "ROI_TOUCH",
-                    "object_id": obj_id,
-                    "class": obj_class
-                })
-                self.state["touching"][obj_id] = True
+                logger.info(f"Object {obj_id} ({obj_class}) touching ROI: {touching} (bbox: {bbox}), previously: {prev}")
 
-            elif not touching and prev:
-                events.append({
-                    "type": "ROI_RELEASE",
-                    "object_id": obj_id,
-                    "class": obj_class
-                })
-                self.state["touching"][obj_id] = False
+                if touching and not prev:
+                    events.append({
+                        "type": "ROI_TOUCH",
+                        "object_id": obj_id,
+                        "class": obj_class
+                    })
+                    self.state["touching"][obj_id] = True
+
+                elif not touching and prev:
+                    events.append({
+                        "type": "ROI_RELEASE",
+                        "object_id": obj_id,
+                        "class": obj_class
+                    })
+                    self.state["touching"][obj_id] = False
+            
+        elif masks is not None:
+
+            for i, mask in enumerate(masks):
+
+                obj_id = i
+                obj_class = "unknown"  # Could be inferred from metadata if available
+
+                touching = self._intersects_roi(mask=mask)
+                prev = self.state["touching"].get(obj_id, False)
+
+                logger.info(f"Object {obj_id} ({obj_class}) touching ROI: {touching} (mask), previously: {prev}")
+
+                if touching and not prev:
+                    events.append({
+                        "type": "ROI_TOUCH",
+                        "object_id": obj_id,
+                        "class": obj_class
+                    })
+                    self.state["touching"][obj_id] = True
+
+                elif not touching and prev:
+                    events.append({
+                        "type": "ROI_RELEASE",
+                        "object_id": obj_id,
+                        "class": obj_class
+                    })
+                    self.state["touching"][obj_id] = False
+        
+        else:
+            logger.warning("No bounding boxes or masks provided for scene event detection.")
+
+        logger.info(f"Detected {len(events)} scene events: {events}")
 
         return events
 
     # MUSIC MAPPING (rule-based)
-    def decide_music(self, scene_events, class_labels=None):
+    def decide_music(self, scene_events, frame_id):
 
         music_events = []
 
         for e in scene_events:
 
             obj_class = e["class"]
-
             note = self._map_class_to_note(obj_class)
-
             velocity = self._velocity_from_class(obj_class)
 
             if e["type"] == "ROI_TOUCH":
-
                 music_events.append(
                     MusicEvent(
                         note=note,
@@ -461,9 +495,7 @@ class RuleBasedMusician(BaseMusician):
                         metadata=e
                     )
                 )
-
             elif e["type"] == "ROI_RELEASE":
-
                 music_events.append(
                     MusicEvent(
                         note=note,
@@ -473,6 +505,14 @@ class RuleBasedMusician(BaseMusician):
                         metadata=e
                     )
                 )
+            
+            logger.info(f"Mapped scene event {e} to music event: note={note}, velocity={velocity}")
+
+        # Log occasionally for debugging
+        if self.frame_counter % 20 == 0:  # Every 20 frames
+            logger.info(
+                f"🎵 Generated {len(music_events)} music events for frame {frame_id}"
+            )
 
         return music_events
 
@@ -487,9 +527,18 @@ class RuleBasedMusician(BaseMusician):
         masks: List[np.ndarray] = None,
         metadata: Dict[str, Any] = None
     ):
+        """
+        Generate music based on the input scene data.
+        """
+
+        logger.info(f"🎵 Generating music for frame {frame_id}")
+        print(f"Segmentation map shape: {segmentation_map.shape}",
+              f"Num Class labels: {len(class_labels) if class_labels else 0}",
+              f"Num Bounding boxes: {len(bounding_boxes) if bounding_boxes else 0}",
+              f"Num Masks: {len(masks) if masks else 0}",
+              )
 
         self.frame_counter = frame_id
-        
         
         self.roi_grid = ROIGrid(
             polygon=self.roi.polygon if self.roi else [],
@@ -498,12 +547,9 @@ class RuleBasedMusician(BaseMusician):
             height=segmentation_map.shape[0]
         )
 
-        scene_events = self.detect_scene_events(
-            bounding_boxes=bounding_boxes,
-            class_labels=class_labels
-        )
+        scene_events = self.detect_scene_events(bounding_boxes)
 
-        music_events = self.decide_music(scene_events, class_labels)
+        music_events = self.decide_music(scene_events, frame_id)
 
         return MusicFrame(
             events=music_events,
