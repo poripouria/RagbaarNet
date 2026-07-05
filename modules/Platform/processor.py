@@ -525,14 +525,14 @@ class Processor:
                         instrument_name = 'piano'
 
                     event_data = {
+                        'event_type': event.event_type,
                         'note': event.note,
-                        'velocity': event.velocity,
-                        'duration': event.duration,
                         'channel': event.channel,
-                        'timestamp': event.timestamp,
-                        'class_name': event.metadata.get('class_name', 'unknown'),
+                        'velocity': event.velocity,
                         'instrument': instrument_name,
-                        'presence_ratio': event.metadata.get('presence_ratio', 0.0)
+                        'timestamp': event.timestamp,
+                        # 'class_name': event.metadata.get('class_name', 'unknown'),
+                        # 'presence_ratio': event.metadata.get('presence_ratio', 0.0)
                     }
                     events_data.append(event_data)
 

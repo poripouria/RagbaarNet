@@ -34,6 +34,7 @@ class MusicEvent:
         note: MIDI note number (0-127), optional depending on event_type
         channel: MIDI channel (0-15)
         velocity: Note velocity (0-127), optional depending on event_type
+        instrument: Name of the instrument (e.g., "piano", "violin"), optional
         timestamp: Time at which the event occurs
         metadata: Additional event-specific information
     """
@@ -42,6 +43,7 @@ class MusicEvent:
     note: Optional[int] = None
     channel: int = 0
     velocity: Optional[int] = None
+    instrument: Optional[str] = None
     timestamp: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -66,102 +68,6 @@ class MusicFrame:
     tempo: int = 120
     key_signature: str = "C_major"
     metadata: Dict[str, Any] = field(default_factory=dict)
-
-@dataclass
-class MusicianState:
-    """
-    Persistent state across frames for temporal coherence.
-    Used to preserve musical continuity in real-time generation.
-
-    Attributes:
-        last_notes: List of last played notes
-        current_beat: Current beat position in the bar
-        current_bar: Current bar number
-        memory: Arbitrary state storage for musician-specific data
-    """
-
-    last_notes: List[int] = field(default_factory=list)
-    current_beat: float = 0.0
-    current_bar: int = 0
-    memory: Dict[str, Any] = field(default_factory=dict)
-    # last_velocity: int = 64
-    # active_chords: List[int] = field(default_factory=list)
-    # tension: float = 0.0
-
-class BaseMusician(ABC):
-    """
-    Abstract base class for all music generation models.
-    This class defines the interface that all music generation models must implement,
-    ensuring consistency and extensibility across different generation strategies.
-    """
-
-    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
-        """
-        Initialize the base musician.
-
-        Args:
-            tempo: Music tempo in BPM
-            key_signature: Key signature for music generation
-        """
-
-        self.tempo = tempo
-        self.key_signature = key_signature
-
-        self.frame_counter = 0
-        self.state = MusicianState()
-
-    def __call__(self,
-        input: SegmentationResult,
-        frame_id: int = 0,
-        roi: Dict[str, Any] = None
-    ):
-        
-        if not isinstance(input, SegmentationResult):
-            raise ValueError("Input must be a SegmentationResult instance")
-
-        return self.generate_music(input, frame_id, roi)
-
-    @abstractmethod
-    def generate_music(self,
-        input: SegmentationResult,
-        frame_id: int = 0,
-        roi: Dict[str, Any] = None
-    ):
-        """
-        Convenience method to call generate_music directly.
-
-        Args:
-            input: Segmentation result instance
-            frame_id: Frame identifier for tracking
-            roi: Region of interest for music generation
-
-        Returns:
-            MusicFrame containing generated music events
-        """
-        pass
-
-    def extract_features(self, segmentation_data: np.ndarray) -> Dict[str, Any]:
-        """
-        Default feature extractor (can be overridden).
-
-        Args:
-            segmentation_data: Segmentation map as numpy array
-        """
-
-        return {
-            "raw_shape": segmentation_data.shape,
-            "unique_classes": np.unique(segmentation_data).tolist(),
-        }
-
-    def update_state(self, features: Dict[str, Any]):
-        """
-        Update temporal memory.
-        Override if needed.
-
-        Args:
-            features: Dictionary of extracted features from the current frame
-        """
-        self.state.memory["last_features"] = features
 
 class ROI:
     """
@@ -295,6 +201,80 @@ class ROIGrid:
     # fast mask check
     def intersects_mask(self, mask):
         return np.logical_and(mask, self.grid).any()
+
+class BaseMusician(ABC):
+    """
+    Abstract base class for all music generation models.
+    This class defines the interface that all music generation models must implement,
+    ensuring consistency and extensibility across different generation strategies.
+    """
+
+    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
+        """
+        Initialize the base musician.
+
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+        """
+
+        self.tempo = tempo
+        self.key_signature = key_signature
+
+        self.frame_counter = 0
+
+    def __call__(self,
+        input: SegmentationResult,
+        frame_id: int = 0,
+        roi: Dict[str, Any] = None
+    ):
+        
+        if not isinstance(input, SegmentationResult):
+            raise ValueError("Input must be a SegmentationResult instance")
+
+        return self.generate_music(input, frame_id, roi)
+
+    @abstractmethod
+    def generate_music(self,
+        input: SegmentationResult,
+        frame_id: int = 0,
+        roi: Dict[str, Any] = None
+    ):
+        """
+        Convenience method to call generate_music directly.
+
+        Args:
+            input: Segmentation result instance
+            frame_id: Frame identifier for tracking
+            roi: Region of interest for music generation
+
+        Returns:
+            MusicFrame containing generated music events
+        """
+        pass
+
+    def extract_features(self, segmentation_data: np.ndarray) -> Dict[str, Any]:
+        """
+        Default feature extractor (can be overridden).
+
+        Args:
+            segmentation_data: Segmentation map as numpy array
+        """
+
+        return {
+            "raw_shape": segmentation_data.shape,
+            "unique_classes": np.unique(segmentation_data).tolist(),
+        }
+
+    def update_state(self, features: Dict[str, Any]):
+        """
+        Update temporal memory.
+        Override if needed.
+
+        Args:
+            features: Dictionary of extracted features from the current frame
+        """
+        self.state.memory["last_features"] = features
 
 class RuleBasedMusician(BaseMusician):
     """
@@ -442,8 +422,9 @@ class RuleBasedMusician(BaseMusician):
                 MusicEvent(
                     event_type="note_on" if e["type"] == "ROI_TOUCH" else "note_off",
                     note=note,
-                    velocity=velocity if e["type"] == "ROI_TOUCH" else 0,
                     channel=0,
+                    velocity=velocity if e["type"] == "ROI_TOUCH" else 0,
+                    instrument="piano",  # Default instrument
                     timestamp=self.frame_counter,
                     metadata=e
                 )
