@@ -1,12 +1,6 @@
 /**
  * AI Music Generation Platform - Main JavaScript Module
  * Handles video input sources, ROI drawing, and music generation
- * 
- * PERFORMANCE OPTIMIZATIONS:
- * - Reduced frame send interval to 150ms for better responsiveness
- * - Added throttling to prevent concurrent frame processing
- * - Optimized canvas operations and reduced logging
- * - Implemented update throttling for smoother display
  */
 
 // Global variables
