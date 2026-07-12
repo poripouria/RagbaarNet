@@ -12,6 +12,7 @@ import base64
 import time
 import threading
 import argparse
+import hashlib
 import colorsys
 import zlib
 import os
@@ -130,69 +131,127 @@ class Processor:
         self.processing_thread.start()
 
     def _create_consistent_color_map(self, class_labels=None):
-        """Create a deterministic color mapping for any segmentation label set."""
+        """
+        Create a deterministic color map for segmentation labels.
 
-        labels = [str(label).strip() for label in (class_labels or []) if str(label).strip()]
-        normalized_labels = [label.lower() for label in labels]
+        Args:
+            class_labels (List[str]): List of class names.
 
-        # Preserve the familiar Cityscapes palette for the common semantic labels.
+        Returns:
+            Dict[int, List[int]]: class_id -> RGB color
+        """
+
+        labels = []
+
+        for label in (class_labels or []):
+            label = (
+                str(label)
+                .strip()
+                .lower()
+                .replace("_", " ")
+                .replace("-", " ")
+            )
+            labels.append(label)
+
+        # Standard palette (Cityscapes + useful COCO road objects)
+
         palette = {
-            "road": [128, 64, 128],
-            "sidewalk": [244, 35, 232],
-            "building": [70, 70, 70],
-            "wall": [102, 102, 156],
-            "fence": [190, 153, 153],
-            "pole": [153, 153, 153],
-            "traffic light": [250, 170, 30],
-            "traffic sign": [220, 220, 0],
-            "vegetation": [107, 142, 35],
-            "terrain": [152, 251, 152],
-            "sky": [70, 130, 180],
-            "person": [220, 20, 60],
-            "rider": [255, 0, 0],
-            "car": [0, 0, 142],
-            "truck": [0, 0, 70],
-            "bus": [0, 60, 100],
-            "train": [0, 80, 100],
-            "motorcycle": [0, 0, 230],
-            "bicycle": [119, 11, 32],
-            "parking": [160, 160, 160],
-            "rail track": [230, 150, 140],
-            "on rails": [128, 128, 128],
-            "caravan": [0, 0, 90],
-            "trailer": [0, 0, 110],
-            "guard rail": [180, 165, 180],
-            "bridge": [150, 100, 100],
-            "tunnel": [150, 120, 90],
-            "pole group": [153, 153, 153],
-            "ground": [81, 0, 81],
-            "dynamic": [111, 74, 0],
-            "static": [81, 81, 81],
+
+            # Cityscapes Semantic Classes
+            "road":            [128,  64, 128],   # Viola Purple
+            "sidewalk":        [244,  35, 232],   # Bright Magenta
+            "building":        [ 70,  70,  70],   # Dark Gray
+            "wall":            [102, 102, 156],   # Slate Blue
+            "fence":           [190, 153, 153],   # Dusty Pink
+            "pole":            [153, 153, 153],   # Light Gray
+            "traffic light":   [250, 170,  30],   # Amber
+            "traffic sign":    [220, 220,   0],   # Lemon Yellow
+            "vegetation":      [107, 142,  35],   # Olive Green
+            "terrain":         [152, 251, 152],   # Pale Green
+            "sky":             [ 70, 130, 180],   # Steel Blue
+
+            "person":          [220,  20,  60],   # Crimson
+            "rider":           [255,   0,   0],   # Pure Red
+
+            "car":             [  0,   0, 142],   # Navy Blue
+            "truck":           [  0,   0,  70],   # Midnight Blue
+            "bus":             [  0,  60, 100],   # Deep Teal Blue
+            "train":           [  0,  80, 100],   # Dark Cyan
+            "motorcycle":      [  0,   0, 230],   # Royal Blue
+            "bicycle":         [119,  11,  32],   # Burgundy
+
+            # Extended Cityscapes Labels
+            "parking":         [160, 160, 160],   # Cool Gray
+            "rail track":      [230, 150, 140],   # Salmon Pink
+            "guard rail":      [180, 165, 180],   # Silver Lilac
+            "bridge":          [150, 100, 100],   # Warm Brown
+            "tunnel":          [150, 120,  90],   # Earth Brown
+            "caravan":         [  0,   0,  90],   # Dark Navy
+            "trailer":         [  0,   0, 110],   # Indigo Blue
+
+            # COCO Road Objects
+            "stop sign":       [255,   0,   0],   # Stop Sign Red
+            "fire hydrant":    [178,  34,  34],   # Firebrick
+            "bench":           [160,  82,  45],   # Saddle Brown
+            "parking meter":   [112, 128, 144],   # Slate Gray
+
+            # Animals (Road Relevant)
+            "bird":            [135, 206, 235],   # Sky Blue
+            "dog":             [139,  69,  19],   # Saddle Brown
+            "cat":             [205, 133,  63],   # Peru
+            "horse":           [160,  82,  45],   # Sienna
+            "sheep":           [245, 245, 220],   # Beige
+            "cow":             [110,  70,  30],   # Dark Brown
+            "elephant":        [105, 105, 105],   # Dim Gray
+            "bear":            [ 92,  64,  51],   # Coffee Brown
+            "zebra":           [240, 240, 240],   # Light Gray
+            "giraffe":         [218, 165,  32],   # Goldenrod
+
+            # Temporary Road Objects
+            "cone":            [255, 140,   0],   # Dark Orange
+            "traffic cone":    [255, 140,   0],   # Dark Orange
+            "barrier":         [255, 215,   0],   # Gold
+            "bollard":         [255, 255, 255],   # White
         }
 
+        def hashed_color(label: str):
+            """
+            Deterministically generate a pleasant RGB color from a label.
+            """
+
+            digest = hashlib.md5(label.encode("utf-8")).digest()
+
+            hue = digest[0] / 255.0
+
+            saturation = 0.65 + (digest[1] / 255.0) * 0.30
+            value = 0.75 + (digest[2] / 255.0) * 0.20
+
+            r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)
+
+            return [
+                int(r * 255),
+                int(g * 255),
+                int(b * 255)
+            ]
+
+        # Build color map
         color_map = {}
-        for class_id, label in enumerate(normalized_labels):
-            color_map[class_id] = palette.get(label, None)
 
-        for class_id in range(len(normalized_labels), 255):
-            hue = (class_id * 137.5) % 360
-            saturation = 70 + (class_id % 3) * 15
-            value = 180 + (class_id % 4) * 20
-            r, g, b = colorsys.hsv_to_rgb(hue / 360.0, saturation / 100.0, value / 255.0)
-            color_map[class_id] = [int(r * 255), int(g * 255), int(b * 255)]
+        for class_id, label in enumerate(labels):
 
-        for class_id, label in enumerate(normalized_labels):
-            if color_map[class_id] is None:
-                hue = (class_id * 137.5) % 360
-                saturation = 80
-                value = 220
-                r, g, b = colorsys.hsv_to_rgb(hue / 360.0, saturation / 100.0, value / 255.0)
-                color_map[class_id] = [int(r * 255), int(g * 255), int(b * 255)]
+            if label in palette:
+                color_map[class_id] = palette[label]
+            else:
+                color_map[class_id] = hashed_color(label)
 
+        # Optional ignore label (Cityscapes convention)
         color_map[255] = [0, 0, 0]
 
         if self.debug_mode and labels:
-            logger.debug("🎨 Color mapping generated for %s labels", len(labels))
+            logger.debug(
+                "🎨 Generated deterministic color map for %d classes.",
+                len(labels)
+            )
 
         return color_map
 
@@ -270,25 +329,6 @@ class Processor:
 
         arr = np.clip(arr, 0, 255).astype(np.uint8)
         return arr
-
-    def _create_generic_color_mapping_array(self):
-        """Create a generic per-class color mapping array for non-Cityscapes models (e.g., YOLO/COCO).
-
-        Index 255 is the background/no-detection sentinel (black). All COCO class IDs (0-79)
-        get deterministic HSV colors via the golden-angle hue spacing.
-        """
-
-        mapping = np.zeros((256, 3), dtype=np.uint8)
-        mapping[255] = [0, 0, 0]  # 255 = background/no-detection sentinel → black
-
-        for class_id in range(0, 255):  # start at 0 so COCO class 0 (person) gets a colour
-            hue = (class_id * 137.5) % 360  # golden angle
-            saturation = 80
-            value = 220
-            r, g, b = colorsys.hsv_to_rgb(hue / 360.0, saturation / 100.0, value / 255.0)
-            mapping[class_id] = [int(r * 255), int(g * 255), int(b * 255)]
-
-        return mapping
 
     def _processing_loop(self):
         """Main processing loop that runs in a separate thread"""

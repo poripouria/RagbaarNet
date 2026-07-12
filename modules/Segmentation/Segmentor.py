@@ -517,6 +517,7 @@ class Segmentor:
 
         self.model_type = model_type.lower()
         self.device = device
+        self._color_mapping_cache = {}
         self.segmentor = self._create_segmentor(model_type, model_path, device)
 
     def _create_segmentor(self, model_type: str, model_path: str, device: str) -> BaseSegmentor:
@@ -582,58 +583,283 @@ class Segmentor:
             show_confidence: Whether to show confidence map
             figsize: Figure size for matplotlib
         """
+       
+        def _create_consistent_color_map(class_labels=None):
+            """
+            Create a deterministic color map for segmentation labels.
 
-        # Lazy import heavy plotting libs to avoid startup/runtime overhead when not used
+            Args:
+                class_labels (List[str]): List of class names.
+
+            Returns:
+                Dict[int, List[int]]: class_id -> RGB color
+            """
+
+            labels = []
+
+            for label in (class_labels or []):
+                label = (
+                    str(label)
+                    .strip()
+                    .lower()
+                    .replace("_", " ")
+                    .replace("-", " ")
+                )
+                labels.append(label)
+
+            # Standard palette (Cityscapes + useful COCO road objects)
+
+            palette = {
+
+                # Cityscapes Semantic Classes
+                "road":            [128,  64, 128],   # Viola Purple
+                "sidewalk":        [244,  35, 232],   # Bright Magenta
+                "building":        [ 70,  70,  70],   # Dark Gray
+                "wall":            [102, 102, 156],   # Slate Blue
+                "fence":           [190, 153, 153],   # Dusty Pink
+                "pole":            [153, 153, 153],   # Light Gray
+                "traffic light":   [250, 170,  30],   # Amber
+                "traffic sign":    [220, 220,   0],   # Lemon Yellow
+                "vegetation":      [107, 142,  35],   # Olive Green
+                "terrain":         [152, 251, 152],   # Pale Green
+                "sky":             [ 70, 130, 180],   # Steel Blue
+
+                "person":          [220,  20,  60],   # Crimson
+                "rider":           [255,   0,   0],   # Pure Red
+
+                "car":             [  0,   0, 142],   # Navy Blue
+                "truck":           [  0,   0,  70],   # Midnight Blue
+                "bus":             [  0,  60, 100],   # Deep Teal Blue
+                "train":           [  0,  80, 100],   # Dark Cyan
+                "motorcycle":      [  0,   0, 230],   # Royal Blue
+                "bicycle":         [119,  11,  32],   # Burgundy
+
+                # Extended Cityscapes Labels
+                "parking":         [160, 160, 160],   # Cool Gray
+                "rail track":      [230, 150, 140],   # Salmon Pink
+                "guard rail":      [180, 165, 180],   # Silver Lilac
+                "bridge":          [150, 100, 100],   # Warm Brown
+                "tunnel":          [150, 120,  90],   # Earth Brown
+                "caravan":         [  0,   0,  90],   # Dark Navy
+                "trailer":         [  0,   0, 110],   # Indigo Blue
+
+                # COCO Road Objects
+                "stop sign":       [255,   0,   0],   # Stop Sign Red
+                "fire hydrant":    [178,  34,  34],   # Firebrick
+                "bench":           [160,  82,  45],   # Saddle Brown
+                "parking meter":   [112, 128, 144],   # Slate Gray
+
+                # Animals (Road Relevant)
+                "bird":            [135, 206, 235],   # Sky Blue
+                "dog":             [139,  69,  19],   # Saddle Brown
+                "cat":             [205, 133,  63],   # Peru
+                "horse":           [160,  82,  45],   # Sienna
+                "sheep":           [245, 245, 220],   # Beige
+                "cow":             [110,  70,  30],   # Dark Brown
+                "elephant":        [105, 105, 105],   # Dim Gray
+                "bear":            [ 92,  64,  51],   # Coffee Brown
+                "zebra":           [240, 240, 240],   # Light Gray
+                "giraffe":         [218, 165,  32],   # Goldenrod
+
+                # Temporary Road Objects
+                "cone":            [255, 140,   0],   # Dark Orange
+                "traffic cone":    [255, 140,   0],   # Dark Orange
+                "barrier":         [255, 215,   0],   # Gold
+                "bollard":         [255, 255, 255],   # White
+            }
+
+            def hashed_color(label: str):
+                """
+                Deterministically generate a pleasant RGB color from a label.
+                """
+
+                digest = hashlib.md5(label.encode("utf-8")).digest()
+
+                hue = digest[0] / 255.0
+
+                saturation = 0.65 + (digest[1] / 255.0) * 0.30
+                value = 0.75 + (digest[2] / 255.0) * 0.20
+
+                r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)
+
+                return [
+                    int(r * 255),
+                    int(g * 255),
+                    int(b * 255)
+                ]
+
+            # Build color map
+            color_map = {}
+
+            for class_id, label in enumerate(labels):
+
+                if label in palette:
+                    color_map[class_id] = palette[label]
+                else:
+                    color_map[class_id] = hashed_color(label)
+
+            # Optional ignore label (Cityscapes convention)
+            color_map[255] = [0, 0, 0]
+
+            return color_map
+
+        def _get_color_mapping_array(class_labels=None):
+            """Return a cached lookup table for the current label set."""
+
+            key = tuple(str(label) for label in (class_labels or []))
+            if key in self._color_mapping_cache:
+                return self._color_mapping_cache[key]
+
+            color_map = _create_consistent_color_map(class_labels)
+            mapping = np.zeros((256, 3), dtype=np.uint8)
+            for class_id, color in color_map.items():
+                if color is not None:
+                    mapping[class_id] = color
+
+            self._color_mapping_cache[key] = mapping
+            return mapping
+
+        def _derive_detected_classes(segmentation_map, class_labels=None):
+            """Build a stable list of class names from a segmentation map and model labels."""
+
+            labels = list(class_labels or [])
+            if not labels or segmentation_map is None:
+                return []
+
+            try:
+                unique_ids = np.unique(np.asarray(segmentation_map))
+            except Exception:
+                return []
+
+            detected = []
+            for class_id in unique_ids:
+                class_id_int = int(class_id)
+                if 0 <= class_id_int < len(labels):
+                    label = labels[class_id_int]
+                    if label:
+                        detected.append(label)
+
+            return sorted(set(detected))
+
+        def _validate_segmentation_map(seg_map):
+            """Normalize and validate segmentation map into a 2D uint8 index array.
+
+            - Ensures 2D shape
+            - Clips values to [0,255]
+            - Converts floats to nearest integers
+            """
+
+            arr = np.asarray(seg_map)
+
+            # Reduce channel dim if present (e.g., HxWx1)
+            if arr.ndim == 3:
+                if arr.shape[2] == 1:
+                    arr = arr.squeeze(2)
+                else:
+                    arr = arr[..., 0]
+
+            # Ensure numeric integer type
+            if np.issubdtype(arr.dtype, np.floating):
+                arr = np.rint(arr).astype(np.int32)
+            else:
+                arr = arr.astype(np.int32)
+
+            if arr.size == 0:
+                return np.zeros((0, 0), dtype=np.uint8)
+
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
+            return arr
+
+        # Lazy import plotting libraries
         import matplotlib.pyplot as plt
         import matplotlib.colors as mcolors
 
         num_plots = 3 if show_confidence else 2
         fig, axes = plt.subplots(1, num_plots, figsize=figsize)
 
-        # Original image
+        segmentation_map = _validate_segmentation_map(result.segmentation_map)
+
+        # Original Image
         axes[0].imshow(image)
         axes[0].set_title("Original Image")
-        axes[0].axis('off')
+        axes[0].axis("off")
 
-        # Segmentation map
+        # Segmentation
         if result.class_labels:
-            # Generate colors for the segmentation map
-            num_classes = len(result.class_labels)
 
-            # Try to use tab20 colormap first (works well for up to 20 classes)
-            if num_classes <= 20:
-                try:
-                    base_cmap = plt.colormaps.get_cmap('tab20')
-                    colors = [base_cmap(i) for i in range(num_classes)]
-                except Exception:
-                    # Fallback if tab20 is not available
-                    colors = plt.cm.Set3(np.linspace(0, 1, num_classes))
-            else:
-                # For more than 20 classes, sample from a continuous colormap
-                base_cmap = plt.colormaps.get_cmap('gist_ncar')
-                colors = [base_cmap(i / num_classes) for i in range(num_classes)]
+            # Build deterministic color mapping
+            mapping = _get_color_mapping_array(result.class_labels)
+
+            # RGB visualization
+            rgb_segmentation = mapping[segmentation_map]
+
+            axes[1].imshow(rgb_segmentation)
+            axes[1].axis("off")
+
+            model_name = result.metadata.get("model_type", "Segmentation")
+
+            detected = _derive_detected_classes(
+                segmentation_map,
+                result.class_labels
+            )
+
+            axes[1].set_title(
+                f"{model_name}\n"
+                f"{len(detected)} detected classes"
+            )
+
+            # Colorbar
+            colors = (
+                mapping[:len(result.class_labels)].astype(np.float32) / 255.0
+            )
 
             cmap = mcolors.ListedColormap(colors)
 
-            im = axes[1].imshow(result.segmentation_map, cmap=cmap,
-                              vmin=0, vmax=len(result.class_labels)-1)
-            axes[1].set_title(f"{result.metadata['model_type']} Segmentation")
-            axes[1].axis('off')
+            norm = mcolors.BoundaryNorm(
+                np.arange(len(result.class_labels) + 1) - 0.5, cmap.N
+            )
 
-            # Add colorbar with labels
-            cbar = plt.colorbar(im, ax=axes[1], ticks=range(len(result.class_labels)))
-            cbar.ax.set_yticklabels(result.class_labels, fontsize=8)
+            sm = plt.cm.ScalarMappable(
+                cmap=cmap, norm=norm
+            )
+
+            sm.set_array([])
+
+            cbar = plt.colorbar(
+                sm, ax=axes[1], ticks=np.arange(len(result.class_labels))
+            )
+
+            cbar.ax.set_yticklabels(
+                result.class_labels, fontsize=8
+            )
+
         else:
-            axes[1].imshow(result.segmentation_map, cmap='viridis')
-            axes[1].set_title(f"{result.metadata['model_type']} Segmentation")
-            axes[1].axis('off')
 
-        # Confidence map (if requested and available)
+            axes[1].imshow(
+                segmentation_map, cmap="gray", interpolation="nearest"
+            )
+
+            axes[1].set_title("Segmentation")
+            axes[1].axis("off")
+
+        # Confidence Map
         if show_confidence and result.confidence_map is not None:
-            im_conf = axes[2].imshow(result.confidence_map, cmap='hot', vmin=0, vmax=1)
+
+            im_conf = axes[2].imshow(
+                result.confidence_map,
+                cmap="hot",
+                vmin=0,
+                vmax=1,
+                interpolation="nearest"
+            )
+
             axes[2].set_title("Confidence Map")
-            axes[2].axis('off')
-            plt.colorbar(im_conf, ax=axes[2])
+            axes[2].axis("off")
+
+            plt.colorbar(
+                im_conf,
+                ax=axes[2]
+            )
 
         plt.tight_layout()
         plt.show()
