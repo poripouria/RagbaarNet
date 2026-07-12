@@ -210,7 +210,7 @@ class YOLOSegmentor(BaseSegmentor):
         segmentation_map = np.full((h, w), 255, dtype=np.uint16)  # 255 = background sentinel (no detection)
         confidence_map   = np.zeros((h, w), dtype=np.float32)
         bounding_boxes = []
-        masks = []
+        masks = {}
 
         if results.masks is not None and len(results.masks) > 0:
             # Convert tensors to numpy once
@@ -234,7 +234,7 @@ class YOLOSegmentor(BaseSegmentor):
 
                 # Store additional info
                 class_label = self.model.names[class_id] if class_id < len(self.model.names) else f"Class {class_id}"
-                masks.append({class_label: mask_binary})
+                masks[class_label] = mask_binary
 
                 bounding_boxes.append({
                     'bbox': box.tolist(),
