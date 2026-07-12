@@ -419,7 +419,7 @@ class RuleBasedMusician(BaseMusician):
             "road": 36      # C1
         }
 
-        return mapping.get(obj_class, 60)
+        return mapping.get(obj_class, 1)
     
     def _velocity_from_class(self, obj_class: str):
 
