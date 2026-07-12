@@ -255,32 +255,44 @@ class RuleBasedMusician(BaseMusician):
             "touching": {}  # object_id -> bool
         }
 
+        self.roi = None  # Will be set per frame if provided
+        self.prev_roi_payload = None  # To track changes in ROI between frames
+
         logger.info(f"🎵 RuleBasedMusician initialized with tempo={tempo}, key_signature={key_signature}")
+
+    def _map_class_to_note(self, obj_class):
+
+        mapping = {
+            "car": 60,      # Middle C
+            "truck": 48,    # C2
+            "bicycle": 64,  # E4
+            "person": 72,   # C5
+            "road": 36      # C1
+        }
+
+        return mapping.get(obj_class, 20)
+    
+    def _velocity_from_class(self, obj_class: str):
+
+        base = {
+            "car": 100,
+            "truck": 80,
+            "bicycle": 90,
+            "person": 110,
+            "road": 50
+        }
+
+        return base.get(obj_class, 70)
 
     def _set_roi(self, roi_payload):
         
         if not roi_payload:
             return
-
-        self.roi = ROI(corners=roi_payload.get("corners", []), 
-                       controls=roi_payload.get("controls", []))
-
-    def _intersects_roi(self, bbox=None, mask=None):
-        """
-        Supports both:
-        - YOLO: bbox-based + mask-based
-        - SegFormer: mask-based
-        """
-
-        # CASE 1: MASK (SegFormer)
-        if mask is not None:
-            return self.roi.intersects_mask(mask)
-
-        # CASE 2: BBOX (YOLO)
-        if bbox is not None:
-            return self.roi.intersects_bbox(bbox)
-
-        return False
+        
+        if self.prev_roi_payload != roi_payload:
+            self.prev_roi_payload = roi_payload
+            self.roi = ROI(corners=roi_payload.get("corners", []), 
+                        controls=roi_payload.get("controls", []))
     
     def extract_features(self, segmentation_result):
         return segmentation_result.metadata
@@ -295,7 +307,7 @@ class RuleBasedMusician(BaseMusician):
 
                 for obj_class, obj_mask in mask_dict.items():
 
-                    touching = self._intersects_roi(mask=obj_mask)
+                    touching = self.roi.intersects_mask(mask=obj_mask)
                     prev = self.state["touching"].get(obj_class, False)
 
                     if touching and not prev:
@@ -322,7 +334,7 @@ class RuleBasedMusician(BaseMusician):
                 obj_class = obj.get("class_name", "unknown")
                 bbox = obj["bbox"]
 
-                touching = self._intersects_roi(bbox)
+                touching = self.roi.intersects_bbox(bbox=bbox)
                 prev = self.state["touching"].get(obj_id, False)
 
                 logger.info(f"Object {obj_id} ({obj_class}) touching ROI: {touching} (bbox: {bbox}), previously: {prev}")
@@ -375,7 +387,7 @@ class RuleBasedMusician(BaseMusician):
             logger.info(f"Mapped scene event {e} to music event: note={note}, velocity={velocity}")
 
         # Log occasionally for debugging
-        if self.frame_counter % 20 == 0:  # Every 20 frames
+        if self.frame_counter % 50 == 0:  # Every 50 frames
             logger.info(
                 f"🎵 Generated {len(music_events)} music events for frame {frame_id}"
             )
@@ -409,29 +421,29 @@ class RuleBasedMusician(BaseMusician):
             }
         )
     
-    def _map_class_to_note(self, obj_class):
+class ContinuousPianistMusician(BaseMusician):
+    """
+    Continuous Pianist musician that generates sustained piano notes based on scene events.
+    This musician is designed to produce continuous and overlapping piano notes, allowing for
+    a more fluid and expressive musical output in response to visual stimuli.
+    """
 
-        mapping = {
-            "car": 60,      # Middle C
-            "truck": 48,    # C2
-            "bicycle": 64,  # E4
-            "person": 72,   # C5
-            "road": 36      # C1
+    def __init__(self, tempo=120, key_signature="C_major"):
+        """
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+            roi: Optional ROI definition (corners + controls)
+        """
+        super().__init__(tempo, key_signature)
+        
+        # state: keeps track of objects currently touching ROI boundary
+        self.state = {
+            "touching": {}  # object_id -> bool
         }
 
-        return mapping.get(obj_class, 1)
-    
-    def _velocity_from_class(self, obj_class: str):
+        logger.info(f"🎵 ContinuousPianistMusician initialized with tempo={tempo}, key_signature={key_signature}")
 
-        base = {
-            "car": 100,
-            "truck": 80,
-            "bicycle": 90,
-            "person": 110,
-            "road": 50
-        }
-
-        return base.get(obj_class, 70)
 
 
 class Musician:
