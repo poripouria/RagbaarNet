@@ -224,7 +224,7 @@ class YOLOSegmentor(BaseSegmentor):
 
                 # Resize mask
                 mask_resized = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
-                mask_binary = (mask_resized > 0.5).astype(np.uint8)
+                mask_binary = (mask_resized > 0.4).astype(np.uint8)
 
                 # Fill segmentation map
                 segmentation_map[mask_binary == 1] = class_id
@@ -233,7 +233,9 @@ class YOLOSegmentor(BaseSegmentor):
                 confidence_map = np.maximum(confidence_map, mask_binary * float(conf))
 
                 # Store additional info
-                masks.append(mask_binary)
+                class_label = self.model.names[class_id] if class_id < len(self.model.names) else f"Class {class_id}"
+                masks.append({class_label: mask_binary})
+
                 bounding_boxes.append({
                     'bbox': box.tolist(),
                     'confidence': float(conf),
@@ -479,7 +481,9 @@ class SegformerSegmentor(BaseSegmentor):
             if class_id == 0:  # Assuming 0 is the background class
                 continue
             mask = (segmentation_map == class_id).astype(np.uint8)
-            masks.append(mask)
+
+            class_label = self.cityscapes_labels[class_id] if class_id < len(self.cityscapes_labels) else f"Class {class_id}"
+            masks.append({class_label: mask})
 
         return SegmentationResult(
             segmentation_map=segmentation_map,
