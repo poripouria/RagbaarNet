@@ -392,7 +392,7 @@ class RuleBasedMusician(BaseMusician):
 
         self.frame_counter = frame_id
         
-        self._set_roi(roi, result.segmentation_map.shape)
+        self._set_roi(roi)
 
         scene_events = self.detect_scene_events(result.bounding_boxes, result.masks)
 
