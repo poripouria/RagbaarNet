@@ -573,7 +573,7 @@ class Segmentor:
         return self.segmentor.get_class_labels()
 
     def visualize_results(self, image: np.ndarray, result: SegmentationResult,
-                         show_confidence: bool = False, figsize: Tuple[int, int] = (15, 5)) -> None:
+                         show_confidence: bool = False, figsize: Tuple[int, int] = (15, 5)) -> np.ndarray:
         """
         Visualize segmentation results.
 
@@ -582,6 +582,9 @@ class Segmentor:
             result: SegmentationResult from segmentation
             show_confidence: Whether to show confidence map
             figsize: Figure size for matplotlib
+
+        Returns:
+            RGB segmentation overlay image
         """
        
         def _create_consistent_color_map(class_labels=None):
@@ -865,6 +868,8 @@ class Segmentor:
 
         plt.tight_layout()
         plt.show()
+
+        return rgb_segmentation
 
     def switch_model(self, model_type: str, model_path: str = None) -> None:
         """
