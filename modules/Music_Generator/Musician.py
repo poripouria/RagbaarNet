@@ -342,19 +342,18 @@ class RuleBasedMusician(BaseMusician):
         logger.info(f"Detecting scene events for {len(bounding_boxes) if bounding_boxes else 0} bounding boxes")
 
         events = []
+            
+        if masks is not None:
 
-        if bounding_boxes is not None:
+            for i, mask in enumerate(masks):
 
-            for i, obj in enumerate(bounding_boxes):
+                obj_id = i
+                obj_class = "unknown"  # Could be inferred from metadata if available
 
-                obj_id = obj.get(i, "class_id")
-                obj_class = obj.get("class_name", "unknown")
-                bbox = obj["bbox"]
-
-                touching = self._intersects_roi(bbox)
+                touching = self._intersects_roi(mask=mask)
                 prev = self.state["touching"].get(obj_id, False)
 
-                logger.info(f"Object {obj_id} ({obj_class}) touching ROI: {touching} (bbox: {bbox}), previously: {prev}")
+                logger.info(f"Object {obj_id} ({obj_class}) touching ROI: {touching} (mask), previously: {prev}")
 
                 if touching and not prev:
                     events.append({
@@ -371,18 +370,19 @@ class RuleBasedMusician(BaseMusician):
                         "class": obj_class
                     })
                     self.state["touching"][obj_id] = False
-            
-        elif masks is not None:
 
-            for i, mask in enumerate(masks):
+        elif bounding_boxes is not None:
 
-                obj_id = i
-                obj_class = "unknown"  # Could be inferred from metadata if available
+            for i, obj in enumerate(bounding_boxes):
 
-                touching = self._intersects_roi(mask=mask)
+                obj_id = obj.get(i, "class_id")
+                obj_class = obj.get("class_name", "unknown")
+                bbox = obj["bbox"]
+
+                touching = self._intersects_roi(bbox)
                 prev = self.state["touching"].get(obj_id, False)
 
-                logger.info(f"Object {obj_id} ({obj_class}) touching ROI: {touching} (mask), previously: {prev}")
+                logger.info(f"Object {obj_id} ({obj_class}) touching ROI: {touching} (bbox: {bbox}), previously: {prev}")
 
                 if touching and not prev:
                     events.append({
@@ -457,7 +457,7 @@ class RuleBasedMusician(BaseMusician):
         
         self._set_roi(roi, result.segmentation_map.shape)
 
-        scene_events = self.detect_scene_events(result.bounding_boxes)
+        scene_events = self.detect_scene_events(result.bounding_boxes, result.masks)
 
         music_events = self.decide_music(scene_events, frame_id)
 
