@@ -478,10 +478,7 @@ class SegformerSegmentor(BaseSegmentor):
         # Create masks list from segmentation map
         masks = []
         for class_id in np.unique(segmentation_map):
-            if class_id == 0:  # Assuming 0 is the background class
-                continue
             mask = (segmentation_map == class_id).astype(np.uint8)
-
             class_label = self.cityscapes_labels[class_id] if class_id < len(self.cityscapes_labels) else f"Class {class_id}"
             masks.append({class_label: mask})
 
