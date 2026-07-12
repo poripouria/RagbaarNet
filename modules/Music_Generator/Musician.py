@@ -10,6 +10,7 @@ generation strategies with easy integration for additional models.
 import os
 import sys
 import numpy as np
+import cv2
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -89,6 +90,22 @@ class ROI:
 
         self.polygon = self._build_polygon()
         self.edges = self._build_edges()
+        self.boundary_mask = self._build_boundary_mask(width=1280, height=720)
+
+    def _build_boundary_mask(self, width, height, thickness=3):
+        mask = np.zeros((height, width), dtype=np.uint8)
+
+        pts = np.array(self.polygon, dtype=np.int32)
+
+        cv2.polylines(
+            mask,
+            [pts],
+            isClosed=True,
+            color=255,
+            thickness=thickness
+        )
+
+        return mask.astype(bool)
 
     def _quad_bezier(self, p0, p1, p2, t):
 
@@ -129,78 +146,19 @@ class ROI:
 
         return edges
 
-class ROIGrid:
-    """
-    Converts ROI polygon into spatial occupancy grid for fast lookup
-    """
-
-    def __init__(self, polygon, grid_size=(64, 64), width=1280, height=720):
-        self.polygon = polygon
-        self.grid_size = grid_size
-        self.width = width
-        self.height = height
-
-        self.grid = self._build_grid()
-
-    # point in polygon (cheap)
-    def _point_in_poly(self, x, y):
-        poly = self.polygon
-        inside = False
-
-        j = len(poly) - 1
-        for i in range(len(poly)):
-            xi, yi = poly[i]
-            xj, yj = poly[j]
-
-            intersect = ((yi > y) != (yj > y)) and \
-                        (x < (xj - xi) * (y - yi) / (yj - yi + 1e-6) + xi)
-
-            if intersect:
-                inside = not inside
-
-            j = i
-
-        return inside
-
-    # build grid mask once (IMPORTANT)
-    def _build_grid(self):
-
-        gw, gh = self.grid_size
-        grid = np.zeros((gw, gh), dtype=np.bool_)
-
-        for i in range(gw):
-            for j in range(gh):
-
-                x = int(i * self.width / gw)
-                y = int(j * self.height / gh)
-
-                if self._point_in_poly(x, y):
-                    grid[i, j] = True
-
-        return grid
-
-    # fast bbox check
     def intersects_bbox(self, bbox):
-        x1, y1, x2, y2 = bbox
+        
+        x1, y1, x2, y2 = map(int, bbox)
 
-        gw, gh = self.grid_size
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(self.boundary_mask.shape[1], x2)
+        y2 = min(self.boundary_mask.shape[0], y2)
 
-        gx1 = int(x1 / self.width * gw)
-        gx2 = int(x2 / self.width * gw)
-        gy1 = int(y1 / self.height * gh)
-        gy2 = int(y2 / self.height * gh)
+        return self.boundary_mask[y1:y2, x1:x2].any()
 
-        gx1 = max(0, min(gw - 1, gx1))
-        gx2 = max(0, min(gw - 1, gx2))
-        gy1 = max(0, min(gh - 1, gy1))
-        gy2 = max(0, min(gh - 1, gy2))
-
-        # check only small region
-        return np.any(self.grid[gx1:gx2+1, gy1:gy2+1])
-
-    # fast mask check
     def intersects_mask(self, mask):
-        return np.logical_and(mask, self.grid).any()
+        return np.logical_and(mask, self.boundary_mask).any()
 
 class BaseMusician(ABC):
     """
@@ -296,7 +254,6 @@ class RuleBasedMusician(BaseMusician):
         self.state = {
             "touching": {}  # object_id -> bool
         }
-        self.roi_grid = None
 
         logger.info(f"🎵 RuleBasedMusician initialized with tempo={tempo}, key_signature={key_signature}")
 
@@ -308,14 +265,6 @@ class RuleBasedMusician(BaseMusician):
         self.roi = ROI(corners=roi_payload.get("corners", []), 
                        controls=roi_payload.get("controls", []))
 
-        if self.roi_grid == None:
-            self.roi_grid = ROIGrid(
-                polygon=self.roi.polygon,
-                grid_size=(64, 64),
-                width=input_shape[1] if input_shape is not None else 1280,
-                height=input_shape[0] if input_shape is not None else 720
-            )
-
     def _intersects_roi(self, bbox=None, mask=None):
         """
         Supports both:
@@ -325,18 +274,17 @@ class RuleBasedMusician(BaseMusician):
 
         # CASE 1: MASK (SegFormer)
         if mask is not None:
-            return self.roi_grid.intersects_mask(mask)
+            return self.roi.intersects_mask(mask)
 
         # CASE 2: BBOX (YOLO)
         if bbox is not None:
-            return self.roi_grid.intersects_bbox(bbox)
+            return self.roi.intersects_bbox(bbox)
 
         return False
     
     def extract_features(self, segmentation_result):
         return segmentation_result.metadata
 
-    # SCENE EVENT DETECTION (ONLY ROI boundary)
     def detect_scene_events(self, bounding_boxes=None, masks=None):
 
         logger.info(f"Detecting scene events for {len(bounding_boxes) if bounding_boxes else 0} bounding boxes")
@@ -407,7 +355,6 @@ class RuleBasedMusician(BaseMusician):
 
         return events
 
-    # MUSIC MAPPING (rule-based)
     def decide_music(self, scene_events, frame_id):
 
         music_events = []
@@ -472,7 +419,6 @@ class RuleBasedMusician(BaseMusician):
             }
         )
     
-    # SIMPLE MAPPING
     def _map_class_to_note(self, obj_class):
 
         mapping = {
