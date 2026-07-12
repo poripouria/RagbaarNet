@@ -148,7 +148,7 @@ class ROI:
 
     def intersects_bbox(self, bbox):
         
-        x1, y1, x2, y2 = map(int, bbox)
+        x1, y1, x2, y2 = map(int, bbox["bbox"])
 
         x1 = max(0, x1)
         y1 = max(0, y1)
@@ -257,7 +257,7 @@ class RuleBasedMusician(BaseMusician):
 
         logger.info(f"🎵 RuleBasedMusician initialized with tempo={tempo}, key_signature={key_signature}")
 
-    def _set_roi(self, roi_payload, input_shape):
+    def _set_roi(self, roi_payload):
         
         if not roi_payload:
             return
@@ -268,7 +268,7 @@ class RuleBasedMusician(BaseMusician):
     def _intersects_roi(self, bbox=None, mask=None):
         """
         Supports both:
-        - YOLO: bbox-based
+        - YOLO: bbox-based + mask-based
         - SegFormer: mask-based
         """
 
@@ -287,37 +287,32 @@ class RuleBasedMusician(BaseMusician):
 
     def detect_scene_events(self, bounding_boxes=None, masks=None):
 
-        logger.info(f"Detecting scene events for {len(bounding_boxes) if bounding_boxes else 0} bounding boxes")
-
         events = []
             
         if masks is not None:
 
-            for i, mask in enumerate(masks):
+            for i, mask_dict in enumerate(masks):
 
-                obj_id = i
-                obj_class = "unknown"  # Could be inferred from metadata if available
+                for obj_class, obj_mask in mask_dict.items():
 
-                touching = self._intersects_roi(mask=mask)
-                prev = self.state["touching"].get(obj_id, False)
+                    touching = self._intersects_roi(mask=obj_mask)
+                    prev = self.state["touching"].get(obj_class, False)
 
-                logger.info(f"Object {obj_id} ({obj_class}) touching ROI: {touching} (mask), previously: {prev}")
+                    if touching and not prev:
+                        events.append({
+                            "type": "ROI_TOUCH",
+                            "object_id": i,
+                            "class": obj_class
+                        })
+                        self.state["touching"][obj_class] = True
 
-                if touching and not prev:
-                    events.append({
-                        "type": "ROI_TOUCH",
-                        "object_id": obj_id,
-                        "class": obj_class
-                    })
-                    self.state["touching"][obj_id] = True
-
-                elif not touching and prev:
-                    events.append({
-                        "type": "ROI_RELEASE",
-                        "object_id": obj_id,
-                        "class": obj_class
-                    })
-                    self.state["touching"][obj_id] = False
+                    elif not touching and prev:
+                        events.append({
+                            "type": "ROI_RELEASE",
+                            "object_id": i,
+                            "class": obj_class
+                        })
+                        self.state["touching"][obj_class] = False
 
         elif bounding_boxes is not None:
 
@@ -394,11 +389,6 @@ class RuleBasedMusician(BaseMusician):
         """
 
         logger.info(f"🎵 Generating music for frame {frame_id}")
-        print(f"Segmentation map shape: {result.segmentation_map.shape}",
-              f"Num Class labels: {len(result.class_labels) if result.class_labels else 0}",
-              f"Num Bounding boxes: {len(result.bounding_boxes) if result.bounding_boxes else 0}",
-              f"Num Masks: {len(result.masks) if result.masks else 0}",
-              )
 
         self.frame_counter = frame_id
         
