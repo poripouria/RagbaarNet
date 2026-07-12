@@ -62,7 +62,6 @@ let lastMusicEventTime = 0;
 // so the "Change Musician" modal is usable even before/without a socket round-trip.
 let availableMusicians = [
     { id: 'rule-based', label: 'Rule-based Musician', description: 'Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).' },
-    { id: 'pianist', label: 'Pianist (Rule-Based)', description: 'Rule-based musician that renders segmentation events as solo piano.' },
     { id: 'continuous_pianist', label: 'Continuous Pianist', description: 'Piano musician with sustained/continuous note playback.' },
     { id: 'lstm-onessen', label: 'LSTM (Essen Folk Song)', description: 'Neural LSTM model trained on the Essen folk song collection.' }
 ];
