@@ -785,7 +785,7 @@ class Segmentor:
         segmentation_map = _validate_segmentation_map(result.segmentation_map)
 
         # Original Image
-        axes[0].imshow(image)
+        axes[0].imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
         axes[0].set_title("Original Image")
         axes[0].axis("off")
 
