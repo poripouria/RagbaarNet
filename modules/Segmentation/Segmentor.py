@@ -594,6 +594,8 @@ class Segmentor:
             Returns:
                 Dict[int, List[int]]: class_id -> RGB color
             """
+            import hashlib
+            import colorsys
 
             labels = []
 
