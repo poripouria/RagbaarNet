@@ -526,7 +526,7 @@ class Segmentor:
 
         if model_type_norm == 'yolo':
             if model_path is None:
-                model_path = "yolo11s.pt"
+                model_path = "yolo11s-seg.pt"
             return YOLOSegmentor(model_path, device)
         elif model_type_norm == 'segformer':
             if model_path is None:
