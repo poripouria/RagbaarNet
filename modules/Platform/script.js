@@ -618,30 +618,6 @@ function handleMusicEvents(musicData) {
     }
 }
 
-// function playMusicEvent(event, scheduleTime) {
-//     if (!isMusicGenerationActive) return;   // 🔥 HARD GATE
-//     try {
-//         const frequency = midiNoteToFrequency(event.note);
-//         const instrument = event.instrument || 'synth';
-//         const voice = instrumentVoices[instrument] || instrumentVoices.synth;
-
-//         if  (event.type === 'note_off') {
-//             stopNote(event);
-//             return;
-//         }
-        
-//         // Create oscillator and envelope for the note
-//         if (instrument === 'drums') {
-//             playDrumSound(event, scheduleTime);
-//         } else {
-//             playTonalInstrument(event, frequency, voice, scheduleTime);
-//         }
-        
-//     } catch (error) {
-//         console.error('❌ Error playing music event:', error);
-//     }
-// }
-
 function playMusicEvent(event, scheduleTime) {
 
     if (!isMusicGenerationActive)
@@ -668,61 +644,26 @@ function playMusicEvent(event, scheduleTime) {
         playTonalInstrument(event, frequency, voice, scheduleTime);
 }
 
-// function playTonalInstrument(event, frequency, voice, scheduleTime) {
-//     // Create oscillator
-//     const osc = audioContext.createOscillator();
-//     osc.type = voice.waveform;
-//     osc.frequency.setValueAtTime(frequency, scheduleTime);
-    
-//     // Create gain envelope
-//     const gainNode = audioContext.createGain();
-//     const velocity = event.velocity / 127; // Convert MIDI velocity to 0-1
-//     const duration = Math.min(event.duration, 3.0); // Cap duration at 3 seconds
-    
-//     // ADSR envelope
-//     gainNode.gain.setValueAtTime(0, scheduleTime);
-//     gainNode.gain.linearRampToValueAtTime(velocity * 0.8, scheduleTime + voice.attack);
-//     gainNode.gain.linearRampToValueAtTime(velocity * voice.sustain, scheduleTime + voice.attack + voice.decay);
-    
-//     // Create filter for timbre
-//     const filter = audioContext.createBiquadFilter();
-//     filter.type = 'lowpass';
-//     filter.frequency.setValueAtTime(voice.filterFreq, scheduleTime);
-    
-//     // Connect audio graph
-//     osc.connect(filter);
-//     filter.connect(gainNode);
-//     gainNode.connect(masterGain);
-    
-//     // Schedule playback
-//     osc.start(scheduleTime);
-    
-//     // Track active note for cleanup
-//     const noteKey = `${event.note}-${scheduleTime}`;
-//     activeNotes.set(noteKey, { osc, gainNode, filter });
-    
-//     // Clean up after playback
-//     setTimeout(() => {
-//         activeNotes.delete(noteKey);
-//     }, (0.1) * 1000);
-// }
-
 function playTonalInstrument(event, frequency, voice, scheduleTime) {
 
     stopNote(event.note);
 
+    // Create oscillator
     const osc = audioContext.createOscillator();
 
     osc.type = voice.waveform;
     osc.frequency.setValueAtTime(frequency, scheduleTime);
 
+    // Create gain envelope
     const gainNode = audioContext.createGain();
 
+    // Create filter for timbre
     const filter = audioContext.createBiquadFilter();
 
     filter.type = "lowpass";
     filter.frequency.value = voice.filterFreq;
 
+    // Connect audio graph
     osc.connect(filter);
     filter.connect(gainNode);
     gainNode.connect(masterGain);
@@ -741,6 +682,7 @@ function playTonalInstrument(event, frequency, voice, scheduleTime) {
         scheduleTime + voice.attack + voice.decay
     );
 
+    // Schedule release
     osc.start(scheduleTime);
 
     activeNotes.set(event.note, {
@@ -750,7 +692,7 @@ function playTonalInstrument(event, frequency, voice, scheduleTime) {
         voice
     });
 
-    // Safety timeout (اگر NoteOff نرسد)
+    // Safety timeout (If NoteOff has not been received)
 
     const timeout = (voice.attack +
         voice.decay +
@@ -816,19 +758,6 @@ function playDrumSound(event, scheduleTime) {
     noise.stop(scheduleTime + 0.2);
 }
 
-// function stopNote(event) {
-//     const osc = activeNotes.get(event.note);
-
-//     if (osc) {
-//         try {
-//             osc.stop();
-//             osc.disconnect();
-//         } catch (e) {}
-
-//         activeNotes.delete(event.note);
-//     }
-// }
-
 function stopNote(note) {
 
     const voiceData = activeNotes.get(note);
@@ -887,25 +816,6 @@ function getDrumType(midiNote) {
         default: return 'generic';
     }
 }
-
-// function stopAllActiveNotes() {
-//     try {
-//         activeNotes.forEach((noteData, key) => {
-//             try {
-//                 if (noteData.gainNode) {
-//                     noteData.gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
-//                 }
-//                 noteData.stop(audioContext.currentTime + 0.1);
-//             } catch (e) {
-//                 // Note may have already ended
-//             }
-//         });
-//         activeNotes.clear();
-//         console.log('🔇 Stopped all active notes');
-//     } catch (error) {
-//         console.error('❌ Error stopping notes:', error);
-//     }
-// }
 
 function stopAllActiveNotes() {
 
