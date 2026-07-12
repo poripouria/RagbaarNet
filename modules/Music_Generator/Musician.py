@@ -239,7 +239,9 @@ class RuleBasedMusician(BaseMusician):
         
         # state: keeps track of objects currently touching ROI boundary
         self.state = {
-            "touching": {}  # object_id -> bool
+            "touching": {},        # object_id -> bool
+            "objects": {},         # object_id -> object info
+            "next_object_id": 0
         }
 
         self.roi = None  # Will be set per frame if provided

@@ -475,19 +475,48 @@ class SegformerSegmentor(BaseSegmentor):
         unique, counts = np.unique(segmentation_map, return_counts=True)
         class_areas = dict(zip(unique.tolist(), counts.tolist()))
 
-        # Create masks list from segmentation map
-        masks = {}
-        for class_id in np.unique(segmentation_map):
-            mask = (segmentation_map == class_id).astype(np.uint8)
-            class_label = self.cityscapes_labels[class_id] if class_id < len(self.cityscapes_labels) else f"Class {class_id}"
-            masks[class_label] = mask
+        # Extract individual masks and bounding boxes for each detected class
+        instances = []
+        unique_classes = np.unique(segmentation_map)
+
+        for class_id in unique_classes:
+
+            class_mask = (segmentation_map == class_id).astype(np.uint8)
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+                class_mask,
+                connectivity=8
+            )
+
+            for i in range(1, num_labels):
+
+                area = stats[i, cv2.CC_STAT_AREA]
+
+                if area < 100:
+                    continue
+
+                x = stats[i, cv2.CC_STAT_LEFT]
+                y = stats[i, cv2.CC_STAT_TOP]
+                w = stats[i, cv2.CC_STAT_WIDTH]
+                h = stats[i, cv2.CC_STAT_HEIGHT]
+                bbox = [x, y, x+w, y+h]
+                centroid = tuple(centroids[i])
+
+                instances.append(
+                    {
+                    "class_id": int(class_id),
+                    "class_name": self.cityscapes_labels[class_id],
+                    "mask": labels == i,
+                    "bbox": bbox,
+                    "centroid": centroid
+                    }
+                )
 
         return SegmentationResult(
             segmentation_map=segmentation_map,
             confidence_map=confidence_map,
             class_labels=self.cityscapes_labels,
-            bounding_boxes=None,    # Segformer doesn't provide bounding boxes
-            masks=masks,            # Individual masks for each detected class
+            bounding_boxes=[obj["bbox"] for obj in instances],
+            masks=[obj["mask"] for obj in instances],
             metadata={
                 'model_type': 'Segformer',
                 'model_path': self.model_path,
