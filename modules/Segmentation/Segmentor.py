@@ -473,12 +473,20 @@ class SegformerSegmentor(BaseSegmentor):
         unique, counts = np.unique(segmentation_map, return_counts=True)
         class_areas = dict(zip(unique.tolist(), counts.tolist()))
 
+        # Create masks list from segmentation map
+        masks = []
+        for class_id in np.unique(segmentation_map):
+            if class_id == 0:  # Assuming 0 is the background class
+                continue
+            mask = (segmentation_map == class_id).astype(np.uint8)
+            masks.append(mask)
+
         return SegmentationResult(
             segmentation_map=segmentation_map,
             confidence_map=confidence_map,
             class_labels=self.cityscapes_labels,
             bounding_boxes=None,    # Segformer doesn't provide bounding boxes
-            masks=None,             # Dense segmentation, no individual masks
+            masks=masks,            # Individual masks for each detected class
             metadata={
                 'model_type': 'Segformer',
                 'model_path': self.model_path,
