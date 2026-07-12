@@ -492,19 +492,25 @@ async function checkProcessorStatus() {
 }
 
 /**
- * Audio System Functions (Tone.js synthesis engine)
+ * Audio System Functions
  */
 function initializeAudioSystem() {
     try {
-        // Tone.js manages its own internal AudioContext.
-        masterGain = new Tone.Gain(0.3).toDestination();
-
+        // Create audio context
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContextClass();
+        
+        // Create master gain node
+        masterGain = audioContext.createGain();
+        masterGain.gain.setValueAtTime(0.3, audioContext.currentTime); // Set volume to 30%
+        masterGain.connect(audioContext.destination);
+        
         // Initialize instrument voices
         initializeInstrumentVoices();
-
-        console.log('🎵 Audio system initialized successfully (Tone.js)');
+        
+        console.log('🎵 Audio system initialized successfully');
         updateStatus('Audio system ready');
-
+        
     } catch (error) {
         console.error('❌ Failed to initialize audio system:', error);
         updateStatus('Audio initialization failed');
@@ -512,50 +518,79 @@ function initializeAudioSystem() {
 }
 
 function initializeInstrumentVoices() {
-    // Helper to build a warmer, less "artificial" polyphonic tonal voice.
-    const buildTonalVoice = (waveform, attack, decay, sustain, release, filterFreq) => {
-        const filter = new Tone.Filter(filterFreq, 'lowpass').connect(masterGain);
-        const chorus = new Tone.Chorus(4, 2.5, 0.25).connect(filter).start();
-        const synth = new Tone.PolySynth(Tone.Synth, {
-            oscillator: { type: waveform },
-            envelope: { attack, decay, sustain, release }
-        }).connect(chorus);
-        return { synth, filter, chorus, attack, decay, sustain, release, filterFreq };
-    };
-
     instrumentVoices = {
-        piano: buildTonalVoice('fatsawtooth4', 0.006, 0.35, 0.22, 1.1, 2600),
-        electric_piano: buildTonalVoice('fmsquare', 0.006, 0.2, 0.35, 0.8, 1800),
-        bass: buildTonalVoice('fattriangle', 0.02, 0.4, 0.55, 1.2, 500),
-        strings: buildTonalVoice('fatsawtooth', 0.18, 0.2, 0.78, 1.7, 3200),
-        electric_guitar: buildTonalVoice('fmsquare', 0.004, 0.1, 0.45, 0.6, 2800),
-        acoustic_guitar: buildTonalVoice('fatsawtooth', 0.01, 0.3, 0.35, 1.0, 2200),
-        pad: buildTonalVoice('sine', 0.35, 0.5, 0.68, 2.2, 1200),
-        synth: buildTonalVoice('fmsquare', 0.01, 0.2, 0.25, 0.5, 2000)
-    };
-
-    // Dedicated, more realistic voices per drum type (replacing raw white-noise bursts).
-    instrumentVoices.drums = {
-        kick: new Tone.MembraneSynth({
-            pitchDecay: 0.045,
-            octaves: 6,
-            envelope: { attack: 0.001, decay: 0.35, sustain: 0, release: 0.4 }
-        }).connect(masterGain),
-        snare: new Tone.NoiseSynth({
-            noise: { type: 'white' },
-            envelope: { attack: 0.001, decay: 0.18, sustain: 0 }
-        }).connect(new Tone.Filter(1800, 'highpass').connect(masterGain)),
-        hihat: new Tone.MetalSynth({
-            envelope: { attack: 0.001, decay: 0.12, release: 0.02 },
-            harmonicity: 5.1,
-            modulationIndex: 32,
-            resonance: 4000,
-            octaves: 1.5
-        }).connect(masterGain),
-        generic: new Tone.NoiseSynth({
-            noise: { type: 'pink' },
-            envelope: { attack: 0.001, decay: 0.2, sustain: 0 }
-        }).connect(new Tone.Filter(1000, 'bandpass').connect(masterGain))
+        piano: {
+            waveform: 'sawtooth',
+            attack: 0.01,
+            decay: 0.3,
+            sustain: 0.3,
+            release: 1.0,
+            filterFreq: 2000
+        },
+        electric_piano: {
+            waveform: 'square',
+            attack: 0.01,
+            decay: 0.2,
+            sustain: 0.4,
+            release: 0.8,
+            filterFreq: 1500
+        },
+        drums: {
+            waveform: 'noise',
+            attack: 0.001,
+            decay: 0.1,
+            sustain: 0.0,
+            release: 0.2,
+            filterFreq: 100
+        },
+        bass: {
+            waveform: 'triangle',
+            attack: 0.02,
+            decay: 0.4,
+            sustain: 0.6,
+            release: 1.2,
+            filterFreq: 400
+        },
+        strings: {
+            waveform: 'sawtooth',
+            attack: 0.1,
+            decay: 0.2,
+            sustain: 0.8,
+            release: 1.5,
+            filterFreq: 3000
+        },
+        electric_guitar: {
+            waveform: 'square',
+            attack: 0.005,
+            decay: 0.1,
+            sustain: 0.5,
+            release: 0.6,
+            filterFreq: 2500
+        },
+        acoustic_guitar: {
+            waveform: 'sawtooth',
+            attack: 0.01,
+            decay: 0.3,
+            sustain: 0.4,
+            release: 1.0,
+            filterFreq: 2000
+        },
+        pad: {
+            waveform: 'sine',
+            attack: 0.3,
+            decay: 0.5,
+            sustain: 0.7,
+            release: 2.0,
+            filterFreq: 1000
+        },
+        synth: {
+            waveform: 'square',
+            attack: 0.01,
+            decay: 0.2,
+            sustain: 0.3,
+            release: 0.5,
+            filterFreq: 1800
+        }
     };
 }
 
@@ -570,7 +605,7 @@ function handleMusicEvents(musicData) {
         // Schedule each music event
         musicData.events.forEach((event, index) => {
             // Slight delay between events to avoid overwhelming
-            const scheduleTime = Tone.now() + (index * 0.01);
+            const scheduleTime = audioContext.currentTime + (index * 0.01);
             playMusicEvent(event, scheduleTime);
         });
         
@@ -594,36 +629,70 @@ function playMusicEvent(event, scheduleTime) {
         return;
     }
 
+    const frequency = midiNoteToFrequency(event.note);
+
     const instrument = event.instrument || "piano";
+
+    const voice =
+        instrumentVoices[instrument] ||
+        instrumentVoices.piano;
 
     if (instrument === "drums")
         playDrumSound(event, scheduleTime);
     else
-        playTonalInstrument(event, instrument, scheduleTime);
+        playTonalInstrument(event, frequency, voice, scheduleTime);
 }
 
-function playTonalInstrument(event, instrument, scheduleTime) {
+function playTonalInstrument(event, frequency, voice, scheduleTime) {
 
     stopNote(event.note);
 
-    const voice = instrumentVoices[instrument] || instrumentVoices.piano;
-    const noteName = Tone.Frequency(event.note, "midi").toNote();
-    const velocity = Math.min(1, Math.max(0.05, (event.velocity || 100) / 127));
+    // Create oscillator
+    const osc = audioContext.createOscillator();
 
-    try {
-        voice.synth.triggerAttack(noteName, scheduleTime, velocity);
-    } catch (e) {
-        console.warn('⚠️ Tone.js triggerAttack error:', e);
-        return;
-    }
+    osc.type = voice.waveform;
+    osc.frequency.setValueAtTime(frequency, scheduleTime);
+
+    // Create gain envelope
+    const gainNode = audioContext.createGain();
+
+    // Create filter for timbre
+    const filter = audioContext.createBiquadFilter();
+
+    filter.type = "lowpass";
+    filter.frequency.value = voice.filterFreq;
+
+    // Connect audio graph
+    osc.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(masterGain);
+
+    const velocity = (event.velocity || 100) / 127;
+
+    gainNode.gain.setValueAtTime(0, scheduleTime);
+
+    gainNode.gain.linearRampToValueAtTime(
+        velocity,
+        scheduleTime + voice.attack
+    );
+
+    gainNode.gain.linearRampToValueAtTime(
+        velocity * voice.sustain,
+        scheduleTime + voice.attack + voice.decay
+    );
+
+    // Schedule release
+    osc.start(scheduleTime);
 
     activeNotes.set(event.note, {
-        synth: voice.synth,
-        noteName,
-        release: voice.release
+        osc,
+        gainNode,
+        filter,
+        voice
     });
 
     // Safety timeout (If NoteOff has not been received)
+
     const timeout = (voice.attack +
         voice.decay +
         voice.release +
@@ -638,26 +707,54 @@ function playTonalInstrument(event, instrument, scheduleTime) {
 }
 
 function playDrumSound(event, scheduleTime) {
-    const velocity = Math.min(1, Math.max(0.05, (event.velocity || 100) / 127));
-    const drumType = getDrumType(event.note);
-    const drumVoices = instrumentVoices.drums || {};
-    const voice = drumVoices[drumType] || drumVoices.generic;
-
-    if (!voice)
-        return;
-
-    try {
-        if (typeof Tone !== 'undefined' && voice instanceof Tone.MembraneSynth) {
-            const noteName = Tone.Frequency(48, "midi").toNote(); // fixed low kick pitch
-            voice.triggerAttackRelease(noteName, "8n", scheduleTime, velocity);
-        } else if (typeof Tone !== 'undefined' && voice instanceof Tone.MetalSynth) {
-            voice.triggerAttackRelease("8n", scheduleTime, velocity);
-        } else {
-            voice.triggerAttackRelease("16n", scheduleTime, velocity);
-        }
-    } catch (e) {
-        console.warn('⚠️ Tone.js drum trigger error:', e);
+    // Create noise buffer for drum sounds
+    const bufferSize = 2 * audioContext.sampleRate;
+    const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    
+    // Generate noise
+    for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
     }
+    
+    // Create buffer source
+    const noise = audioContext.createBufferSource();
+    noise.buffer = noiseBuffer;
+    
+    // Create gain and filter for drum character
+    const gainNode = audioContext.createGain();
+    const filter = audioContext.createBiquadFilter();
+    
+    // Configure based on drum type (kick, snare, etc.)
+    const velocity = event.velocity / 127;
+    const drumType = getDrumType(event.note);
+    
+    switch (drumType) {
+        case 'kick':
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(100, scheduleTime);
+            break;
+        case 'snare':
+            filter.type = 'highpass';
+            filter.frequency.setValueAtTime(200, scheduleTime);
+            break;
+        default:
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(1000, scheduleTime);
+    }
+    
+    // Envelope
+    gainNode.gain.setValueAtTime(0, scheduleTime);
+    gainNode.gain.linearRampToValueAtTime(velocity * 0.6, scheduleTime + 0.001);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, scheduleTime + 0.2);
+    
+    // Connect and play
+    noise.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(masterGain);
+    
+    noise.start(scheduleTime);
+    noise.stop(scheduleTime + 0.2);
 }
 
 function stopNote(note) {
@@ -667,8 +764,36 @@ function stopNote(note) {
     if (!voiceData)
         return;
 
+    const now = audioContext.currentTime;
+
     try {
-        voiceData.synth.triggerRelease(voiceData.noteName, Tone.now());
+
+        voiceData.gainNode.gain.cancelScheduledValues(now);
+
+        voiceData.gainNode.gain.setValueAtTime(
+            voiceData.gainNode.gain.value,
+            now
+        );
+
+        voiceData.gainNode.gain.linearRampToValueAtTime(
+            0,
+            now + voiceData.voice.release
+        );
+
+        voiceData.osc.stop(now + voiceData.voice.release + 0.02);
+
+        voiceData.osc.onended = () => {
+
+            try {
+
+                voiceData.osc.disconnect();
+                voiceData.filter.disconnect();
+                voiceData.gainNode.disconnect();
+
+            } catch(e){}
+
+        };
+
     }
     catch(e){}
 
@@ -2391,17 +2516,17 @@ function applyTempoSetting() {
 }
 
 function startMusicGeneration() {
-    if (!masterGain) {
+    if (!audioContext) {
         initializeAudioSystem();
     }
-
-    // Unlock/resume the underlying (Tone.js) audio context — required by browsers
-    Tone.start().then(() => {
-        console.log('🎵 Audio context resumed');
-    }).catch(err => {
-        console.warn('⚠️ Unable to resume audio context:', err);
-    });
-
+    
+    // Resume audio context if suspended (required by browser)
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+            console.log('🎵 Audio context resumed');
+        });
+    }
+    
     if (isMusicGenerationActive) {
         stopMusicGeneration();
     } else {
