@@ -870,25 +870,6 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'video_processing_secret'
 CORS(app)  # Enable CORS for all routes
 
-
-class ClientDisconnectSafeMiddleware:
-    """Gracefully ignore client disconnects that happen during streaming or polling."""
-
-    def __init__(self, app):
-        self.app = app
-
-    def __call__(self, environ, start_response):
-        try:
-            return self.app(environ, start_response)
-        except Exception as exc:
-            if isinstance(exc, (BrokenPipeError, ConnectionResetError, OSError, AssertionError, RuntimeError)):
-                logger.debug("Client disconnected while serving a response: %s", exc)
-                return []
-            raise
-
-
-app.wsgi_app = ClientDisconnectSafeMiddleware(app.wsgi_app)
-
 # Reduce Socket.IO/engineio log noise in production
 socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
 
