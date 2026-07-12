@@ -469,15 +469,14 @@ class SegformerSegmentor(BaseSegmentor):
         if self.return_confidence:
             softmax_probs = torch.softmax(upsampled_logits, dim=1)
             confidence_map = torch.max(softmax_probs, dim=1)[0].cpu().numpy()[0]
-            # probs = torch.softmax(upsampled_logits, dim=1)
-            # confidence_map = (probs.max(dim=1).values.cpu().numpy()[0])
-
-        unique, counts = np.unique(segmentation_map, return_counts=True)
-        class_areas = dict(zip(unique.tolist(), counts.tolist()))
 
         # Extract individual masks and bounding boxes for each detected class
         instances = []
         unique_classes = np.unique(segmentation_map)
+        class_counter = {}
+
+        masks = {}
+        bounding_boxes = []
 
         for class_id in unique_classes:
 
@@ -494,36 +493,39 @@ class SegformerSegmentor(BaseSegmentor):
                 if area < 100:
                     continue
 
+                class_name = self.cityscapes_labels[class_id]
+                instance_id = class_counter.get(class_name, 0)
+                key = f"{class_name}_{instance_id}"
+                class_counter[class_name] = instance_id + 1
+                mask = labels == i
+                masks[key] = mask
+
                 x = stats[i, cv2.CC_STAT_LEFT]
                 y = stats[i, cv2.CC_STAT_TOP]
                 w = stats[i, cv2.CC_STAT_WIDTH]
                 h = stats[i, cv2.CC_STAT_HEIGHT]
                 bbox = [x, y, x+w, y+h]
                 centroid = tuple(centroids[i])
-
-                instances.append(
-                    {
-                    "class_id": int(class_id),
-                    "class_name": self.cityscapes_labels[class_id],
-                    "mask": labels == i,
-                    "bbox": bbox,
-                    "centroid": centroid
-                    }
-                )
+                
+                bounding_boxes.append({
+                    'bbox': bbox,
+                    'centroid': centroid,
+                    'class_id': class_id,
+                    'class_name': class_name,
+                })
 
         return SegmentationResult(
             segmentation_map=segmentation_map,
             confidence_map=confidence_map,
             class_labels=self.cityscapes_labels,
-            bounding_boxes=[obj["bbox"] for obj in instances],
-            masks=[obj["mask"] for obj in instances],
+            bounding_boxes=bounding_boxes,
+            masks=masks,
             metadata={
                 'model_type': 'Segformer',
                 'model_path': self.model_path,
                 'device': self.device,
                 'num_detected': int((segmentation_map > 0).sum()),
-                'num_classes': len(self.cityscapes_labels),
-                'class_areas': class_areas
+                'num_classes': len(self.cityscapes_labels)
             }
         )
 
