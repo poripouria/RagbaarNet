@@ -209,8 +209,9 @@ class YOLOSegmentor(BaseSegmentor):
         # Initialize maps and lists for results
         segmentation_map = np.full((h, w), 255, dtype=np.uint16)  # 255 = background sentinel (no detection)
         confidence_map   = np.zeros((h, w), dtype=np.float32)
-        bounding_boxes = []
+        class_counter = {}
         masks = {}
+        bounding_boxes = []
 
         if results.masks is not None and len(results.masks) > 0:
             # Convert tensors to numpy once
@@ -233,14 +234,17 @@ class YOLOSegmentor(BaseSegmentor):
                 confidence_map = np.maximum(confidence_map, mask_binary * float(conf))
 
                 # Store additional info
-                class_label = self.model.names[class_id] if class_id < len(self.model.names) else f"Class {class_id}"
-                masks[class_label] = mask_binary
+                class_name = self.model.names[class_id]
+                instance_id = class_counter.get(class_name, 0)
+                key = f"{class_name}_{instance_id}"
+                class_counter[class_name] = instance_id + 1
+                masks[key] = mask_binary
 
                 bounding_boxes.append({
                     'bbox': box.tolist(),
                     'confidence': float(conf),
                     'class_id': class_id,
-                    'class_name': self.model.names[class_id]
+                    'class_name': key
                 })
 
         # Ordered class labels (safe)
@@ -474,7 +478,6 @@ class SegformerSegmentor(BaseSegmentor):
         instances = []
         unique_classes = np.unique(segmentation_map)
         class_counter = {}
-
         masks = {}
         bounding_boxes = []
 
@@ -511,7 +514,7 @@ class SegformerSegmentor(BaseSegmentor):
                     'bbox': bbox,
                     'centroid': centroid,
                     'class_id': class_id,
-                    'class_name': class_name,
+                    'class_name': key,
                 })
 
         return SegmentationResult(
