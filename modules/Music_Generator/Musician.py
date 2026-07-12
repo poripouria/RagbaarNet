@@ -266,9 +266,11 @@ class RuleBasedMusician(BaseMusician):
         mapping = {
             "car": (60, 100, 'piano'),
             "truck": (48, 80, 'electric_piano'),
-            "bicycle": (64, 90, 'electric_piano'),
+            "bus": (48, 80, 'electric_piano'),
+            "bicycle": (64, 90, 'strings'),
             "person": (72, 110, 'drums'),
-            "road": (36, 50, 'bass')
+            "road": (36, 50, 'bass'),
+            "traffic_light": (67, 70, 'strings'),
         }
 
         return mapping.get(obj_class, (20, 70, 'piano'))  # Default to a reasonable note, velocity, and instrument
