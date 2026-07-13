@@ -361,6 +361,7 @@ class RuleBasedMusician(BaseMusician):
             "person": (72, 110, 'drums'),
             "road": (36, 50, 'bass'),
             "traffic light": (67, 70, 'strings'),
+            "traffic sign": (67, 70, 'strings'),
             "stop sign": (69, 80, 'strings'),
         }
 
@@ -499,6 +500,9 @@ class RuleBasedMusician(BaseMusician):
         music_events = []
 
         for e in scene_events:
+
+            if e["type"] == "ROI_STAY":
+                continue  # Skip "stay" events for music generation
 
             obj_class = e["class"]
             edges = e.get("edges", [])
