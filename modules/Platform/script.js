@@ -518,83 +518,6 @@ function initializeAudioSystem() {
     }
 }
 
-// function initializeInstrumentVoices() {
-//     instrumentVoices = {
-//         piano: {
-//             waveform: 'sawtooth',
-//             attack: 0.01,
-//             decay: 0.3,
-//             sustain: 0.3,
-//             release: 1.0,
-//             filterFreq: 2000
-//         },
-//         electric_piano: {
-//             waveform: 'square',
-//             attack: 0.01,
-//             decay: 0.2,
-//             sustain: 0.4,
-//             release: 0.8,
-//             filterFreq: 1500
-//         },
-//         drums: {
-//             waveform: 'noise',
-//             attack: 0.001,
-//             decay: 0.1,
-//             sustain: 0.0,
-//             release: 0.2,
-//             filterFreq: 100
-//         },
-//         bass: {
-//             waveform: 'triangle',
-//             attack: 0.02,
-//             decay: 0.4,
-//             sustain: 0.6,
-//             release: 1.2,
-//             filterFreq: 400
-//         },
-//         strings: {
-//             waveform: 'sawtooth',
-//             attack: 0.1,
-//             decay: 0.2,
-//             sustain: 0.8,
-//             release: 1.5,
-//             filterFreq: 3000
-//         },
-//         electric_guitar: {
-//             waveform: 'square',
-//             attack: 0.005,
-//             decay: 0.1,
-//             sustain: 0.5,
-//             release: 0.6,
-//             filterFreq: 2500
-//         },
-//         acoustic_guitar: {
-//             waveform: 'sawtooth',
-//             attack: 0.01,
-//             decay: 0.3,
-//             sustain: 0.4,
-//             release: 1.0,
-//             filterFreq: 2000
-//         },
-//         pad: {
-//             waveform: 'sine',
-//             attack: 0.3,
-//             decay: 0.5,
-//             sustain: 0.7,
-//             release: 2.0,
-//             filterFreq: 1000
-//         },
-//         synth: {
-//             waveform: 'square',
-//             attack: 0.01,
-//             decay: 0.2,
-//             sustain: 0.3,
-//             release: 0.5,
-//             filterFreq: 1800
-//         }
-//     };
-// }
-
 async function initializeInstrumentVoices() {
 
     await Tone.start();
@@ -672,69 +595,6 @@ function playMusicEvent(event, scheduleTime) {
         playTonalInstrument(event, frequency, voice, scheduleTime);
 }
 
-// function playTonalInstrument(event, frequency, voice, scheduleTime) {
-
-//     stopNote(event.note);
-
-//     // Create oscillator
-//     const osc = audioContext.createOscillator();
-
-//     osc.type = voice.waveform;
-//     osc.frequency.setValueAtTime(frequency, scheduleTime);
-
-//     // Create gain envelope
-//     const gainNode = audioContext.createGain();
-
-//     // Create filter for timbre
-//     const filter = audioContext.createBiquadFilter();
-
-//     filter.type = "lowpass";
-//     filter.frequency.value = voice.filterFreq;
-
-//     // Connect audio graph
-//     osc.connect(filter);
-//     filter.connect(gainNode);
-//     gainNode.connect(masterGain);
-
-//     const velocity = (event.velocity || 100) / 127;
-
-//     gainNode.gain.setValueAtTime(0, scheduleTime);
-
-//     gainNode.gain.linearRampToValueAtTime(
-//         velocity,
-//         scheduleTime + voice.attack
-//     );
-
-//     gainNode.gain.linearRampToValueAtTime(
-//         velocity * voice.sustain,
-//         scheduleTime + voice.attack + voice.decay
-//     );
-
-//     // Schedule release
-//     osc.start(scheduleTime);
-
-//     activeNotes.set(event.note, {
-//         osc,
-//         gainNode,
-//         filter,
-//         voice
-//     });
-
-//     // Safety timeout (If NoteOff has not been received)
-
-//     const timeout = (voice.attack +
-//         voice.decay +
-//         voice.release +
-//         3) * 1000;
-
-//     setTimeout(() => {
-
-//         if (activeNotes.has(event.note))
-//             stopNote(event.note);
-
-//     }, timeout);
-// }
-
 function playTonalInstrument(event, frequency, voice, scheduleTime){
 
     stopNote(event.note);
@@ -759,57 +619,6 @@ function playTonalInstrument(event, frequency, voice, scheduleTime){
 
 }
 
-// function playDrumSound(event, scheduleTime) {
-//     // Create noise buffer for drum sounds
-//     const bufferSize = 2 * audioContext.sampleRate;
-//     const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-//     const output = noiseBuffer.getChannelData(0);
-    
-//     // Generate noise
-//     for (let i = 0; i < bufferSize; i++) {
-//         output[i] = Math.random() * 2 - 1;
-//     }
-    
-//     // Create buffer source
-//     const noise = audioContext.createBufferSource();
-//     noise.buffer = noiseBuffer;
-    
-//     // Create gain and filter for drum character
-//     const gainNode = audioContext.createGain();
-//     const filter = audioContext.createBiquadFilter();
-    
-//     // Configure based on drum type (kick, snare, etc.)
-//     const velocity = event.velocity / 127;
-//     const drumType = getDrumType(event.note);
-    
-//     switch (drumType) {
-//         case 'kick':
-//             filter.type = 'lowpass';
-//             filter.frequency.setValueAtTime(100, scheduleTime);
-//             break;
-//         case 'snare':
-//             filter.type = 'highpass';
-//             filter.frequency.setValueAtTime(200, scheduleTime);
-//             break;
-//         default:
-//             filter.type = 'bandpass';
-//             filter.frequency.setValueAtTime(1000, scheduleTime);
-//     }
-    
-//     // Envelope
-//     gainNode.gain.setValueAtTime(0, scheduleTime);
-//     gainNode.gain.linearRampToValueAtTime(velocity * 0.6, scheduleTime + 0.001);
-//     gainNode.gain.exponentialRampToValueAtTime(0.001, scheduleTime + 0.2);
-    
-//     // Connect and play
-//     noise.connect(filter);
-//     filter.connect(gainNode);
-//     gainNode.connect(masterGain);
-    
-//     noise.start(scheduleTime);
-//     noise.stop(scheduleTime + 0.2);
-// }
-
 function playDrumSound(event){
 
     toneInstruments.drums.triggerAttackRelease(
@@ -817,49 +626,6 @@ function playDrumSound(event){
     );
 
 }
-
-// function stopNote(note) {
-
-//     const voiceData = activeNotes.get(note);
-
-//     if (!voiceData)
-//         return;
-
-//     const now = audioContext.currentTime;
-
-//     try {
-
-//         voiceData.gainNode.gain.cancelScheduledValues(now);
-
-//         voiceData.gainNode.gain.setValueAtTime(
-//             voiceData.gainNode.gain.value,
-//             now
-//         );
-
-//         voiceData.gainNode.gain.linearRampToValueAtTime(
-//             0,
-//             now + voiceData.voice.release
-//         );
-
-//         voiceData.osc.stop(now + voiceData.voice.release + 0.02);
-
-//         voiceData.osc.onended = () => {
-
-//             try {
-
-//                 voiceData.osc.disconnect();
-//                 voiceData.filter.disconnect();
-//                 voiceData.gainNode.disconnect();
-
-//             } catch(e){}
-
-//         };
-
-//     }
-//     catch(e){}
-
-//     activeNotes.delete(note);
-// }
 
 function stopNote(note){
 
@@ -891,19 +657,6 @@ function getDrumType(midiNote) {
         default: return 'generic';
     }
 }
-
-// function stopAllActiveNotes() {
-
-//     activeNotes.forEach((voiceData, note) => {
-
-//         stopNote(note);
-
-//     });
-
-//     activeNotes.clear();
-
-//     console.log("🔇 All notes stopped");
-// }
 
 function stopAllActiveNotes(){
 
