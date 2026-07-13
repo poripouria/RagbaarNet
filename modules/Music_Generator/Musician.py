@@ -84,15 +84,18 @@ class ROI:
 
         if len(corners) != 4 or len(controls) != 4:
             raise ValueError("ROI must have exactly 4 corners and 4 control points")
-        
+
         self.corners = corners
         self.controls = controls
 
         self.polygon = self._build_polygon()
         self.edges = self._build_edges()
+
         self.boundary_mask = self._build_boundary_mask(width=1280, height=720)
+        self.edge_masks = self._build_edge_masks(width=1280, height=720)
 
     def _build_boundary_mask(self, width, height, thickness=3):
+
         mask = np.zeros((height, width), dtype=np.uint8)
 
         pts = np.array(self.polygon, dtype=np.int32)
@@ -107,12 +110,42 @@ class ROI:
 
         return mask.astype(bool)
 
+    def _build_edge_masks(self, width, height, thickness=3):
+
+        edge_masks = []
+
+        samples_per_edge = len(self.polygon) // 4
+
+        for i in range(4):
+
+            mask = np.zeros((height, width), dtype=np.uint8)
+
+            start = i * samples_per_edge
+            end = (i + 1) * samples_per_edge
+
+            pts = np.array(
+                self.polygon[start:end],
+                dtype=np.int32
+            )
+
+            cv2.polylines(
+                mask,
+                [pts],
+                isClosed=False,
+                color=255,
+                thickness=thickness
+            )
+
+            edge_masks.append(mask.astype(bool))
+
+        return edge_masks
+
     def _quad_bezier(self, p0, p1, p2, t):
 
         return (
-            (1 - t)**2 * np.array(p0)
+            (1 - t) ** 2 * np.array(p0)
             + 2 * (1 - t) * t * np.array(p1)
-            + t**2 * np.array(p2)
+            + t ** 2 * np.array(p2)
         )
 
     def _build_polygon(self):
@@ -146,8 +179,8 @@ class ROI:
 
         return edges
 
-    def intersects_bbox(self, bbox):
-        
+    def intersects_bbox(self, bbox, return_edges=False):
+
         x1, y1, x2, y2 = map(int, bbox["bbox"])
 
         x1 = max(0, x1)
@@ -155,10 +188,53 @@ class ROI:
         x2 = min(self.boundary_mask.shape[1], x2)
         y2 = min(self.boundary_mask.shape[0], y2)
 
-        return self.boundary_mask[y1:y2, x1:x2].any()
+        bbox_mask = np.zeros_like(self.boundary_mask, dtype=bool)
+        bbox_mask[y1:y2, x1:x2] = True
 
-    def intersects_mask(self, mask):
-        return np.logical_and(mask, self.boundary_mask).any()
+        touching = np.logical_and(
+            bbox_mask,
+            self.boundary_mask
+        ).any()
+
+        if not return_edges:
+            return touching
+
+        edge_names = ["left", "top", "right", "bottom"]
+
+        edges = []
+
+        for name, edge_mask in zip(edge_names, self.edge_masks):
+
+            if np.logical_and(bbox_mask, edge_mask).any():
+                edges.append(name)
+
+        return {
+            "touching": touching,
+            "edges": edges
+        }
+
+    def intersects_mask(self, mask, return_edges=False):
+
+        touching = np.logical_and(
+            mask,
+            self.boundary_mask
+        ).any()
+
+        if not return_edges:
+            return touching
+
+        edge_names = ["left", "top", "right", "bottom"]
+        edges = []
+
+        for name, edge_mask in zip(edge_names, self.edge_masks):
+
+            if np.logical_and(mask, edge_mask).any():
+                edges.append(name)
+
+        return {
+            "touching": touching,
+            "edges": edges
+        }
 
 class BaseMusician(ABC):
     """
@@ -265,6 +341,8 @@ class RuleBasedMusician(BaseMusician):
         """
         Map object class to MIDI note, velocity, and instrument."""
 
+        base_class = obj_class.split("_")[0]
+
         mapping = {
             "car": (60, 100, 'piano'),
             "truck": (48, 80, 'electric_piano'),
@@ -275,56 +353,101 @@ class RuleBasedMusician(BaseMusician):
             "traffic_light": (67, 70, 'strings'),
         }
 
-        return mapping.get(obj_class, (20, 70, 'piano'))  # Default to a reasonable note, velocity, and instrument
+        return mapping.get(base_class, None)
+
+    def assign_object_ids(self, objects, max_distance=100):
+
+        updated_objects = {}
+
+        for obj in objects:
+
+            bbox = obj["bbox"]
+            cls = obj["class_name"]
+
+            if "centroid" in obj.keys():
+                centroid = obj["centroid"]
+            else:
+                x1, y1, x2, y2 = bbox
+                centroid = ((x1 + x2) / 2, (y1 + y2) / 2)
+            
+            matched_id = None
+            min_distance = float("inf")
+
+            # Search previous objects
+            for object_id, previous in self.state["objects"].items():
+
+                # Only compare same class
+                if previous["class_name"] != cls:
+                    continue
+                px, py = previous["centroid"]
+                cx, cy = centroid
+                distance = ((cx-px)**2 + (cy-py)**2)**0.5
+
+                if distance < min_distance and distance < max_distance:
+                    min_distance = distance
+                    matched_id = object_id
+
+            # Existing object
+            if matched_id is not None:
+                obj_id = matched_id
+            # New object
+            else:
+                obj_id = self.state["next_object_id"]
+                self.state["next_object_id"] += 1
+
+            updated_objects[obj_id] = {
+                "class_name": cls,
+                "centroid": centroid,
+                "bbox": bbox
+            }
+
+            obj["object_id"] = obj_id
+
+        # Replace old objects
+        self.state["objects"] = updated_objects
+
+        return objects
 
     def detect_scene_events(self, bounding_boxes=None, masks=None):
 
         events = []
-            
-        if masks is not None:
 
-            for obj_class, obj_mask in masks.items():
+        if bounding_boxes is None and masks is None:
+            logger.warning("No bounding boxes or masks provided for scene event detection.")
+            return events
+        
+        bounding_boxes = self.assign_object_ids(bounding_boxes, 120)
 
-                touching = self.roi.intersects_mask(mask=obj_mask)
-                prev = self.state["touching"].get(obj_class, False)
+        for obj_class, obj_mask in masks.items():
 
-                if touching and not prev:
-                    events.append({
-                        "type": "ROI_TOUCH",
-                        "class": obj_class
-                    })
-                    self.state["touching"][obj_class] = True
+            obj_id = next((obj["object_id"] for obj in bounding_boxes if obj["class_name"] == obj_class), None)
 
-                elif not touching and prev:
-                    events.append({
-                        "type": "ROI_RELEASE",
-                        "class": obj_class
-                    })
-                    self.state["touching"][obj_class] = False
+            collision = self.roi.intersects_mask(
+                mask=obj_mask,
+                return_edges=True
+            )
+            touching = collision["touching"]
+            edges = collision["edges"]
 
-        elif bounding_boxes is not None:
+            prev = self.state["touching"].get(obj_id, False)
 
-            for obj in bounding_boxes:
+            if touching and not prev:
+                events.append({
+                    "type": "ROI_TOUCH",
+                    "object_id": obj_id,
+                    "class": obj_class,
+                    "edges": edges
+                })
+                self.state["touching"][obj_id] = True
 
-                obj_class = obj.get("class_name", "unknown")
-                obj_bbox = obj["bbox"]
-
-                touching = self.roi.intersects_bbox(bbox=obj_bbox)
-                prev = self.state["touching"].get(obj_class, False)
-
-                if touching and not prev:
-                    events.append({
-                        "type": "ROI_TOUCH",
-                        "class": obj_class
-                    })
-                    self.state["touching"][obj_class] = True
-
-                elif not touching and prev:
-                    events.append({
-                        "type": "ROI_RELEASE",
-                        "class": obj_class
-                    })
-                    self.state["touching"][obj_class] = False
+            elif not touching and prev:
+                events.append({
+                    "type": "ROI_RELEASE",
+                    "object_id": obj_id,
+                    "class": obj_class,
+                    "edges": edges
+                })
+                self.state["touching"][obj_id] = False
         
         else:
             logger.warning("No bounding boxes or masks provided for scene event detection.")
@@ -349,7 +472,13 @@ class RuleBasedMusician(BaseMusician):
         for e in scene_events:
 
             obj_class = e["class"]
-            note, velocity, instrument = self._map_classes(obj_class)
+            mapped = self._map_classes(obj_class)
+
+            if mapped is None:
+                logger.warning(f"No mapping found for object class '{obj_class}'. Skipping event.")
+                continue
+
+            note, velocity, instrument = mapped
 
             music_events.append(
                 MusicEvent(
@@ -406,7 +535,6 @@ class ContinuousPianistMusician(BaseMusician):
         }
 
         logger.info(f"🎵 ContinuousPianistMusician initialized with tempo={tempo}, key_signature={key_signature}")
-
 
 
 class Musician:
