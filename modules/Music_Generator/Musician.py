@@ -472,12 +472,12 @@ class RuleBasedMusician(BaseMusician):
         for e in scene_events:
 
             obj_class = e["class"]
-            mapped = self._map_classes(obj_class)
+            edges = e.get("edges", [])
 
+            mapped = self._map_classes(obj_class)
             if mapped is None:
                 logger.warning(f"No mapping found for object class '{obj_class}'. Skipping event.")
                 continue
-
             note, velocity, instrument = mapped
 
             music_events.append(
