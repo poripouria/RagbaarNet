@@ -493,7 +493,7 @@ class SegformerSegmentor(BaseSegmentor):
 
                 area = stats[i, cv2.CC_STAT_AREA]
 
-                if area < 100:
+                if area < 320:
                     continue
 
                 class_name = self.cityscapes_labels[class_id]
