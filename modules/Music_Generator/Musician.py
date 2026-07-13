@@ -267,6 +267,16 @@ class BaseMusician(ABC):
 
         self.frame_counter = 0
 
+        # state: keeps track of objects currently touching ROI boundary
+        self.state = {
+            "touching": {},        # object_id -> bool
+            "objects": {},         # object_id -> object info
+            "next_object_id": 0
+        }
+
+        self.roi = None  # Will be set per frame if provided
+        self.prev_roi_payload = None  # To track changes in ROI between frames
+
     def __call__(self,
         input: SegmentationResult,
         frame_id: int = 0,
@@ -297,44 +307,6 @@ class BaseMusician(ABC):
         """
         pass
 
-    def extract_features(self, segmentation_data: SegmentationResult) -> Dict[str, Any]:
-        """
-        Default feature extractor (can be overridden).
-
-        Args:
-            segmentation_data: Segmentation result instance
-        """
-
-        return segmentation_data.metadata or {}
-
-class RuleBasedMusician(BaseMusician):
-    """
-    Rule-based musician that maps scene events to music events.
-    This musician uses simple rules to generate music based on detected scene events,
-    particularly focusing on objects interacting with a defined Region of Interest (ROI).
-    """
-
-    def __init__(self, tempo=120, key_signature="C_major"):
-        """
-        Args:
-            tempo: Music tempo in BPM
-            key_signature: Key signature for music generation
-            roi: Optional ROI definition (corners + controls)
-        """
-        super().__init__(tempo, key_signature)
-        
-        # state: keeps track of objects currently touching ROI boundary
-        self.state = {
-            "touching": {},        # object_id -> bool
-            "objects": {},         # object_id -> object info
-            "next_object_id": 0
-        }
-
-        self.roi = None  # Will be set per frame if provided
-        self.prev_roi_payload = None  # To track changes in ROI between frames
-
-        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}")
-
     def _set_roi(self, roi_payload):
         
         if not roi_payload:
@@ -346,26 +318,6 @@ class RuleBasedMusician(BaseMusician):
                         controls=roi_payload.get("controls", []))
             
             logger.info(f"ROI updated for frame {self.frame_counter}")
-
-    def _map_classes(self, obj_class):
-        """
-        Map object class to MIDI note, velocity, and instrument."""
-
-        base_class = obj_class.split("_")[0]
-
-        mapping = {
-            "car": (60, 100, 'piano'),
-            "truck": (48, 80, 'electric_piano'),
-            "bus": (48, 80, 'electric_piano'),
-            "bicycle": (64, 90, 'acoustic_guitar'),
-            "person": (72, 110, 'acoustic_guitar'),
-            "road": (36, 50, 'drums'),
-            "traffic light": (67, 70, 'strings'),
-            "traffic sign": (67, 70, 'strings'),
-            "stop sign": (69, 80, 'strings'),
-        }
-
-        return mapping.get(base_class, None)
 
     def assign_object_ids(self, objects, max_distance=100):
 
@@ -440,7 +392,7 @@ class RuleBasedMusician(BaseMusician):
             obj_mask = masks.get(obj_class, None)
 
             if obj_mask is None:
-                logger.warning(f"No mask found for object class '{obj_class}'. Skipping event detection for this object.")
+                logger.warning(f"No mask found for object class '{obj_class}'. Skipping event detection.")
                 continue
 
             collision = self.roi.intersects_mask(
@@ -486,6 +438,53 @@ class RuleBasedMusician(BaseMusician):
 
         return events
 
+    def extract_features(self, segmentation_data: SegmentationResult) -> Dict[str, Any]:
+        """
+        Default feature extractor (can be overridden).
+
+        Args:
+            segmentation_data: Segmentation result instance
+        """
+
+        return segmentation_data.metadata or {}
+
+class RuleBasedMusician(BaseMusician):
+    """
+    Rule-based musician that maps scene events to music events.
+    This musician uses simple rules to generate music based on detected scene events,
+    particularly focusing on objects interacting with a defined Region of Interest (ROI).
+    """
+
+    def __init__(self, tempo=120, key_signature="C_major"):
+        """
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+        """
+        super().__init__(tempo, key_signature)
+
+        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}")
+
+    def _map_classes(self, obj_class):
+        """
+        Map object class to MIDI note, velocity, and instrument."""
+
+        base_class = obj_class.split("_")[0]
+
+        mapping = {
+            "car": (60, 100, 'piano'),
+            "truck": (48, 80, 'electric_piano'),
+            "bus": (48, 80, 'electric_piano'),
+            "bicycle": (64, 90, 'acoustic_guitar'),
+            "person": (72, 110, 'acoustic_guitar'),
+            "road": (36, 50, 'drums'),
+            "traffic light": (67, 70, 'strings'),
+            "traffic sign": (67, 70, 'strings'),
+            "stop sign": (69, 80, 'strings'),
+        }
+
+        return mapping.get(base_class, None)
+    
     def generate_music(self, result, frame_id, roi):
         """
         Generate music based on the input scene data.
@@ -505,7 +504,6 @@ class RuleBasedMusician(BaseMusician):
                 continue  # Skip "stay" events for music generation
 
             obj_class = e["class"]
-            edges = e.get("edges", [])
 
             mapped = self._map_classes(obj_class)
             if mapped is None:
@@ -525,7 +523,7 @@ class RuleBasedMusician(BaseMusician):
                 )
             )
             
-            logger.info(f"Mapped scene event {e} to music event: note={note}, velocity={velocity}, instrument={instrument}")
+            logger.info(f"Mapped scene event to music event {music_events[-1]}")
 
         if self.frame_counter % 50 == 0:  # Log occasionally for debugging. Every 50 frames
             logger.info(
@@ -543,9 +541,6 @@ class RuleBasedMusician(BaseMusician):
                 "extra": result.metadata or {}
             }
         )
-        
-    def extract_features(self, segmentation_result):
-        return segmentation_result.metadata
 
 class ContinuousPianistMusician(RuleBasedMusician):
     """
@@ -559,9 +554,10 @@ class ContinuousPianistMusician(RuleBasedMusician):
         Args:
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
-            roi: Optional ROI definition (corners + controls)
         """
         super().__init__(tempo, key_signature)
+
+        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}")
 
     def _map_classes(self, obj_class):
         """
@@ -583,6 +579,113 @@ class ContinuousPianistMusician(RuleBasedMusician):
 
         return mapping.get(base_class, None)
 
+class LSTMMusician(BaseMusician):
+    """
+    LSTM-based musician that generates music using a trained LSTM model. This musician
+    leverages a neural network to produce music based on learned patterns from training data.
+    """
+
+    def __init__(self, tempo=120, key_signature="C_major", temperature=1.0):
+        """
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+            temperature: Sampling temperature for LSTM model
+        """
+        super().__init__(tempo, key_signature)
+
+        from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
+        self.generator = MelodyGenerator()
+        self.temperature = temperature
+
+        self.max_notes_per_trigger = 2
+        self.last_seed_notes = ["67", "_", "67", "_", "67", "_", "_", "65", "64", "_"]
+        self._note_buffer = list(self.last_seed_notes)
+        self._rt_generator = None
+
+        self.important_labels = [
+            "car", "truck", "bus", 
+            "bicycle", "person", "motorcycle",
+            "traffic light", "traffic sign", "stop sign"]
+
+        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
+
+    def generate_music(self, result, frame_id, roi):
+        """
+        Generate music based on the input scene data using the LSTM model.
+        """
+
+        logger.info(f"🎵 Generating music with LSTM for frame {frame_id}")
+
+        self.frame_counter = frame_id
+        self._set_roi(roi)
+
+        scene_events = self.detect_scene_events(result.bounding_boxes, result.masks)
+        music_events = []
+
+        for e in scene_events:
+
+            if e["type"] == "ROI_STAY":  # Skip "stay" events for music generation
+                if self._rt_generator is not None:
+                    self.last_seed_notes = self._note_buffer[-10:]  # Keep last 10 notes for seed
+                self.last_seed_notes.extend(["r", "_", "_", "_"])  # Add rest and hold to seed
+                continue
+
+            obj_class = e["class"]
+            edges = e.get("edges", [])
+
+            if obj_class.split("_")[0] not in self.important_labels:
+                logger.info(f"Skipping unimportant object class '{obj_class}' for LSTM music generation.")
+                continue
+
+            # Generate new notes using the LSTM model
+            self._rt_generator = self.generator.generate_melody_RT(
+                seed=" ".join(self.last_seed_notes),
+                num_steps=400,
+                temperature=self.temperature
+            )
+
+            new_note = next(self._rt_generator, None)
+
+            self._note_buffer.append(new_note)
+            if len(self._note_buffer) > 20:
+                self._note_buffer = self._note_buffer[-20:]
+            self.last_seed_notes = self._note_buffer[-10:]
+
+            if new_note.isdigit():
+                # '_' (hold) and 'r' (rest) intentionally produce no event.
+                music_events.append(
+                    MusicEvent(
+                        event_type="note_on" if e["type"] == "ROI_TOUCH" else "note_off",
+                        note=int(new_note),
+                        channel=0,
+                        velocity=100 if e["type"] == "ROI_TOUCH" else 0,
+                        instrument="piano",
+                        timestamp=self.frame_counter,
+                        metadata=e
+                    )
+                )
+            
+            logger.info(f"Mapped scene event to music event: {music_events[-1]}")
+
+        if self.frame_counter % 50 == 0:  # Log occasionally for debugging. Every 50 frames
+            logger.info(
+                f"🎵 Generated {len(music_events)} music events for frame {frame_id}"
+            )
+
+        return MusicFrame(
+            events=music_events,
+            frame_id=frame_id,
+            tempo=self.tempo,
+            key_signature=self.key_signature,
+            metadata={
+                "scene_events": scene_events,
+                "active_objects": list(self.state["objects"].values()),
+                "extra": result.metadata or {}
+            }
+        )
+
+
 class Musician:
     """
     Main Musician class that provides a unified interface for different music generation models.
@@ -602,11 +705,11 @@ class Musician:
             "label": "Continuous Pianist",
             "description": "Piano musician with sustained/continuous note playback.",
         },
-        # "lstm-onessen": {
-        #     "class": LSTMMusician,
-        #     "label": "LSTM (Essen Folk Song)",
-        #     "description": "Neural LSTM model trained on the Essen folk song collection.",
-        # },
+        "lstm-onessen": {
+            "class": LSTMMusician,
+            "label": "LSTM (Essen Folk Song)",
+            "description": "Neural LSTM model trained on the Essen folk song collection.",
+        },
     }
 
     def __init__(self, musician_type: str = "rule-based", tempo: int = 120, key_signature: str = "C_major"):
