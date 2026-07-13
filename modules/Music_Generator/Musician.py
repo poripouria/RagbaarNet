@@ -75,11 +75,20 @@ class ROI:
     ROI defined by 4 corner points + 4 bezier control points
     """
 
-    def __init__(self, corners: List[Tuple[float, float]], controls: List[Tuple[float, float]]):
+    def __init__(
+        self,
+        corners: List[Tuple[float, float]],
+        controls: List[Tuple[float, float]],
+        frame_size: Tuple[int, int] = (1280, 720),
+    ):
         """
         Args:
             corners: List of 4 corner points (x, y)
             controls: List of 4 bezier control points (x, y)
+            frame_size: (width, height) of the frame these masks must align with.
+                Must match the actual segmentation_map / mask resolution used at
+                collision-check time, or intersects_mask() will silently misfire
+                (wrong shape -> wrong/empty results).
         """
 
         if len(corners) != 4 or len(controls) != 4:
@@ -87,12 +96,13 @@ class ROI:
 
         self.corners = corners
         self.controls = controls
+        self.frame_width, self.frame_height = frame_size
 
         self.polygon = self._build_polygon()
         self.edges = self._build_edges()
 
-        self.boundary_mask = self._build_boundary_mask(width=1280, height=720)
-        self.edge_masks = self._build_edge_masks(width=1280, height=720)
+        self.boundary_mask = self._build_boundary_mask(width=self.frame_width, height=self.frame_height)
+        self.edge_masks = self._build_edge_masks(width=self.frame_width, height=self.frame_height)
 
     def _build_boundary_mask(self, width, height, thickness=3):
 
@@ -199,7 +209,7 @@ class ROI:
         if not return_edges:
             return touching
 
-        edge_names = ["left", "top", "right", "bottom"]
+        edge_names = ["top", "right", "bottom", "left"]
 
         edges = []
 
@@ -223,7 +233,7 @@ class ROI:
         if not return_edges:
             return touching
 
-        edge_names = ["left", "top", "right", "bottom"]
+        edge_names = ["top", "right", "bottom", "left"]
         edges = []
 
         for name, edge_mask in zip(edge_names, self.edge_masks):
