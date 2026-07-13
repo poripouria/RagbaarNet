@@ -431,7 +431,7 @@ class RuleBasedMusician(BaseMusician):
             logger.warning("No bounding boxes or masks provided for scene event detection.")
             return events
         
-        bounding_boxes = self.assign_object_ids(bounding_boxes, 200)
+        bounding_boxes = self.assign_object_ids(bounding_boxes, 80)
 
         for obj in bounding_boxes:
 
