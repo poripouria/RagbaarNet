@@ -333,7 +333,7 @@ class RuleBasedMusician(BaseMusician):
         self.roi = None  # Will be set per frame if provided
         self.prev_roi_payload = None  # To track changes in ROI between frames
 
-        logger.info(f"🎵 RuleBasedMusician initialized with tempo={tempo}, key_signature={key_signature}")
+        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}")
 
     def _set_roi(self, roi_payload):
         
@@ -547,7 +547,7 @@ class RuleBasedMusician(BaseMusician):
     def extract_features(self, segmentation_result):
         return segmentation_result.metadata
 
-class ContinuousPianistMusician(BaseMusician):
+class ContinuousPianistMusician(RuleBasedMusician):
     """
     Continuous Pianist musician that generates sustained piano notes based on scene events.
     This musician is designed to produce continuous and overlapping piano notes, allowing for
@@ -562,14 +562,26 @@ class ContinuousPianistMusician(BaseMusician):
             roi: Optional ROI definition (corners + controls)
         """
         super().__init__(tempo, key_signature)
-        
-        # state: keeps track of objects currently touching ROI boundary
-        self.state = {
-            "touching": {}  # object_id -> bool
+
+    def _map_classes(self, obj_class):
+        """
+        Map object class to MIDI note, velocity, and instrument."""
+
+        base_class = obj_class.split("_")[0]
+
+        mapping = {
+            "car": (60, 110, 'piano'),
+            "truck": (48, 80, 'piano'),
+            "bus": (42, 80, 'piano'),
+            "bicycle": (64, 90, 'piano'),
+            "person": (72, 110, 'piano'),
+            "road": (36, 50, 'piano'),
+            "traffic light": (80, 70, 'piano'),
+            "traffic sign": (67, 70, 'piano'),
+            "stop sign": (69, 80, 'piano'),
         }
 
-        logger.info(f"🎵 ContinuousPianistMusician initialized with tempo={tempo}, key_signature={key_signature}")
-
+        return mapping.get(base_class, None)
 
 class Musician:
     """
@@ -585,11 +597,11 @@ class Musician:
             "label": "Rule-Based Musician",
             "description": "Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).",
         },
-        # "continuous_pianist": {
-        #     "class": ContinuousPianistMusician,
-        #     "label": "Continuous Pianist",
-        #     "description": "Piano musician with sustained/continuous note playback.",
-        # },
+        "continuous_pianist": {
+            "class": ContinuousPianistMusician,
+            "label": "Continuous Pianist",
+            "description": "Piano musician with sustained/continuous note playback.",
+        },
         # "lstm-onessen": {
         #     "class": LSTMMusician,
         #     "label": "LSTM (Essen Folk Song)",
