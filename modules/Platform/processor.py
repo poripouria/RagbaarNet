@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import colorsys
 import zlib
+import traceback
 import os
 import sys
 from queue import Queue, Empty
@@ -514,7 +515,8 @@ class Processor:
                                     logger.debug("🎵 Generated %s music events for frame %s", len(music_frame.events), self.frame_counter)
 
                             except Exception as music_err:
-                                logger.warning("❌ Error generating music: %s", music_err)
+                                logger.error("❌ Error generating music: %s", music_err)
+                                logger.error("Traceback:\n%s", traceback.format_exc())
 
                         if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                             logger.debug("✅ Segmentation completed for frame %s", self.frame_counter)
