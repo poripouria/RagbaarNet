@@ -558,11 +558,9 @@ class Processor:
                 events_data = []
 
                 for event in music_frame.events:
-                    instrument_name = event.metadata.get('instrument', 'unknown')
+                    instrument_name = event.instrument
                     if instrument_name in ('unknown', None, ''):
-                        instrument_name = 'piano'
-                    elif isinstance(instrument_name, str) and instrument_name.lower() in ('piano_only', 'piano-only'):
-                        instrument_name = 'piano'
+                        logger.error("❌ Event has unknown instrument: %s", event)
 
                     event_data = {
                         'event_type': event.event_type,
@@ -572,7 +570,6 @@ class Processor:
                         'instrument': instrument_name,
                         'timestamp': event.timestamp,
                         # 'class_name': event.metadata.get('class_name', 'unknown'),
-                        # 'presence_ratio': event.metadata.get('presence_ratio', 0.0)
                     }
                     events_data.append(event_data)
 
