@@ -403,6 +403,9 @@ class RuleBasedMusician(BaseMusician):
             # New object
             else:
                 obj_id = self.state["next_object_id"]
+                if self.state["next_object_id"] > 5000:
+                    self.state["next_object_id"] = 0
+                    logger.warning("ID counter exceeded 5000, resetting to 0. This may cause ID collisions.")
                 self.state["next_object_id"] += 1
 
             updated_objects[obj_id] = {
@@ -426,11 +429,17 @@ class RuleBasedMusician(BaseMusician):
             logger.warning("No bounding boxes or masks provided for scene event detection.")
             return events
         
-        bounding_boxes = self.assign_object_ids(bounding_boxes, 120)
+        bounding_boxes = self.assign_object_ids(bounding_boxes, 200)
 
-        for obj_class, obj_mask in masks.items():
+        for obj in bounding_boxes:
 
-            obj_id = next((obj["object_id"] for obj in bounding_boxes if obj["class_name"] == obj_class), None)
+            obj_id = obj["object_id"]
+            obj_class = obj["class_name"]
+            obj_mask = masks.get(obj_class, None)
+
+            if obj_mask is None:
+                logger.warning(f"No mask found for object class '{obj_class}'. Skipping event detection for this object.")
+                continue
 
             collision = self.roi.intersects_mask(
                 mask=obj_mask,
@@ -450,7 +459,16 @@ class RuleBasedMusician(BaseMusician):
                 })
                 self.state["touching"][obj_id] = True
 
-            elif not touching and prev:
+            elif touching and prev:
+                events.append({
+                    "type": "ROI_STAY",
+                    "object_id": obj_id,
+                    "class": obj_class,
+                    "edges": edges
+                })
+                self.state["touching"][obj_id] = True
+
+            else:
                 events.append({
                     "type": "ROI_RELEASE",
                     "object_id": obj_id,
@@ -516,6 +534,7 @@ class RuleBasedMusician(BaseMusician):
             key_signature=self.key_signature,
             metadata={
                 "scene_events": scene_events,
+                "active_objects": list(self.state["objects"].values()),
                 "extra": result.metadata or {}
             }
         )
