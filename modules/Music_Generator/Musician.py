@@ -361,6 +361,7 @@ class RuleBasedMusician(BaseMusician):
             "person": (72, 110, 'drums'),
             "road": (36, 50, 'bass'),
             "traffic light": (67, 70, 'strings'),
+            "stop sign": (69, 80, 'strings'),
         }
 
         return mapping.get(base_class, None)
