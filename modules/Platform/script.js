@@ -52,7 +52,8 @@ let updateThrottleInterval = 50; // Throttle updates to 50ms (20 FPS)
 let audioContext = null;
 let masterGain = null;
 let isMusicGenerationActive = false;
-let activeNotes = new Map(); // Track currently playing notes
+let activeNotes = new Map(); // Track currently playing (sustained, tonal) notes
+let recentPercussion = new Map(); // Track short-lived drum hits: key -> expiry timestamp
 let instrumentVoices = {}; // Store instrument voice settings
 let musicEventQueue = []; // Queue for scheduling music events
 let lastMusicEventTime = 0;
@@ -620,7 +621,8 @@ function playTonalInstrument(event, instrument, scheduleTime) {
     activeNotes.set(event.note, {
         synth: voice.synth,
         noteName,
-        release: voice.release
+        release: voice.release,
+        instrument
     });
 
     // Safety timeout (If NoteOff has not been received)
@@ -655,6 +657,11 @@ function playDrumSound(event, scheduleTime) {
         } else {
             voice.triggerAttackRelease("16n", scheduleTime, velocity);
         }
+
+        // Drum hits are transient (no sustain/release we can query), so just keep
+        // "drums" visible in the status for a short window after each hit.
+        const PERCUSSION_VISIBILITY_MS = 600;
+        recentPercussion.set(`${drumType}-${Date.now()}`, Date.now() + PERCUSSION_VISIBILITY_MS);
     } catch (e) {
         console.warn('⚠️ Tone.js drum trigger error:', e);
     }
@@ -700,6 +707,7 @@ function stopAllActiveNotes() {
     });
 
     activeNotes.clear();
+    recentPercussion.clear();
 
     console.log("🔇 All notes stopped");
 }
@@ -743,19 +751,33 @@ function updateMusicStatusDisplay() {
     updateStatus(message);
 }
 
+function getCurrentlyPlayingInstruments() {
+    const now = Date.now();
+    const instruments = {};
+
+    // Sustained tonal notes that are still actually ringing
+    activeNotes.forEach(voiceData => {
+        const instr = normalizeInstrumentName(voiceData.instrument, 'piano');
+        instruments[instr] = (instruments[instr] || 0) + 1;
+    });
+
+    // Drum hits have no sustain to track, so keep them visible for a short window
+    recentPercussion.forEach((expiresAt, key) => {
+        if (expiresAt <= now) {
+            recentPercussion.delete(key);
+        } else {
+            instruments['drums'] = (instruments['drums'] || 0) + 1;
+        }
+    });
+
+    return instruments;
+}
+
 function updateMusicInfo(musicData) {
     const eventCount = (musicData && Array.isArray(musicData.events)) ? musicData.events.length : 0;
-    const tempo = clampTempoValue((musicData && Number.isInteger(musicData.tempo)) ? musicData.tempo : currentTempo);
     const key = (musicData && musicData.key_signature) ? musicData.key_signature : lastMusicStatus.keySignature;
 
-    const instruments = {};
-    if (musicData && Array.isArray(musicData.events)) {
-        musicData.events.forEach(event => {
-            const instr = normalizeInstrumentName(event.instrument, 'piano');
-            instruments[instr] = (instruments[instr] || 0) + 1;
-        });
-    }
-
+    const instruments = getCurrentlyPlayingInstruments();
     const instrumentSummary = Object.entries(instruments)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([instr, count]) => `${formatInstrumentName(instr)} (${count})`);
