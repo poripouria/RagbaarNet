@@ -523,7 +523,7 @@ class RuleBasedMusician(BaseMusician):
                 )
             )
             
-            logger.info(f"Mapped scene event to music event {music_events[-1]}")
+            logger.info(f"Mapped scene event: {e} to music event: 'type': {'note_on' if e['type'] == 'ROI_TOUCH' else 'note_off'}, 'note': {note}, 'velocity': {velocity if e['type'] == 'ROI_TOUCH' else 0}, 'instrument': '{instrument}'")
 
         if self.frame_counter % 50 == 0:  # Log occasionally for debugging. Every 50 frames
             logger.info(
@@ -666,7 +666,7 @@ class LSTMMusician(BaseMusician):
                     )
                 )
             
-            logger.info(f"Mapped scene event to music event: {music_events[-1]}")
+            logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_on" if e["type"] == "ROI_TOUCH" else "note_off"}, 'note': {new_note}, 'velocity': {100 if e["type"] == "ROI_TOUCH" else 0}, 'instrument': 'piano'")
 
         if self.frame_counter % 50 == 0:  # Log occasionally for debugging. Every 50 frames
             logger.info(
