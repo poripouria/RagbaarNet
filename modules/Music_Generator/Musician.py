@@ -269,7 +269,6 @@ class BaseMusician(ABC):
 
         # state: keeps track of objects currently touching ROI boundary
         self.state = {
-            "touching": {},        # object_id -> bool
             "objects": {},         # object_id -> object info
             "next_object_id": 0
         }
@@ -354,6 +353,9 @@ class BaseMusician(ABC):
             # Existing object
             if matched_id is not None:
                 obj_id = matched_id
+                previous = self.state["objects"][obj_id]
+                is_touching = previous["touching"]
+
             # New object
             else:
                 obj_id = self.state["next_object_id"]
@@ -361,14 +363,30 @@ class BaseMusician(ABC):
                     self.state["next_object_id"] = 0
                     logger.warning("ID counter exceeded 5000, resetting to 0. This may cause ID collisions.")
                 self.state["next_object_id"] += 1
+                is_touching = False
 
             updated_objects[obj_id] = {
                 "class_name": cls,
                 "centroid": centroid,
-                "bbox": bbox
+                "bbox": bbox,
+                "touching": is_touching,
+                "missing_frames": 0,
+                "last_seen_frame": self.frame_counter
             }
 
             obj["object_id"] = obj_id
+
+        MAX_MISSING_FRAMES = 8
+
+        for object_id, previous in self.state["objects"].items():
+
+            if object_id in updated_objects:
+                continue
+
+            previous["missing_frames"] += 1
+
+            if previous["missing_frames"] <= MAX_MISSING_FRAMES:
+                updated_objects[object_id] = previous
 
         # Replace old objects
         self.state["objects"] = updated_objects
@@ -402,7 +420,8 @@ class BaseMusician(ABC):
             touching = collision["touching"]
             edges = collision["edges"]
 
-            prev = self.state["touching"].get(obj_id, False)
+            track = self.state["objects"].get(obj_id, {})
+            prev = track.get("touching", False)
 
             if touching and not prev:
                 events.append({
@@ -411,7 +430,7 @@ class BaseMusician(ABC):
                     "class": obj_class,
                     "edges": edges
                 })
-                self.state["touching"][obj_id] = True
+                self.state["objects"][obj_id]["touching"] = True
 
             elif not touching and prev:
                 events.append({
@@ -420,7 +439,7 @@ class BaseMusician(ABC):
                     "class": obj_class,
                     "edges": edges
                 })
-                self.state["touching"][obj_id] = False
+                self.state["objects"][obj_id]["touching"] = False
         
         else:
             logger.warning("No bounding boxes or masks provided for scene event detection.")
@@ -491,21 +510,20 @@ class RuleBasedMusician(BaseMusician):
 
         for e in scene_events:
 
-            obj_class = e["class"]
-
-            mapped = self._map_classes(obj_class)
-            if mapped is None:
-                logger.warning(f"No mapping found for object class '{obj_class}'. Skipping event.")
-                continue
-            note, velocity, instrument = mapped
             event = None
-
             if e["type"] == "ROI_TOUCH":
                 event = "note_on"
             elif e["type"] == "ROI_RELEASE":
                 event = "note_off"
             else:
-                continue  # Skip events
+                continue  # Skip event
+
+            obj_class = e["class"]
+            mapped = self._map_classes(obj_class)
+            if mapped is None:
+                logger.warning(f"No mapping found for object class '{obj_class}'. Skipping event.")
+                continue
+            note, velocity, instrument = mapped
                 
             music_events.append(
                 MusicEvent(
@@ -519,7 +537,7 @@ class RuleBasedMusician(BaseMusician):
                 )
             )
             
-            logger.info(f"Mapped scene event: {e} to music event: 'type': {'note_on' if e['type'] == 'ROI_TOUCH' else 'note_off'}, 'note': {note}, 'velocity': {velocity if e['type'] == 'ROI_TOUCH' else 0}, 'instrument': '{instrument}'")
+            logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity if e['type'] == 'ROI_TOUCH' else 0}, 'instrument': '{instrument}'")
 
         if self.frame_counter % 50 == 0:  # Log occasionally for debugging. Every 50 frames
             logger.info(
@@ -594,15 +612,18 @@ class LSTMMusician(BaseMusician):
         self.generator = MelodyGenerator()
         self.temperature = temperature
 
-        self.max_notes_per_trigger = 2
-        self.last_seed_notes = ["67", "_", "67", "_", "67", "_", "_", "65", "64", "_"]
+        self.last_seed_notes = ["67", "_", "67", "_", 
+                                "67", "_", "_", "65", 
+                                "64", "_", "62", "_", 
+                                "60", "_", "60", "_"]
         self._note_buffer = list(self.last_seed_notes)
         self._rt_generator = None
 
         self.important_labels = [
             "car", "truck", "bus", 
             "bicycle", "person", "motorcycle",
-            "traffic light", "traffic sign", "stop sign"]
+            # "traffic light", "traffic sign", "stop sign"
+        ]
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
 
@@ -621,38 +642,29 @@ class LSTMMusician(BaseMusician):
 
         for e in scene_events:
 
-            if e["type"] == "ROI_STAY":  # Skip "stay" events for music generation
-                if self._rt_generator is not None:
-                    self.last_seed_notes = self._note_buffer[-10:]  # Keep last 10 notes for seed
-                self.last_seed_notes.extend(["r", "_", "_", "_"])  # Add rest and hold to seed
-                continue
-
             obj_class = e["class"]
-            edges = e.get("edges", [])
-
             if obj_class.split("_")[0] not in self.important_labels:
-                logger.info(f"Skipping unimportant object class '{obj_class}' for LSTM music generation.")
+                logger.info(f"Skipping unimportant object class '{obj_class}'.")
                 continue
 
-            # Generate new notes using the LSTM model
-            self._rt_generator = self.generator.generate_melody_RT(
-                seed=" ".join(self.last_seed_notes),
-                num_steps=400,
-                temperature=self.temperature
-            )
+            # '_' (hold) and 'r' (rest) intentionally produce no event.
+            if e["type"] == "ROI_TOUCH":
 
-            new_note = next(self._rt_generator, None)
+                # Generate new notes using the LSTM model
+                self._rt_generator = self.generator.generate_melody_RT(
+                    seed=" ".join(self.last_seed_notes),
+                    num_steps=400,
+                    temperature=self.temperature
+                )
 
-            self._note_buffer.append(new_note)
-            if len(self._note_buffer) > 20:
-                self._note_buffer = self._note_buffer[-20:]
-            self.last_seed_notes = self._note_buffer[-10:]
+                while True:
+                    new_note = next(self._rt_generator)
+                    if new_note.isdigit():
+                        break
 
-            if new_note.isdigit():
-                # '_' (hold) and 'r' (rest) intentionally produce no event.
                 music_events.append(
                     MusicEvent(
-                        event_type="note_on" if e["type"] == "ROI_TOUCH" else "note_off",
+                        event_type="note_on",
                         note=int(new_note),
                         channel=0,
                         velocity=100 if e["type"] == "ROI_TOUCH" else 0,
@@ -661,9 +673,48 @@ class LSTMMusician(BaseMusician):
                         metadata=e
                     )
                 )
-            
-            logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_on" if e["type"] == "ROI_TOUCH" else "note_off"}, 'note': {new_note}, 'velocity': {100 if e["type"] == "ROI_TOUCH" else 0}, 'instrument': 'piano'")
 
+                self._note_buffer.append(new_note)
+
+                logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_on"}, 'note': {new_note}, 'velocity': {100 if e["type"] == "ROI_TOUCH" else 0}, 'instrument': 'piano'")
+
+            elif e["type"] == "ROI_RELEASE":
+                
+                # Find the last note that was played and turn it off
+                last_note = None
+                for note in reversed(self._note_buffer):
+                    if note.isdigit():
+                        last_note = int(note)
+                        break
+
+                if last_note is not None:
+                    music_events.append(
+                        MusicEvent(
+                            event_type="note_off",
+                            note=int(last_note),
+                            channel=0,
+                            velocity=0,
+                            instrument="piano",
+                            timestamp=self.frame_counter,
+                            metadata=e
+                        )
+                    )
+
+                else:
+                    logger.warning("No previous note found to turn off on ROI_RELEASE event.")
+
+                self._note_buffer.extend(["r", "_"])
+
+                logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_off"}, 'note': {last_note}, 'velocity': 0, 'instrument': 'piano'")
+
+            else:
+                self.last_seed_notes.append("_")
+                continue
+
+            if len(self._note_buffer) > 24:
+                self._note_buffer = self._note_buffer[-24:]
+            self.last_seed_notes = self._note_buffer[-16:]
+            
         if self.frame_counter % 50 == 0:  # Log occasionally for debugging. Every 50 frames
             logger.info(
                 f"🎵 Generated {len(music_events)} music events for frame {frame_id}"
@@ -708,7 +759,7 @@ class Musician:
         },
     }
 
-    def __init__(self, musician_type: str = "rule-based", tempo: int = 120, key_signature: str = "C_major"):
+    def __init__(self, musician_type: str = "lstm-onessen", tempo: int = 120, key_signature: str = "C_major"):
         """
         Initialize the main Musician.
 
@@ -721,41 +772,15 @@ class Musician:
         self.musician_type = musician_type.lower()
         self.tempo = tempo
         self.key_signature = key_signature
-        self.musician = self._create_musician(musician_type, tempo, key_signature)
 
-        logger.info(f"🎵 Musician initialized: {musician_type}")
-
-    def _create_musician(self, musician_type: str, tempo: int, key_signature: str) -> BaseMusician:
-        """Create the appropriate musician based on type."""
-
-        entry = self.MUSICIAN_REGISTRY.get(musician_type.lower())
+        entry = self.MUSICIAN_REGISTRY.get(self.musician_type)
         if entry is None:
             available = ", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))
             raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: {available}")
         
-        return entry["class"](tempo, key_signature)
+        self.musician = entry["class"](tempo, key_signature)
 
-    def __call__(self, 
-                 input,  # result
-                 frame_id: int = 0,
-                 roi: Dict[str, Any] = None,
-                 ) -> MusicFrame:
-        """
-        Generate music based on segmentation data.
-
-        Args:
-            input: Segmentation result
-            frame_id: Frame identifier for tracking
-            roi: Region of interest data
-
-        Returns:
-            MusicFrame containing generated music events
-        """
-
-        if not isinstance(input, SegmentationResult):
-            raise ValueError("Input must be a SegmentationResult instance")
-
-        return self.musician(input, frame_id, roi)
+        logger.info(f"🎵 Musician initialized: {musician_type}")
 
     def switch_musician(self, musician_type: str, tempo: int = None, key_signature: str = None) -> None:
         """
@@ -790,3 +815,25 @@ class Musician:
             {"id": musician_id, "label": info["label"], "description": info["description"]}
             for musician_id, info in cls.MUSICIAN_REGISTRY.items()
         ]
+
+    def __call__(self, 
+                 input,  # result
+                 frame_id: int = 0,
+                 roi: Dict[str, Any] = None,
+                 ) -> MusicFrame:
+        """
+        Generate music based on segmentation data.
+
+        Args:
+            input: Segmentation result
+            frame_id: Frame identifier for tracking
+            roi: Region of interest data
+
+        Returns:
+            MusicFrame containing generated music events
+        """
+
+        if not isinstance(input, SegmentationResult):
+            raise ValueError("Input must be a SegmentationResult instance")
+
+        return self.musician(input, frame_id, roi)
