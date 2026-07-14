@@ -413,16 +413,7 @@ class BaseMusician(ABC):
                 })
                 self.state["touching"][obj_id] = True
 
-            elif touching and prev:
-                events.append({
-                    "type": "ROI_STAY",
-                    "object_id": obj_id,
-                    "class": obj_class,
-                    "edges": edges
-                })
-                self.state["touching"][obj_id] = True
-
-            else:
+            elif not touching and prev:
                 events.append({
                     "type": "ROI_RELEASE",
                     "object_id": obj_id,
@@ -500,9 +491,6 @@ class RuleBasedMusician(BaseMusician):
 
         for e in scene_events:
 
-            if e["type"] == "ROI_STAY":
-                continue  # Skip "stay" events for music generation
-
             obj_class = e["class"]
 
             mapped = self._map_classes(obj_class)
@@ -510,10 +498,18 @@ class RuleBasedMusician(BaseMusician):
                 logger.warning(f"No mapping found for object class '{obj_class}'. Skipping event.")
                 continue
             note, velocity, instrument = mapped
+            event = None
 
+            if e["type"] == "ROI_TOUCH":
+                event = "note_on"
+            elif e["type"] == "ROI_RELEASE":
+                event = "note_off"
+            else:
+                continue  # Skip events
+                
             music_events.append(
                 MusicEvent(
-                    event_type="note_on" if e["type"] == "ROI_TOUCH" else "note_off",
+                    event_type=event,
                     note=note,
                     channel=0,
                     velocity=velocity if e["type"] == "ROI_TOUCH" else 0,
