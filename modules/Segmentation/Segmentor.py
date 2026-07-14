@@ -135,7 +135,7 @@ class YOLOSegmentor(BaseSegmentor):
     capabilities including bounding boxes and individual object masks.
     """
 
-    def __init__(self, model_path: str = "modules/Segmentation/Pre-trained Models/yolo11/yolo11m-seg.pt", device: str = 'auto'):
+    def __init__(self, model_path: str = "modules/Segmentation/Pre-trained Models/yolo11/yolo11l-seg.pt", device: str = 'auto'):
         """
         Initialize YOLO segmentor.
 
