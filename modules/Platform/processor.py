@@ -117,7 +117,7 @@ class Processor:
         # Initialize music generation
         logger.info("🔄 Initializing music generation...")
         try:
-            self.musician = Musician('rule-based', tempo=120, key_signature="C_major")
+            self.musician = Musician('lstm-onessen', tempo=120, key_signature="C_major")
             self.music_queue = Queue(maxsize=5)
             self.current_music = None
             self.music_enabled = True
