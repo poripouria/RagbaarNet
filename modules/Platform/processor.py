@@ -89,12 +89,12 @@ class Processor:
                         '..',
                         'Segmentation',
                         'Pre-trained Models',
-                        'yolo11',
-                        'yolo11s-seg.pt',
+                        'yolo26',
+                        'yolo26l-seg.pt',
                     )
                 self.segmentor = Segmentor('yolo', model_path=model_path)
                 logger.info("✅ YOLO Segmentor initialized successfully")
-            else:
+            elif model_type == 'segformer':
                 if not model_path:
                     model_path = os.environ.get(
                         'RAGBAARNET_SEGFORMER_PATH',
@@ -104,7 +104,7 @@ class Processor:
                                 '..',
                                 'Segmentation',
                                 'Pre-trained Models',
-                                'segformer-b2-finetuned-cityscapes-1024-1024',
+                                'segformer-b4-finetuned-cityscapes-1024-1024',
                             )
                         )
                     )

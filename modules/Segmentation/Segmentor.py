@@ -135,7 +135,7 @@ class YOLOSegmentor(BaseSegmentor):
     capabilities including bounding boxes and individual object masks.
     """
 
-    def __init__(self, model_path: str = "yolo11/yolo11s-seg.pt", device: str = 'auto'):
+    def __init__(self, model_path: str = "modules/Segmentation/Pre-trained Models/yolo11/yolo11m-seg.pt", device: str = 'auto'):
         """
         Initialize YOLO segmentor.
 
@@ -152,7 +152,7 @@ class YOLOSegmentor(BaseSegmentor):
         try:
             # Check if model path exists in Pre-trained Models directory
             if not os.path.exists(self.model_path):
-                pretrained_path = os.path.join("modules/Segmentation/Pre-trained Models", self.model_path)
+                pretrained_path = os.path.join(self.model_path)
                 if os.path.exists(pretrained_path):
                     self.model_path = pretrained_path
 
@@ -202,7 +202,6 @@ class YOLOSegmentor(BaseSegmentor):
             results = self.model.predict(
                 source = yolo_input,
                 device = self.device,
-                half = (self.device.startswith("cuda") and torch.cuda.is_available()),
                 verbose = False
             )[0]
 
