@@ -267,12 +267,12 @@ class BaseMusician(ABC):
 
         self.frame_counter = 0
 
-        # state: keeps track of objects currently touching ROI boundary
+        # state: keeps track of objects
         self.state = {
             "objects": {},         # object_id -> object info
             "next_object_id": 0
         }
-        self.max_missing_frames = 8  # Number of frames to keep an object in memory after it disappears
+        self.max_missing_frames = 4  # Number of frames to keep an object in memory after it disappears
 
         self.roi = None  # Will be set per frame if provided
         self.prev_roi_payload = None  # To track changes in ROI between frames
@@ -320,6 +320,11 @@ class BaseMusician(ABC):
             logger.info(f"ROI updated for frame {self.frame_counter}")
 
     def assign_object_ids(self, objects, max_distance=100):
+        """
+        Assign unique IDs to detected objects based on their bounding boxes and class names. 
+        The rule is to match objects across frames based on IoU proximity and class similarity, 
+        while also considering the maximum allowed distance for matching.
+        """
 
         updated_objects = {}
         used_tracks = set()
@@ -344,14 +349,19 @@ class BaseMusician(ABC):
                 penalty = 0
 
                 # Class name mismatch penalty
-                if previous["class_name"] != cls or object_id in used_tracks:
+                if previous["class_name"] != cls:
                     penalty += -10
 
+                # Already used in this frame penalty
+                if object_id in used_tracks: 
+                    penalty += -1000
+
+                # Distance penalty
                 pcx, pcy = previous["centroid"]
                 cx, cy = centroid
                 distance = ((cx-pcx)**2 + (cy-pcy)**2)**0.5
                 if distance > max_distance:
-                    penalty += (distance / max_distance)
+                    penalty += -((distance / max_distance) * 100)
 
                 IoU = None
                 px1, py1, px2, py2 = previous["bbox"]
@@ -365,13 +375,13 @@ class BaseMusician(ABC):
                     union = area + areap - inter
                     IoU = inter / union if union > 0 else 0.0
 
-                score = IoU * 1000 - distance + penalty
+                score = IoU * 1000 + penalty
                 if score > best_score:
                     best_score = score
                     matched_id = object_id
 
             # Existing object
-            if matched_id is not None:
+            if best_score > 0 and matched_id is not None:
                 obj_id = matched_id
                 used_tracks.add(obj_id)
                 previous = self.state["objects"][obj_id]
@@ -403,16 +413,16 @@ class BaseMusician(ABC):
                 continue
 
             previous["missing_frames"] += 1
-
-            if previous["missing_frames"] <= self.max_missing_frames:
-                updated_objects[object_id] = previous
+            updated_objects[object_id] = previous
 
         # Replace old objects
         self.state["objects"] = updated_objects
 
-        return objects
-
     def detect_scene_events(self, bounding_boxes=None, masks=None):
+        """
+        Detect scene events and return a list of events.
+        Here, event is defined as an object touching or releasing the ROI boundary.
+        """
 
         events = []
 
@@ -420,7 +430,7 @@ class BaseMusician(ABC):
             logger.warning("No bounding boxes or masks provided for scene event detection.")
             return events
         
-        bounding_boxes = self.assign_object_ids(bounding_boxes)
+        self.assign_object_ids(bounding_boxes)
 
         for obj in bounding_boxes:
 
@@ -727,6 +737,21 @@ class LSTMMusician(BaseMusician):
                 logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_off"}, 'note': {last_note}, 'velocity': 0, 'instrument': 'piano'")
 
             else:
+                # Check missing frames for the object and if it exceeds the threshold, treat it as a release event
+                if self.state["objects"].get(e["object_id"], {}).get("missing_frames", 0) > self.max_missing_frames:
+                    # Treat as release event
+                    music_events.append(
+                        MusicEvent(
+                            event_type="note_off",
+                            note=int(last_note),
+                            channel=0,
+                            velocity=0,
+                            instrument="piano",
+                            timestamp=self.frame_counter,
+                            metadata=e
+                        )
+                    )
+
                 self.last_seed_notes.append("_")
                 continue
 
