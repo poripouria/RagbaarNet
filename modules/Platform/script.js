@@ -33,7 +33,7 @@ let processorUrl = detectProcessorUrl();
 let frameCounter = 0;
 let lastFrameSentTime = 0;
 // Adapt frame send rate on mobile to reduce bandwidth/CPU contention
-let frameSendInterval = isMobileDevice() ? 250 : 150; // ms
+let frameSendInterval = isMobileDevice() ? 200 : 100; // ms
 let processingCanvas = null;
 let processingCtx = null;
 let segmentationSocket = null;
