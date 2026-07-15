@@ -496,12 +496,31 @@ async function checkProcessorStatus() {
  * Audio System Functions (Tone.js synthesis engine)
  */
 let instrumentFactories = {}; // instrument name -> () => fresh { synth, nodes, release, isPluck }
-let reverbBus = null;
+let reverbBus = null;       // the reverb "tank" itself (100% wet — mix is handled via sends)
+let reverbPreFilter = null; // high-pass before the tank, so bass frequencies stay out of the reverb
+let masterBusIn = null;     // everything (dry + wet) sums here before mastering
+let masterEQ = null;
+let masterCompressor = null;
+let masterLimiter = null;
 
 function initializeAudioSystem() {
     try {
         // Tone.js manages its own internal AudioContext.
         masterGain = new Tone.Gain(0.3).toDestination();
+
+        // --- Mastering chain (sits right before the final volume stage) ---
+        // EQ: shave a touch of low-mud, add a little "air" on top.
+        // Compressor: gently glues everything together so quiet/loud events feel cohesive.
+        // Limiter: safety net so nothing ever clips, even with several instruments stacked.
+        masterLimiter = new Tone.Limiter(-1).connect(masterGain);
+        masterCompressor = new Tone.Compressor({
+            threshold: -18,
+            ratio: 3,
+            attack: 0.003,
+            release: 0.25
+        }).connect(masterLimiter);
+        masterEQ = new Tone.EQ3({ low: -1, mid: 0, high: 1.5 }).connect(masterCompressor);
+        masterBusIn = new Tone.Gain(1).connect(masterEQ);
 
         // Initialize instrument voices
         initializeInstrumentVoices();
@@ -515,11 +534,35 @@ function initializeAudioSystem() {
     }
 }
 
+// Connects a voice's final node to the mix as a proper AUX SEND: the dry signal goes
+// straight to the master bus at full level, and a separate, independently-controlled
+// copy is sent into the shared reverb tank at `sendAmount` (0-1). This is the standard
+// mixing-console approach — it lets every instrument have its own reverb amount (bass
+// stays tight and dry, pads/strings get washed in space) instead of one fixed wet% for
+// everything. Returns the send Gain node (if any) so callers can add it to their
+// disposable `nodes` list.
+function connectWithReverbSend(node, sendAmount) {
+    node.connect(masterBusIn);
+
+    if (sendAmount > 0 && reverbPreFilter) {
+        const send = new Tone.Gain(sendAmount).connect(reverbPreFilter);
+        node.connect(send);
+        return send;
+    }
+    return null;
+}
+
 function initializeInstrumentVoices() {
-    // Shared bus: a touch of algorithmic reverb glues every instrument together and
-    // makes everything sound less "dry"/synthetic, without the async-load cost of convolution reverb.
-    reverbBus = new Tone.Freeverb({ roomSize: 0.55, dampening: 3000 }).connect(masterGain);
-    reverbBus.wet.value = 0.16;
+    // The reverb "tank": pre-delay (keeps the dry attack clear before the space blooms
+    // in) -> high-pass (keeps low end out of the reverb so it doesn't turn muddy) ->
+    // Freeverb itself, run at 100% wet since the dry/wet balance is now handled per
+    // instrument via connectWithReverbSend() above, not by the effect's own mix.
+    const reverbPredelay = new Tone.Delay(0.03);
+    reverbPreFilter = new Tone.Filter(250, 'highpass').connect(reverbPredelay);
+    reverbBus = new Tone.Freeverb({ roomSize: 0.6, dampening: 2500 });
+    reverbBus.wet.value = 1;
+    reverbPredelay.connect(reverbBus);
+    reverbBus.connect(masterBusIn);
 
     // Each tonal instrument is a FACTORY that builds a brand-new, self-contained voice
     // (synth + its own effects chain) for a single note-on. Building one voice per note
@@ -529,36 +572,41 @@ function initializeInstrumentVoices() {
     // wrong, which is what was leaving notes (bass especially) stuck on forever.
     instrumentFactories = {
         piano: () => {
-            const filter = new Tone.Filter(2600, 'lowpass').connect(reverbBus);
+            const filter = new Tone.Filter(2600, 'lowpass');
+            const send = connectWithReverbSend(filter, 0.22);
             const chorus = new Tone.Chorus(4, 2.5, 0.25).connect(filter).start();
             const synth = new Tone.Synth({
                 oscillator: { type: 'fatsawtooth4' },
                 envelope: { attack: 0.006, decay: 0.35, sustain: 0.22, release: 1.1 }
             }).connect(chorus);
-            return { synth, nodes: [synth, chorus, filter], release: 1.1 };
+            return { synth, nodes: [synth, chorus, filter, send].filter(Boolean), release: 1.1 };
         },
         electric_piano: () => {
-            const filter = new Tone.Filter(1800, 'lowpass').connect(reverbBus);
+            const filter = new Tone.Filter(1800, 'lowpass');
+            const send = connectWithReverbSend(filter, 0.15);
             const trem = new Tone.Tremolo(4, 0.3).connect(filter).start();
             const synth = new Tone.Synth({
                 oscillator: { type: 'fmsquare' },
                 envelope: { attack: 0.006, decay: 0.2, sustain: 0.35, release: 0.8 }
             }).connect(trem);
-            return { synth, nodes: [synth, trem, filter], release: 0.8 };
+            return { synth, nodes: [synth, trem, filter, send].filter(Boolean), release: 0.8 };
         },
         strings: () => {
-            const filter = new Tone.Filter(3200, 'lowpass').connect(reverbBus);
+            const filter = new Tone.Filter(3200, 'lowpass');
+            const send = connectWithReverbSend(filter, 0.32);
             const chorus = new Tone.Chorus(3.2, 3.5, 0.4).connect(filter).start();
             const synth = new Tone.Synth({
                 oscillator: { type: 'fatsawtooth', count: 3, spread: 30 },
                 envelope: { attack: 0.25, decay: 0.2, sustain: 0.8, release: 1.8 }
             }).connect(chorus);
-            return { synth, nodes: [synth, chorus, filter], release: 1.8 };
+            return { synth, nodes: [synth, chorus, filter, send].filter(Boolean), release: 1.8 };
         },
         bass: () => {
             // MonoSynth's filterEnvelope gives the punchy "pluck then settle" character
             // real basses have — a plain oscillator+lowpass (the old design) sounds flat.
-            const filter = new Tone.Filter(700, 'lowpass').connect(reverbBus);
+            // Kept almost fully DRY: reverb on a bass smears the low end and kills punch.
+            const filter = new Tone.Filter(700, 'lowpass');
+            const send = connectWithReverbSend(filter, 0.03);
             const synth = new Tone.MonoSynth({
                 oscillator: { type: 'fmsine' },
                 envelope: { attack: 0.02, decay: 0.25, sustain: 0.55, release: 0.5 },
@@ -567,10 +615,11 @@ function initializeInstrumentVoices() {
                     baseFrequency: 80, octaves: 3.2
                 }
             }).connect(filter);
-            return { synth, nodes: [synth, filter], release: 0.6 };
+            return { synth, nodes: [synth, filter, send].filter(Boolean), release: 0.6 };
         },
         electric_guitar: () => {
-            const dist = new Tone.Distortion(0.35).connect(reverbBus);
+            const dist = new Tone.Distortion(0.35);
+            const send = connectWithReverbSend(dist, 0.12);
             const filter = new Tone.Filter(2600, 'lowpass').connect(dist);
             const synth = new Tone.MonoSynth({
                 oscillator: { type: 'fatsawtooth', count: 2, spread: 20 },
@@ -580,7 +629,7 @@ function initializeInstrumentVoices() {
                     baseFrequency: 400, octaves: 3
                 }
             }).connect(filter);
-            return { synth, nodes: [synth, filter, dist], release: 0.4 };
+            return { synth, nodes: [synth, filter, dist, send].filter(Boolean), release: 0.4 };
         },
         acoustic_guitar: () => {
             // Physically-modeled plucked string — a world apart from an oscillator trying
@@ -590,20 +639,23 @@ function initializeInstrumentVoices() {
                 attackNoise: 1,
                 dampening: 3500,
                 resonance: 0.92
-            }).connect(reverbBus);
-            return { synth, nodes: [synth], release: 1.0, isPluck: true };
+            });
+            const send = connectWithReverbSend(synth, 0.18);
+            return { synth, nodes: [synth, send].filter(Boolean), release: 1.0, isPluck: true };
         },
         pad: () => {
-            const filter = new Tone.Filter(1400, 'lowpass').connect(reverbBus);
+            const filter = new Tone.Filter(1400, 'lowpass');
+            const send = connectWithReverbSend(filter, 0.4);
             const chorus = new Tone.Chorus(2.2, 4, 0.5).connect(filter).start();
             const synth = new Tone.Synth({
                 oscillator: { type: 'fatsine', count: 3, spread: 40 },
                 envelope: { attack: 0.6, decay: 0.6, sustain: 0.75, release: 2.4 }
             }).connect(chorus);
-            return { synth, nodes: [synth, chorus, filter], release: 2.4 };
+            return { synth, nodes: [synth, chorus, filter, send].filter(Boolean), release: 2.4 };
         },
         synth: () => {
-            const filter = new Tone.Filter(2200, 'lowpass').connect(reverbBus);
+            const filter = new Tone.Filter(2200, 'lowpass');
+            const send = connectWithReverbSend(filter, 0.15);
             const synth = new Tone.MonoSynth({
                 oscillator: { type: 'fatsquare', count: 2, spread: 25 },
                 envelope: { attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.5 },
@@ -612,34 +664,49 @@ function initializeInstrumentVoices() {
                     baseFrequency: 500, octaves: 2.5
                 }
             }).connect(filter);
-            return { synth, nodes: [synth, filter], release: 0.5 };
+            return { synth, nodes: [synth, filter, send].filter(Boolean), release: 0.5 };
         }
     };
 
     // Drum voices stay as dedicated, reused instances (percussion is one-shot by nature —
     // there's no "note-off" to track, so the per-note-instance approach above doesn't apply).
+    // Kick stays essentially dry (reverb smears low-end punch); snare/hihat get a touch of
+    // space, which is what makes drums feel like they're in the same "room" as everything else.
+    const snareFilter = new Tone.Filter(1800, 'highpass');
+    connectWithReverbSend(snareFilter, 0.14);
+    const genericFilter = new Tone.Filter(1000, 'bandpass');
+    connectWithReverbSend(genericFilter, 0.1);
+
     instrumentVoices = {
         drums: {
-            kick: new Tone.MembraneSynth({
-                pitchDecay: 0.045,
-                octaves: 6,
-                envelope: { attack: 0.001, decay: 0.35, sustain: 0, release: 0.4 }
-            }).connect(reverbBus),
+            kick: (() => {
+                const node = new Tone.MembraneSynth({
+                    pitchDecay: 0.045,
+                    octaves: 6,
+                    envelope: { attack: 0.001, decay: 0.35, sustain: 0, release: 0.4 }
+                });
+                connectWithReverbSend(node, 0.03);
+                return node;
+            })(),
             snare: new Tone.NoiseSynth({
                 noise: { type: 'white' },
                 envelope: { attack: 0.001, decay: 0.18, sustain: 0 }
-            }).connect(new Tone.Filter(1800, 'highpass').connect(reverbBus)),
-            hihat: new Tone.MetalSynth({
-                envelope: { attack: 0.001, decay: 0.12, release: 0.02 },
-                harmonicity: 5.1,
-                modulationIndex: 32,
-                resonance: 4000,
-                octaves: 1.5
-            }).connect(reverbBus),
+            }).connect(snareFilter),
+            hihat: (() => {
+                const node = new Tone.MetalSynth({
+                    envelope: { attack: 0.001, decay: 0.12, release: 0.02 },
+                    harmonicity: 5.1,
+                    modulationIndex: 32,
+                    resonance: 4000,
+                    octaves: 1.5
+                });
+                connectWithReverbSend(node, 0.08);
+                return node;
+            })(),
             generic: new Tone.NoiseSynth({
                 noise: { type: 'pink' },
                 envelope: { attack: 0.001, decay: 0.2, sustain: 0 }
-            }).connect(new Tone.Filter(1000, 'bandpass').connect(reverbBus))
+            }).connect(genericFilter)
         }
     };
 }
