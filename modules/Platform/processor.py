@@ -110,6 +110,7 @@ class Processor:
                     )
                 self.segmentor = Segmentor('segformer', model_path=model_path)
                 logger.info("✅ SegFormer Segmentor initialized successfully")
+                
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
