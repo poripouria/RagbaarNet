@@ -338,8 +338,6 @@ class BaseMusician(ABC):
             matched_id = None
             best_score = float("-inf")
 
-            print([obj["class_name"] for obj in objects])
-
             # Search previous objects
             for object_id, previous in self.state["objects"].items():
 
