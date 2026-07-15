@@ -58,9 +58,9 @@ let instrumentVoices = {}; // Store instrument voice settings
 let musicEventQueue = []; // Queue for scheduling music events
 let lastMusicEventTime = 0;
 
-// Musician selection variables
+// Music settings variables
 // Fallback list (mirrors Musician.MUSICIAN_REGISTRY) used until the server responds,
-// so the "Change Musician" modal is usable even before/without a socket round-trip.
+// so the settings modal is usable even before/without a socket round-trip.
 let availableMusicians = [
     { id: 'rule-based', label: 'Rule-based Musician', description: 'Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).' },
     { id: 'continuous_pianist', label: 'Continuous Pianist', description: 'Piano musician with sustained/continuous note playback.' },
@@ -68,6 +68,9 @@ let availableMusicians = [
 ];
 let currentMusicianType = 'lstm-onessen'; // Matches the processor's default musician on startup
 let pendingMusicianSelection = null;
+let currentInstrument = 'piano';
+let pendingInstrument = currentInstrument;
+let pendingTempo = 120;
 let isSwitchingMusician = false;
 let musicianSwitchTimeoutId = null;
 const MUSICIAN_SWITCH_TIMEOUT_MS = 8000;
@@ -162,17 +165,23 @@ function setupEventListeners() {
 
     if (tempoSlider) {
         tempoSlider.addEventListener('input', handleTempoSliderInput);
-        tempoSlider.addEventListener('change', () => applyTempoValue(true));
     }
 
     if (tempoNumberInput) {
         tempoNumberInput.addEventListener('input', () => updateTempoControls(tempoNumberInput.value));
-        tempoNumberInput.addEventListener('change', () => applyTempoValue(true));
         tempoNumberInput.addEventListener('keydown', function(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
-                applyTempoValue(true);
+                applyMusicSettings();
             }
+        });
+    }
+
+    const instrumentSelect = document.getElementById('instrumentSelect');
+    if (instrumentSelect) {
+        instrumentSelect.addEventListener('change', function() {
+            pendingInstrument = this.value;
+            updateMusicianApplyButton();
         });
     }
 
@@ -361,9 +370,15 @@ function initializeSocketConnection() {
         segmentationSocket.on('music_status', function(data) {
             if (data && Number.isInteger(data.tempo)) {
                 currentTempo = clampTempoValue(data.tempo);
+                pendingTempo = currentTempo;
                 lastMusicStatus.tempo = currentTempo;
                 updateTempoControls(currentTempo);
                 updateMusicStatusDisplay();
+            }
+            if (data && data.instrument) {
+                currentInstrument = data.instrument;
+                pendingInstrument = currentInstrument;
+                updateInstrumentControls();
             }
             if (data && data.key_signature) {
                 lastMusicStatus.keySignature = data.key_signature;
@@ -378,9 +393,37 @@ function initializeSocketConnection() {
             if (data && data.current) {
                 currentMusicianType = data.current;
             }
+            if (data && data.instrument) {
+                currentInstrument = data.instrument;
+                pendingInstrument = currentInstrument;
+            }
             renderMusicianList();
+            updateInstrumentControls();
         });
         
+        segmentationSocket.on('music_settings_updated', function(data) {
+            clearTimeout(musicianSwitchTimeoutId);
+            isSwitchingMusician = false;
+            setMusicianListInteractive(true);
+
+            if (data && data.success) {
+                currentMusicianType = data.musician_type;
+                currentInstrument = data.instrument || currentInstrument;
+                currentTempo = clampTempoValue(data.tempo);
+                pendingMusicianSelection = currentMusicianType;
+                pendingInstrument = currentInstrument;
+                pendingTempo = currentTempo;
+                lastMusicStatus.tempo = currentTempo;
+                updateMusicStatusDisplay();
+                updateStatus(`🎵 Music settings updated • ${getMusicianLabel(currentMusicianType)} • ${currentTempo} BPM`);
+                closeMusicianModal();
+            } else {
+                const errorMessage = (data && data.error) || 'Unknown error';
+                setMusicianModalStatus(`❌ Failed to update music settings: ${errorMessage}`);
+                updateMusicianApplyButton();
+            }
+        });
+
         segmentationSocket.on('musician_switched', function(data) {
             clearTimeout(musicianSwitchTimeoutId);
             isSwitchingMusician = false;
@@ -2431,6 +2474,7 @@ function renderMusicianList() {
             if (isSwitchingMusician) return;
             pendingMusicianSelection = musician.id;
             renderMusicianList();
+            updateInstrumentControls();
             setMusicianModalStatus(`Selected: ${getMusicianLabel(musician.id)}`);
             updateMusicianApplyButton();
         };
@@ -2446,8 +2490,7 @@ function updateMusicianApplyButton() {
     if (!applyBtn) return;
 
     const hasSelection = !!pendingMusicianSelection;
-    const isSameAsCurrent = pendingMusicianSelection === currentMusicianType;
-    applyBtn.disabled = !hasSelection || isSameAsCurrent || isSwitchingMusician;
+    applyBtn.disabled = !hasSelection || isSwitchingMusician;
     applyBtn.classList.toggle('is-disabled', applyBtn.disabled);
 }
 
@@ -2456,8 +2499,12 @@ function openMusicianModal() {
     if (!modal) return;
 
     pendingMusicianSelection = currentMusicianType;
+    pendingInstrument = currentInstrument;
+    pendingTempo = currentTempo;
     renderMusicianList();
-    setMusicianModalStatus('Select a musician and tap Apply.');
+    updateInstrumentControls();
+    updateTempoControls(pendingTempo);
+    setMusicianModalStatus('Adjust the settings and tap Apply.');
     setMusicianListInteractive(!isSwitchingMusician);
     updateMusicianApplyButton();
     modal.style.display = 'flex';
@@ -2472,32 +2519,34 @@ function closeMusicianModal() {
     const modal = document.getElementById('musicianModal');
     if (modal) {
         pendingMusicianSelection = currentMusicianType;
+        pendingInstrument = currentInstrument;
+        pendingTempo = currentTempo;
         updateMusicianApplyButton();
         modal.style.display = 'none';
     }
 }
 
-function applyMusicianSelection() {
+function applyMusicSettings() {
     if (!pendingMusicianSelection) {
         setMusicianModalStatus('Please select a musician first.');
         return;
     }
 
-    if (pendingMusicianSelection === currentMusicianType) {
-        closeMusicianModal();
-        return;
-    }
-
     if (!segmentationSocket || !segmentationSocket.connected) {
-        setMusicianModalStatus('⚠️ Not connected to processor - cannot switch musician');
+        setMusicianModalStatus('⚠️ Not connected to processor - cannot update music settings');
         return;
     }
 
+    pendingTempo = clampTempoValue(document.getElementById('tempoNumberInput')?.value || pendingTempo);
     isSwitchingMusician = true;
     setMusicianListInteractive(false);
     updateMusicianApplyButton();
-    setMusicianModalStatus(`Switching to ${getMusicianLabel(pendingMusicianSelection)}...`);
-    segmentationSocket.emit('switch_musician', { musician_type: pendingMusicianSelection });
+    setMusicianModalStatus('Applying music settings...');
+    segmentationSocket.emit('set_music_settings', {
+        musician_type: pendingMusicianSelection,
+        instrument: pendingInstrument,
+        tempo: pendingTempo
+    });
 
     clearTimeout(musicianSwitchTimeoutId);
     musicianSwitchTimeoutId = setTimeout(() => {
@@ -2507,14 +2556,13 @@ function applyMusicianSelection() {
         updateMusicianApplyButton();
         setMusicianModalStatus('⚠️ No response from processor - please try again');
     }, MUSICIAN_SWITCH_TIMEOUT_MS);
-
-    closeMusicianModal();
 }
 
 function selectMusician(musicianId) {
     if (isSwitchingMusician) return;
     pendingMusicianSelection = musicianId;
     renderMusicianList();
+    updateInstrumentControls();
     setMusicianModalStatus(`Selected: ${getMusicianLabel(musicianId)}`);
     updateMusicianApplyButton();
 }
@@ -2543,64 +2591,42 @@ function calculateAutoTempoFromSpeed(speedKmh) {
     return clampTempoValue(Math.round(bpm));
 }
 
+function updateInstrumentControls() {
+    const settings = document.getElementById('instrumentSettings');
+    const select = document.getElementById('instrumentSelect');
+    const showInstrument = pendingMusicianSelection === 'lstm-onessen';
+
+    if (settings) settings.hidden = !showInstrument;
+    if (select) select.value = pendingInstrument;
+}
+
 function updateTempoControls(value) {
-    currentTempo = clampTempoValue(value);
+    pendingTempo = clampTempoValue(value);
 
     const slider = document.getElementById('tempoSlider');
     const numberInput = document.getElementById('tempoNumberInput');
     const label = document.getElementById('tempoValueLabel');
 
     if (slider) {
-        slider.value = currentTempo;
+        slider.value = pendingTempo;
     }
 
     if (numberInput) {
-        numberInput.value = currentTempo;
+        numberInput.value = pendingTempo;
     }
 
     if (label) {
-        label.textContent = `${currentTempo} BPM`;
+        label.textContent = `${pendingTempo} BPM`;
     }
 }
 
-function openTempoModal() {
-    const modal = document.getElementById('tempoModal');
-    if (!modal) return;
 
-    updateTempoControls(currentTempo);
-    modal.style.display = 'flex';
-}
-
-function closeTempoModal() {
-    const modal = document.getElementById('tempoModal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
-}
 
 function handleTempoSliderInput() {
     updateTempoControls(this.value);
 }
 
-function applyTempoValue(emitToServer = false) {
-    updateTempoControls(document.getElementById('tempoNumberInput')?.value || currentTempo);
-    lastMusicStatus.tempo = currentTempo;
-    updateMusicStatusDisplay();
 
-    if (emitToServer) {
-        if (!segmentationSocket || !segmentationSocket.connected) {
-            updateStatus('⚠️ Not connected to processor - cannot change tempo');
-            return;
-        }
-
-        segmentationSocket.emit('set_music_tempo', { tempo: currentTempo });
-    }
-}
-
-function applyTempoSetting() {
-    applyTempoValue(true);
-    closeTempoModal();
-}
 
 function startMusicGeneration() {
     if (!masterGain) {

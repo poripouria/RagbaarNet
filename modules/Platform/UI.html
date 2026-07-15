@@ -35,38 +35,46 @@
         </div>
     </div>
 
-    <!-- Musician Selection Modal -->
+    <!-- Music Settings Modal -->
     <div id="musicianModal" class="musician-modal">
         <div class="musician-modal-content">
-            <h2>🎭 Choose Musician</h2>
-            <div class="musician-modal-subtitle">Select the music generation model used to turn the ROI into music.</div>
-            <div id="musicianList" class="musician-list"></div>
+            <h2>🎵 Music Settings</h2>
+            <div class="musician-modal-subtitle">Choose the musician, sound, and tempo used to turn the ROI into music.</div>
+
+            <section class="music-settings-section">
+                <h3>Musician</h3>
+                <div id="musicianList" class="musician-list"></div>
+            </section>
+
+            <section id="instrumentSettings" class="music-settings-section" hidden>
+                <label for="instrumentSelect" class="music-settings-label">Choose Instrument</label>
+                <select id="instrumentSelect" class="instrument-select" aria-label="Choose LSTM instrument">
+                    <option value="piano">Piano</option>
+                    <option value="electric_piano">Electric Piano</option>
+                    <option value="strings">Strings</option>
+                    <option value="bass">Bass</option>
+                    <option value="electric_guitar">Electric Guitar</option>
+                    <option value="acoustic_guitar">Acoustic Guitar</option>
+                    <option value="pad">Pad</option>
+                    <option value="synth">Synth</option>
+                </select>
+            </section>
+
+            <section class="music-settings-section">
+                <h3>Tempo</h3>
+                <div class="tempo-control-group">
+                    <div class="tempo-slider-row">
+                        <input type="range" id="tempoSlider" class="tempo-slider" min="60" max="180" step="1" value="120" aria-label="Tempo slider">
+                        <input type="number" id="tempoNumberInput" class="tempo-number-input" min="60" max="180" step="1" value="120" aria-label="Tempo value">
+                    </div>
+                    <div id="tempoValueLabel" class="tempo-value">120 BPM</div>
+                </div>
+            </section>
+
             <div id="musicianModalStatus" class="musician-modal-status"></div>
             <div class="musician-modal-actions">
-                <button id="musicianApplyBtn" class="url-btn confirm-btn" onclick="applyMusicianSelection()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); applyMusicianSelection();}">Apply</button>
+                <button id="musicianApplyBtn" class="url-btn confirm-btn" onclick="applyMusicSettings()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); applyMusicSettings();}">Apply</button>
                 <button id="musicianCloseBtn" class="url-btn cancel-btn" onclick="closeMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); closeMusicianModal();}">Close</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Tempo Control Modal -->
-    <div id="tempoModal" class="tempo-modal">
-        <div class="tempo-modal-content">
-            <h2>🎛️ Set Tempo</h2>
-            <div class="tempo-modal-subtitle">Control the music tempo smoothly between 60 and 180 BPM.</div>
-            <div class="tempo-control-group">
-                <div class="tempo-mode-row">
-                    <button class="tempo-mode-btn" id="tempoAutomaticBtn" disabled>Automatic</button>
-                </div>
-                <div class="tempo-slider-row">
-                    <input type="range" id="tempoSlider" class="tempo-slider" min="60" max="180" step="1" value="120" aria-label="Tempo slider">
-                    <input type="number" id="tempoNumberInput" class="tempo-number-input" min="60" max="180" step="1" value="120" aria-label="Tempo value">
-                </div>
-                <div id="tempoValueLabel" class="tempo-value">120 BPM</div>
-            </div>
-            <div class="tempo-modal-actions">
-                <button class="url-btn confirm-btn" onclick="applyTempoSetting()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); applyTempoSetting();}">Apply</button>
-                <button class="url-btn cancel-btn" onclick="closeTempoModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); closeTempoModal();}">Close</button>
             </div>
         </div>
     </div>
@@ -80,8 +88,7 @@
         <div class="button-group">
             <button class="menu-btn" id="changeSourceBtn" onclick="changeInputSource()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); changeInputSource();}">📂 Change Source</button>
             <button class="menu-btn" id="toggleSegmentationBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}">🔍 Segmentation View: OFF</button>
-            <button class="menu-btn" id="changeMusicianBtn" onclick="openMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openMusicianModal();}">🎭 Change Musician</button>
-            <button class="menu-btn" id="setTempoBtn" onclick="openTempoModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openTempoModal();}">🎛️ Set Tempo</button>
+            <button class="menu-btn" id="musicSettingsBtn" onclick="openMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openMusicianModal();}">🎵 Music Settings</button>
         </div>
         
         <div class="status-section">

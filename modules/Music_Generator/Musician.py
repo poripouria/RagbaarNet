@@ -653,14 +653,25 @@ class LSTMMusician(BaseMusician):
     leverages a neural network to produce music based on learned patterns from training data.
     """
 
-    def __init__(self, tempo=120, key_signature="C_major", temperature=1.0):
+    AVAILABLE_INSTRUMENTS = (
+        "piano", "electric_piano", "strings", "bass", "electric_guitar",
+        "acoustic_guitar", "pad", "synth"
+    )
+
+    def __init__(self, tempo=120, key_signature="C_major", temperature=1.0, instrument="piano"):
         """
         Args:
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
             temperature: Sampling temperature for LSTM model
+            instrument: Tone.js instrument used to play generated melodies
         """
         super().__init__(tempo, key_signature)
+
+        if instrument not in self.AVAILABLE_INSTRUMENTS:
+            available = ", ".join(self.AVAILABLE_INSTRUMENTS)
+            raise ValueError(f"Unsupported LSTM instrument: {instrument}. Supported instruments: {available}")
+        self.instrument = instrument
 
         from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
         self.generator = MelodyGenerator()
@@ -722,7 +733,7 @@ class LSTMMusician(BaseMusician):
                         note=int(new_note),
                         channel=0,
                         velocity=100 if e["type"] == "ROI_TOUCH" else 0,
-                        instrument="piano",
+                        instrument=self.instrument,
                         timestamp=self.frame_counter,
                         metadata=e
                     )
@@ -732,12 +743,12 @@ class LSTMMusician(BaseMusician):
                     "voice_id": e["object_id"],
                     "note": int(new_note),
                     "velocity": 100,
-                    "instrument": "piano"
+                    "instrument": self.instrument
                 }
 
                 self._note_buffer.append(new_note)
 
-                logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_on"}, 'note': {new_note}, 'velocity': {100 if e["type"] == "ROI_TOUCH" else 0}, 'instrument': 'piano'")
+                logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_on"}, 'note': {new_note}, 'velocity': {100 if e["type"] == "ROI_TOUCH" else 0}, 'instrument': '{self.instrument}'")
 
             elif e["type"] == "ROI_RELEASE":
                 
@@ -754,7 +765,7 @@ class LSTMMusician(BaseMusician):
                             note=int(last_note),
                             channel=0,
                             velocity=0,
-                            instrument="piano",
+                            instrument=self.instrument,
                             timestamp=self.frame_counter,
                             metadata=e
                         )
@@ -765,7 +776,7 @@ class LSTMMusician(BaseMusician):
 
                 self._note_buffer.extend(["r", "_"])
 
-                logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_off"}, 'note': {last_note}, 'velocity': 0, 'instrument': 'piano'")
+                logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_off"}, 'note': {last_note}, 'velocity': 0, 'instrument': '{self.instrument}'")
 
             else:
                 self._note_buffer.append("_")
@@ -832,7 +843,7 @@ class Musician:
         },
     }
 
-    def __init__(self, musician_type: str = "lstm-onessen", tempo: int = 120, key_signature: str = "C_major"):
+    def __init__(self, musician_type: str = "lstm-onessen", tempo: int = 120, key_signature: str = "C_major", instrument: str = "piano"):
         """
         Initialize the main Musician.
 
@@ -840,22 +851,35 @@ class Musician:
             musician_type: Type of musician, see Musician.MUSICIAN_REGISTRY for supported values.
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
+            instrument: Instrument used by the LSTM musician
         """
 
         self.musician_type = musician_type.lower()
         self.tempo = tempo
         self.key_signature = key_signature
+        self.instrument = instrument
 
         entry = self.MUSICIAN_REGISTRY.get(self.musician_type)
         if entry is None:
             available = ", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))
             raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: {available}")
         
-        self.musician = entry["class"](tempo, key_signature)
+        self.musician = self._create_musician(entry)
 
         logger.info(f"🎵 Musician initialized: {musician_type}")
 
-    def switch_musician(self, musician_type: str, tempo: int = None, key_signature: str = None) -> None:
+    def _create_musician(self, entry):
+        if entry["class"] is LSTMMusician:
+            return entry["class"](self.tempo, self.key_signature, instrument=self.instrument)
+        return entry["class"](self.tempo, self.key_signature)
+
+    def switch_musician(
+        self,
+        musician_type: str,
+        tempo: Optional[int] = None,
+        key_signature: Optional[str] = None,
+        instrument: Optional[str] = None
+    ) -> None:
         """
         Switch to a different music generation model.
 
@@ -863,32 +887,51 @@ class Musician:
             musician_type: New musician type
             tempo: New tempo (keeps current if None)
             key_signature: New key signature (keeps current if None)
+            instrument: LSTM instrument (keeps current if None)
         """
 
         self.musician_type = musician_type.lower()
-        self.tempo = tempo
-        self.key_signature = key_signature
+        self.tempo = self.tempo if tempo is None else tempo
+        self.key_signature = self.key_signature if key_signature is None else key_signature
+        self.instrument = self.instrument if instrument is None else instrument
 
         entry = self.MUSICIAN_REGISTRY.get(self.musician_type)
         if entry is None:
             available = ", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))
             raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: {available}")
         
-        self.musician = entry["class"](tempo, key_signature)
+        self.musician = self._create_musician(entry)
 
         logger.info(f"🔄 Switched to {musician_type} musician")
+
+    def set_tempo(self, tempo: int) -> None:
+        self.tempo = tempo
+        self.musician.tempo = tempo
+
+    def set_instrument(self, instrument: str) -> None:
+        if instrument not in LSTMMusician.AVAILABLE_INSTRUMENTS:
+            available = ", ".join(LSTMMusician.AVAILABLE_INSTRUMENTS)
+            raise ValueError(f"Unsupported LSTM instrument: {instrument}. Supported instruments: {available}")
+        self.instrument = instrument
+        if isinstance(self.musician, LSTMMusician):
+            self.musician.instrument = instrument
 
     @classmethod
     def list_available_musicians(cls) -> List[dict]:
         """
         Return metadata for every musician type that can be selected/switched to.
 
-        Used by the Platform UI to populate the "Change Musician" picker without
+        Used by the Platform UI to populate the music settings picker without
         duplicating the list of supported types.
         """
 
         return [
-            {"id": musician_id, "label": info["label"], "description": info["description"]}
+            {
+                "id": musician_id,
+                "label": info["label"],
+                "description": info["description"],
+                "instruments": list(LSTMMusician.AVAILABLE_INSTRUMENTS) if musician_id == "lstm-onessen" else []
+            }
             for musician_id, info in cls.MUSICIAN_REGISTRY.items()
         ]
 
