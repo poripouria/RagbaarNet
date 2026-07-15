@@ -79,7 +79,7 @@ class Processor:
         # Initialize segmentation models
         logger.info("🔄 Initializing segmentation models...")
         try:
-            model_type = os.environ.get('RAGBAARNET_SEGMENTATION_MODEL', 'segformer').strip().lower() or 'segformer'
+            model_type = os.environ.get('RAGBAARNET_SEGMENTATION_MODEL', 'yolo').strip().lower()
             model_path = os.environ.get('RAGBAARNET_SEGMENTATION_MODEL_PATH', '').strip()
 
             if model_type == 'yolo':
