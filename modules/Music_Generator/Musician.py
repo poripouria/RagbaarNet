@@ -329,27 +329,47 @@ class BaseMusician(ABC):
             bbox = obj["bbox"]
             cls = obj["class_name"]
 
+            x1, y1, x2, y2 = bbox
             if "centroid" in obj.keys():
                 centroid = obj["centroid"]
             else:
-                x1, y1, x2, y2 = bbox
                 centroid = ((x1 + x2) / 2, (y1 + y2) / 2)
             
             matched_id = None
-            min_distance = float("inf")
+            best_score = float("-inf")
+
+            print([obj["class_name"] for obj in objects])
 
             # Search previous objects
             for object_id, previous in self.state["objects"].items():
 
-                # Only compare same class and not already used in this frame
-                if previous["class_name"] != cls or object_id in used_tracks:
-                    continue
-                px, py = previous["centroid"]
-                cx, cy = centroid
-                distance = ((cx-px)**2 + (cy-py)**2)**0.5
+                penalty = 0
 
-                if distance < min_distance and distance < max_distance:
-                    min_distance = distance
+                # Class name mismatch penalty
+                if previous["class_name"] != cls or object_id in used_tracks:
+                    penalty += -10
+
+                pcx, pcy = previous["centroid"]
+                cx, cy = centroid
+                distance = ((cx-pcx)**2 + (cy-pcy)**2)**0.5
+                if distance > max_distance:
+                    penalty += (distance / max_distance)
+
+                IoU = None
+                px1, py1, px2, py2 = previous["bbox"]
+                ix1, iy1, ix2, iy2 = max(x1, px1), max(y1, py1), min(x2, px2), min(y2, py2)
+                if ix1 >= ix2 or iy1 >= iy2:
+                    IoU = 0.0
+                else:
+                    inter = (ix2 - ix1) * (iy2 - iy1)
+                    area = (x2 - x1) * (y2 - y1)
+                    areap = (px2 - px1) * (py2 - py1)
+                    union = area + areap - inter
+                    IoU = inter / union if union > 0 else 0.0
+
+                score = IoU * 1000 - distance + penalty
+                if score > best_score:
+                    best_score = score
                     matched_id = object_id
 
             # Existing object
@@ -402,7 +422,7 @@ class BaseMusician(ABC):
             logger.warning("No bounding boxes or masks provided for scene event detection.")
             return events
         
-        bounding_boxes = self.assign_object_ids(bounding_boxes, 120)
+        bounding_boxes = self.assign_object_ids(bounding_boxes)
 
         for obj in bounding_boxes:
 
@@ -794,12 +814,15 @@ class Musician:
         """
 
         self.musician_type = musician_type.lower()
-        if tempo is not None:
-            self.tempo = tempo
-        if key_signature is not None:
-            self.key_signature = key_signature
+        self.tempo = tempo
+        self.key_signature = key_signature
 
-        self.musician = self._create_musician(musician_type, self.tempo, self.key_signature)
+        entry = self.MUSICIAN_REGISTRY.get(self.musician_type)
+        if entry is None:
+            available = ", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))
+            raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: {available}")
+        
+        self.musician = entry["class"](tempo, key_signature)
 
         logger.info(f"🔄 Switched to {musician_type} musician")
 
