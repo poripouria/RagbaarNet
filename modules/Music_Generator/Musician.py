@@ -269,8 +269,9 @@ class BaseMusician(ABC):
 
         # state: keeps track of objects
         self.state = {
-            "objects": {},         # object_id -> object info
-            "next_object_id": 0
+            "objects": {},          # object_id -> object info
+            "next_object_id": 0,    
+            "active_notes": {},     # note -> last frame it was active
         }
         self.max_missing_frames = 4  # Number of frames to keep an object in memory after it disappears
 
@@ -288,25 +289,6 @@ class BaseMusician(ABC):
 
         return self.generate_music(input, frame_id, roi)
 
-    @abstractmethod
-    def generate_music(self,
-        input: SegmentationResult,
-        frame_id: int = 0,
-        roi: Dict[str, Any] = None
-    ):
-        """
-        Convenience method to call generate_music directly.
-
-        Args:
-            input: Segmentation result instance
-            frame_id: Frame identifier for tracking
-            roi: Region of interest for music generation
-
-        Returns:
-            MusicFrame containing generated music events
-        """
-        pass
-
     def _set_roi(self, roi_payload):
         
         if not roi_payload:
@@ -315,7 +297,7 @@ class BaseMusician(ABC):
         if self.prev_roi_payload != roi_payload:
             self.prev_roi_payload = roi_payload
             self.roi = ROI(corners=roi_payload.get("corners", []), 
-                        controls=roi_payload.get("controls", []))
+                           controls=roi_payload.get("controls", []))
             
             logger.info(f"ROI updated for frame {self.frame_counter}")
 
@@ -381,7 +363,7 @@ class BaseMusician(ABC):
                     matched_id = object_id
 
             # Existing object
-            if best_score > 0 and matched_id is not None:
+            if best_score > 0:
                 obj_id = matched_id
                 used_tracks.add(obj_id)
                 previous = self.state["objects"][obj_id]
@@ -477,6 +459,25 @@ class BaseMusician(ABC):
 
         return events
 
+    @abstractmethod
+    def generate_music(self,
+        input: SegmentationResult,
+        frame_id: int = 0,
+        roi: Dict[str, Any] = None
+    ):
+        """
+        Convenience method to call generate_music directly.
+
+        Args:
+            input: Segmentation result instance
+            frame_id: Frame identifier for tracking
+            roi: Region of interest for music generation
+
+        Returns:
+            MusicFrame containing generated music events
+        """
+        pass
+
     def extract_features(self, segmentation_data: SegmentationResult) -> Dict[str, Any]:
         """
         Default feature extractor (can be overridden).
@@ -516,6 +517,7 @@ class RuleBasedMusician(BaseMusician):
             "bus": (48, 80, 'electric_piano'),
             "bicycle": (64, 90, 'acoustic_guitar'),
             "person": (72, 110, 'acoustic_guitar'),
+            "motorcycle": (70, 100, 'electric_guitar'),
             "road": (36, 50, 'drums'),
             "traffic light": (67, 70, 'strings'),
             "traffic sign": (67, 70, 'strings'),
@@ -539,20 +541,27 @@ class RuleBasedMusician(BaseMusician):
 
         for e in scene_events:
 
-            event = None
-            if e["type"] == "ROI_TOUCH":
-                event = "note_on"
-            elif e["type"] == "ROI_RELEASE":
-                event = "note_off"
-            else:
-                continue  # Skip event
-
             obj_class = e["class"]
             mapped = self._map_classes(obj_class)
             if mapped is None:
                 logger.warning(f"No mapping found for object class '{obj_class}'. Skipping event.")
                 continue
             note, velocity, instrument = mapped
+
+            event = None
+            if e["type"] == "ROI_TOUCH":
+                event = "note_on"
+                self.state["active_notes"][e["object_id"]] = {
+                    "voice_id": e["object_id"],
+                    "note": note,
+                    "velocity": velocity,
+                    "instrument": instrument,
+                }
+            elif e["type"] == "ROI_RELEASE":
+                event = "note_off"
+                self.state["active_notes"].pop(e["object_id"], None)
+            else:
+                continue  # Skip event
                 
             music_events.append(
                 MusicEvent(
@@ -568,10 +577,21 @@ class RuleBasedMusician(BaseMusician):
             
             logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity if e['type'] == 'ROI_TOUCH' else 0}, 'instrument': '{instrument}'")
 
-        if self.frame_counter % 50 == 0:  # Log occasionally for debugging. Every 50 frames
-            logger.info(
-                f"🎵 Generated {len(music_events)} music events for frame {frame_id}"
-            )
+        for object_id, note_info in list(self.state["active_notes"].items()):
+            if self.state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+                music_events.append(
+                    MusicEvent(
+                        event_type="note_off",
+                        note=note_info["note"],
+                        channel=0,
+                        velocity=0,
+                        instrument=note_info["instrument"],
+                        timestamp=self.frame_counter,
+                        metadata={"object_id": object_id, "class": self.state["objects"][object_id]["class_name"]}
+                    )
+                )
+                self.state["active_notes"].pop(object_id, None)
+                logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
             events=music_events,
@@ -614,6 +634,7 @@ class ContinuousPianistMusician(RuleBasedMusician):
             "bus": (42, 80, 'piano'),
             "bicycle": (64, 90, 'piano'),
             "person": (72, 110, 'piano'),
+            "motorcycle": (70, 100, 'piano'),
             "road": (36, 50, 'piano'),
             "traffic light": (80, 70, 'piano'),
             "traffic sign": (67, 70, 'piano'),
@@ -651,7 +672,7 @@ class LSTMMusician(BaseMusician):
         self.important_labels = [
             "car", "truck", "bus", 
             "bicycle", "person", "motorcycle",
-            # "traffic light", "traffic sign", "stop sign"
+            "traffic light", "traffic sign", "stop sign"
         ]
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
@@ -676,7 +697,6 @@ class LSTMMusician(BaseMusician):
                 logger.info(f"Skipping unimportant object class '{obj_class}'.")
                 continue
 
-            # '_' (hold) and 'r' (rest) intentionally produce no event.
             if e["type"] == "ROI_TOUCH":
 
                 # Generate new notes using the LSTM model
@@ -686,6 +706,7 @@ class LSTMMusician(BaseMusician):
                     temperature=self.temperature
                 )
 
+                # Skip non-digit notes ('_' (hold) and 'r' (rest)) until we get a valid note
                 while True:
                     new_note = next(self._rt_generator)
                     if new_note.isdigit():
@@ -705,16 +726,22 @@ class LSTMMusician(BaseMusician):
 
                 self._note_buffer.append(new_note)
 
+                self.state["active_notes"][e["object_id"]] = {
+                    "voice_id": e["object_id"],
+                    "note": int(new_note),
+                    "velocity": 100,
+                    "instrument": "piano"
+                }
+
                 logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_on"}, 'note': {new_note}, 'velocity': {100 if e["type"] == "ROI_TOUCH" else 0}, 'instrument': 'piano'")
 
             elif e["type"] == "ROI_RELEASE":
                 
-                # Find the last notes that was played and turn it off
+                # Find the related note for this object_id
                 last_note = None
-                for note in reversed(self._note_buffer):
-                    if note.isdigit():
-                        last_note = note
-                        break
+                if e["object_id"] in self.state["active_notes"]:
+                    last_note = self.state["active_notes"][e["object_id"]]["note"]
+                    self.state["active_notes"].pop(e["object_id"], None)
 
                 if last_note is not None:
                     music_events.append(
@@ -739,7 +766,7 @@ class LSTMMusician(BaseMusician):
             else:
                 # Check missing frames for the object and if it exceeds the threshold, treat it as a release event
                 if self.state["objects"].get(e["object_id"], {}).get("missing_frames", 0) > self.max_missing_frames:
-                    # Treat as release event
+                
                     music_events.append(
                         MusicEvent(
                             event_type="note_off",
@@ -752,17 +779,13 @@ class LSTMMusician(BaseMusician):
                         )
                     )
 
-                self.last_seed_notes.append("_")
+                    self.state["active_notes"].pop(e["object_id"], None)
+
+                self._note_buffer.append("_")
+
                 continue
 
-            if len(self._note_buffer) > 24:
-                self._note_buffer = self._note_buffer[-24:]
             self.last_seed_notes = self._note_buffer[-16:]
-            
-        if self.frame_counter % 50 == 0:  # Log occasionally for debugging. Every 50 frames
-            logger.info(
-                f"🎵 Generated {len(music_events)} music events for frame {frame_id}"
-            )
 
         return MusicFrame(
             events=music_events,
