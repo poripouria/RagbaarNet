@@ -578,7 +578,9 @@ class RuleBasedMusician(BaseMusician):
             logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity if e['type'] == 'ROI_TOUCH' else 0}, 'instrument': '{instrument}'")
 
         for object_id, note_info in list(self.state["active_notes"].items()):
+
             if self.state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+
                 music_events.append(
                     MusicEvent(
                         event_type="note_off",
@@ -590,7 +592,9 @@ class RuleBasedMusician(BaseMusician):
                         metadata={"object_id": object_id, "class": self.state["objects"][object_id]["class_name"]}
                     )
                 )
+
                 self.state["active_notes"].pop(object_id, None)
+                
                 logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
@@ -724,14 +728,14 @@ class LSTMMusician(BaseMusician):
                     )
                 )
 
-                self._note_buffer.append(new_note)
-
                 self.state["active_notes"][e["object_id"]] = {
                     "voice_id": e["object_id"],
                     "note": int(new_note),
                     "velocity": 100,
                     "instrument": "piano"
                 }
+
+                self._note_buffer.append(new_note)
 
                 logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_on"}, 'note': {new_note}, 'velocity': {100 if e["type"] == "ROI_TOUCH" else 0}, 'instrument': 'piano'")
 
@@ -764,28 +768,30 @@ class LSTMMusician(BaseMusician):
                 logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_off"}, 'note': {last_note}, 'velocity': 0, 'instrument': 'piano'")
 
             else:
-                # Check missing frames for the object and if it exceeds the threshold, treat it as a release event
-                if self.state["objects"].get(e["object_id"], {}).get("missing_frames", 0) > self.max_missing_frames:
-                
-                    music_events.append(
-                        MusicEvent(
-                            event_type="note_off",
-                            note=int(last_note),
-                            channel=0,
-                            velocity=0,
-                            instrument="piano",
-                            timestamp=self.frame_counter,
-                            metadata=e
-                        )
-                    )
-
-                    self.state["active_notes"].pop(e["object_id"], None)
-
                 self._note_buffer.append("_")
-
                 continue
 
             self.last_seed_notes = self._note_buffer[-16:]
+
+        for object_id, note_info in list(self.state["active_notes"].items()):
+
+            if self.state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+
+                music_events.append(
+                    MusicEvent(
+                        event_type="note_off",
+                        note=note_info["note"],
+                        channel=0,
+                        velocity=0,
+                        instrument=note_info["instrument"],
+                        timestamp=self.frame_counter,
+                        metadata={"object_id": object_id, "class": self.state["objects"][object_id]["class_name"]}
+                    )
+                )
+
+                self.state["active_notes"].pop(object_id, None)
+
+                logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
             events=music_events,
