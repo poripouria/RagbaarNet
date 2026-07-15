@@ -272,6 +272,7 @@ class BaseMusician(ABC):
             "objects": {},         # object_id -> object info
             "next_object_id": 0
         }
+        self.max_missing_frames = 8  # Number of frames to keep an object in memory after it disappears
 
         self.roi = None  # Will be set per frame if provided
         self.prev_roi_payload = None  # To track changes in ROI between frames
@@ -321,6 +322,7 @@ class BaseMusician(ABC):
     def assign_object_ids(self, objects, max_distance=100):
 
         updated_objects = {}
+        used_tracks = set()
 
         for obj in objects:
 
@@ -339,8 +341,8 @@ class BaseMusician(ABC):
             # Search previous objects
             for object_id, previous in self.state["objects"].items():
 
-                # Only compare same class
-                if previous["class_name"] != cls:
+                # Only compare same class and not already used in this frame
+                if previous["class_name"] != cls or object_id in used_tracks:
                     continue
                 px, py = previous["centroid"]
                 cx, cy = centroid
@@ -353,6 +355,7 @@ class BaseMusician(ABC):
             # Existing object
             if matched_id is not None:
                 obj_id = matched_id
+                used_tracks.add(obj_id)
                 previous = self.state["objects"][obj_id]
                 is_touching = previous["touching"]
 
@@ -376,8 +379,6 @@ class BaseMusician(ABC):
 
             obj["object_id"] = obj_id
 
-        MAX_MISSING_FRAMES = 8
-
         for object_id, previous in self.state["objects"].items():
 
             if object_id in updated_objects:
@@ -385,7 +386,7 @@ class BaseMusician(ABC):
 
             previous["missing_frames"] += 1
 
-            if previous["missing_frames"] <= MAX_MISSING_FRAMES:
+            if previous["missing_frames"] <= self.max_missing_frames:
                 updated_objects[object_id] = previous
 
         # Replace old objects
@@ -680,11 +681,11 @@ class LSTMMusician(BaseMusician):
 
             elif e["type"] == "ROI_RELEASE":
                 
-                # Find the last note that was played and turn it off
+                # Find the last notes that was played and turn it off
                 last_note = None
                 for note in reversed(self._note_buffer):
                     if note.isdigit():
-                        last_note = int(note)
+                        last_note = note
                         break
 
                 if last_note is not None:
