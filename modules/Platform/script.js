@@ -33,7 +33,7 @@ let processorUrl = detectProcessorUrl();
 let frameCounter = 0;
 let lastFrameSentTime = 0;
 // Adapt frame send rate on mobile to reduce bandwidth/CPU contention
-let frameSendInterval = isMobileDevice() ? 200 : 100; // ms
+let frameSendInterval = isMobileDevice() ? 250 : 150; // ms
 let processingCanvas = null;
 let processingCtx = null;
 let segmentationSocket = null;
@@ -52,9 +52,9 @@ let updateThrottleInterval = 50; // Throttle updates to 50ms (20 FPS)
 let audioContext = null;
 let masterGain = null;
 let isMusicGenerationActive = false;
-let activeNotes = new Map(); // Track currently playing notes
+let activeNotes = new Map(); // Track currently playing (sustained, tonal) notes
+let recentPercussion = new Map(); // Track short-lived drum hits: key -> expiry timestamp
 let instrumentVoices = {}; // Store instrument voice settings
-let toneInstruments = {}; // Store Tone.js instrument instances
 let musicEventQueue = []; // Queue for scheduling music events
 let lastMusicEventTime = 0;
 
@@ -493,57 +493,155 @@ async function checkProcessorStatus() {
 }
 
 /**
- * Audio System Functions
+ * Audio System Functions (Tone.js synthesis engine)
  */
+let instrumentFactories = {}; // instrument name -> () => fresh { synth, nodes, release, isPluck }
+let reverbBus = null;
+
 function initializeAudioSystem() {
     try {
-        // Create audio context
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AudioContextClass();
-        
-        // Create master gain node
-        masterGain = audioContext.createGain();
-        masterGain.gain.setValueAtTime(0.3, audioContext.currentTime); // Set volume to 30%
-        masterGain.connect(audioContext.destination);
-        
+        // Tone.js manages its own internal AudioContext.
+        masterGain = new Tone.Gain(0.3).toDestination();
+
         // Initialize instrument voices
         initializeInstrumentVoices();
-        
-        console.log('🎵 Audio system initialized successfully');
+
+        console.log('🎵 Audio system initialized successfully (Tone.js)');
         updateStatus('Audio system ready');
-        
+
     } catch (error) {
         console.error('❌ Failed to initialize audio system:', error);
         updateStatus('Audio initialization failed');
     }
 }
 
-async function initializeInstrumentVoices() {
+function initializeInstrumentVoices() {
+    // Shared bus: a touch of algorithmic reverb glues every instrument together and
+    // makes everything sound less "dry"/synthetic, without the async-load cost of convolution reverb.
+    reverbBus = new Tone.Freeverb({ roomSize: 0.55, dampening: 3000 }).connect(masterGain);
+    reverbBus.wet.value = 0.16;
 
-    await Tone.start();
+    // Each tonal instrument is a FACTORY that builds a brand-new, self-contained voice
+    // (synth + its own effects chain) for a single note-on. Building one voice per note
+    // (instead of sharing one Tone.PolySynth across every note of that instrument) means
+    // note-off always calls triggerRelease() on the *exact* instance that was triggered —
+    // there is no shared "which internal voice is this note?" bookkeeping for Tone to get
+    // wrong, which is what was leaving notes (bass especially) stuck on forever.
+    instrumentFactories = {
+        piano: () => {
+            const filter = new Tone.Filter(2600, 'lowpass').connect(reverbBus);
+            const chorus = new Tone.Chorus(4, 2.5, 0.25).connect(filter).start();
+            const synth = new Tone.Synth({
+                oscillator: { type: 'fatsawtooth4' },
+                envelope: { attack: 0.006, decay: 0.35, sustain: 0.22, release: 1.1 }
+            }).connect(chorus);
+            return { synth, nodes: [synth, chorus, filter], release: 1.1 };
+        },
+        electric_piano: () => {
+            const filter = new Tone.Filter(1800, 'lowpass').connect(reverbBus);
+            const trem = new Tone.Tremolo(4, 0.3).connect(filter).start();
+            const synth = new Tone.Synth({
+                oscillator: { type: 'fmsquare' },
+                envelope: { attack: 0.006, decay: 0.2, sustain: 0.35, release: 0.8 }
+            }).connect(trem);
+            return { synth, nodes: [synth, trem, filter], release: 0.8 };
+        },
+        strings: () => {
+            const filter = new Tone.Filter(3200, 'lowpass').connect(reverbBus);
+            const chorus = new Tone.Chorus(3.2, 3.5, 0.4).connect(filter).start();
+            const synth = new Tone.Synth({
+                oscillator: { type: 'fatsawtooth', count: 3, spread: 30 },
+                envelope: { attack: 0.25, decay: 0.2, sustain: 0.8, release: 1.8 }
+            }).connect(chorus);
+            return { synth, nodes: [synth, chorus, filter], release: 1.8 };
+        },
+        bass: () => {
+            // MonoSynth's filterEnvelope gives the punchy "pluck then settle" character
+            // real basses have — a plain oscillator+lowpass (the old design) sounds flat.
+            const filter = new Tone.Filter(700, 'lowpass').connect(reverbBus);
+            const synth = new Tone.MonoSynth({
+                oscillator: { type: 'fmsine' },
+                envelope: { attack: 0.02, decay: 0.25, sustain: 0.55, release: 0.5 },
+                filterEnvelope: {
+                    attack: 0.01, decay: 0.3, sustain: 0.3, release: 0.6,
+                    baseFrequency: 80, octaves: 3.2
+                }
+            }).connect(filter);
+            return { synth, nodes: [synth, filter], release: 0.6 };
+        },
+        electric_guitar: () => {
+            const dist = new Tone.Distortion(0.35).connect(reverbBus);
+            const filter = new Tone.Filter(2600, 'lowpass').connect(dist);
+            const synth = new Tone.MonoSynth({
+                oscillator: { type: 'fatsawtooth', count: 2, spread: 20 },
+                envelope: { attack: 0.004, decay: 0.15, sustain: 0.35, release: 0.4 },
+                filterEnvelope: {
+                    attack: 0.002, decay: 0.2, sustain: 0.4, release: 0.4,
+                    baseFrequency: 400, octaves: 3
+                }
+            }).connect(filter);
+            return { synth, nodes: [synth, filter, dist], release: 0.4 };
+        },
+        acoustic_guitar: () => {
+            // Physically-modeled plucked string — a world apart from an oscillator trying
+            // to fake a pluck with a fast decay. It has no traditional release stage; it
+            // just rings out on its own once triggered, which is exactly how a real pluck behaves.
+            const synth = new Tone.PluckSynth({
+                attackNoise: 1,
+                dampening: 3500,
+                resonance: 0.92
+            }).connect(reverbBus);
+            return { synth, nodes: [synth], release: 1.0, isPluck: true };
+        },
+        pad: () => {
+            const filter = new Tone.Filter(1400, 'lowpass').connect(reverbBus);
+            const chorus = new Tone.Chorus(2.2, 4, 0.5).connect(filter).start();
+            const synth = new Tone.Synth({
+                oscillator: { type: 'fatsine', count: 3, spread: 40 },
+                envelope: { attack: 0.6, decay: 0.6, sustain: 0.75, release: 2.4 }
+            }).connect(chorus);
+            return { synth, nodes: [synth, chorus, filter], release: 2.4 };
+        },
+        synth: () => {
+            const filter = new Tone.Filter(2200, 'lowpass').connect(reverbBus);
+            const synth = new Tone.MonoSynth({
+                oscillator: { type: 'fatsquare', count: 2, spread: 25 },
+                envelope: { attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.5 },
+                filterEnvelope: {
+                    attack: 0.01, decay: 0.25, sustain: 0.3, release: 0.5,
+                    baseFrequency: 500, octaves: 2.5
+                }
+            }).connect(filter);
+            return { synth, nodes: [synth, filter], release: 0.5 };
+        }
+    };
 
-    toneInstruments.piano = new Tone.PolySynth(Tone.Synth).toDestination();
-
-    toneInstruments.electric_piano = new Tone.PolySynth(Tone.FMSynth).toDestination();
-
-    toneInstruments.strings = new Tone.PolySynth(Tone.Synth,{
-        oscillator:{type:"sawtooth"}
-    }).toDestination();
-
-    toneInstruments.bass = new Tone.MonoSynth().toDestination();
-
-    toneInstruments.synth = new Tone.PolySynth(Tone.Synth).toDestination();
-
-    toneInstruments.drums = new Tone.NoiseSynth().toDestination();
-
-    toneInstruments.electric_guitar = new Tone.PluckSynth().toDestination();
-
-    toneInstruments.acoustic_guitar = new Tone.PluckSynth().toDestination();
-
-    toneInstruments.pad = new Tone.PolySynth(Tone.Synth,{
-        oscillator:{type:"triangle"}
-    }).toDestination();
-
+    // Drum voices stay as dedicated, reused instances (percussion is one-shot by nature —
+    // there's no "note-off" to track, so the per-note-instance approach above doesn't apply).
+    instrumentVoices = {
+        drums: {
+            kick: new Tone.MembraneSynth({
+                pitchDecay: 0.045,
+                octaves: 6,
+                envelope: { attack: 0.001, decay: 0.35, sustain: 0, release: 0.4 }
+            }).connect(reverbBus),
+            snare: new Tone.NoiseSynth({
+                noise: { type: 'white' },
+                envelope: { attack: 0.001, decay: 0.18, sustain: 0 }
+            }).connect(new Tone.Filter(1800, 'highpass').connect(reverbBus)),
+            hihat: new Tone.MetalSynth({
+                envelope: { attack: 0.001, decay: 0.12, release: 0.02 },
+                harmonicity: 5.1,
+                modulationIndex: 32,
+                resonance: 4000,
+                octaves: 1.5
+            }).connect(reverbBus),
+            generic: new Tone.NoiseSynth({
+                noise: { type: 'pink' },
+                envelope: { attack: 0.001, decay: 0.2, sustain: 0 }
+            }).connect(new Tone.Filter(1000, 'bandpass').connect(reverbBus))
+        }
+    };
 }
 
 function handleMusicEvents(musicData) {
@@ -557,7 +655,7 @@ function handleMusicEvents(musicData) {
         // Schedule each music event
         musicData.events.forEach((event, index) => {
             // Slight delay between events to avoid overwhelming
-            const scheduleTime = audioContext.currentTime + (index * 0.01);
+            const scheduleTime = Tone.now() + (index * 0.01);
             playMusicEvent(event, scheduleTime);
         });
         
@@ -571,75 +669,140 @@ function handleMusicEvents(musicData) {
 
 function playMusicEvent(event, scheduleTime) {
 
-    if (!isMusicGenerationActive)
-        return;
-
     const type = event.event_type || event.type;
 
     if (type === "note_off") {
+        // Releasing a note must always be allowed, even if generation was toggled off
+        // mid-note — otherwise a note started while active can outlive the "active" flag
+        // and never get silenced.
         stopNote(event.note);
         return;
     }
 
-    const frequency = midiNoteToFrequency(event.note);
+    if (!isMusicGenerationActive)
+        return;
 
     const instrument = event.instrument || "piano";
-
-    const voice =
-        instrumentVoices[instrument] ||
-        instrumentVoices.piano;
 
     if (instrument === "drums")
         playDrumSound(event, scheduleTime);
     else
-        playTonalInstrument(event, frequency, voice, scheduleTime);
+        playTonalInstrument(event, instrument, scheduleTime);
 }
 
-function playTonalInstrument(event, frequency, voice, scheduleTime){
+function disposeVoiceSoon(voice) {
+    // Give the release tail (or, for plucks, the natural decay) time to finish before
+    // tearing down the nodes, so we don't clip/click the tail off.
+    setTimeout(() => {
+        try {
+            voice.nodes.forEach(n => n.dispose && n.dispose());
+        } catch (e) { /* already disposed, ignore */ }
+    }, (voice.release + 0.3) * 1000);
+}
 
+function playTonalInstrument(event, instrument, scheduleTime) {
+
+    // If this exact note number is already sounding (e.g. a stray retrigger), cut it
+    // first so we never have two voices fighting over the same pitch.
     stopNote(event.note);
 
-    const instrument =
-        toneInstruments[event.instrument] ||
-        toneInstruments.piano;
+    const factory = instrumentFactories[instrument] || instrumentFactories.piano;
+    const voice = factory();
+    const noteName = Tone.Frequency(event.note, "midi").toNote();
+    const velocity = Math.min(1, Math.max(0.05, (event.velocity || 100) / 127));
 
-    const note =
-        Tone.Frequency(event.note,"midi").toNote();
+    try {
+        voice.synth.triggerAttack(noteName, scheduleTime, velocity);
+    } catch (e) {
+        console.warn('⚠️ Tone.js triggerAttack error:', e);
+        disposeVoiceSoon(voice);
+        return;
+    }
 
-    instrument.triggerAttack(
-        note,
-        Tone.now(),
-        (event.velocity||100)/127
-    );
+    activeNotes.set(event.note, { voice, instrument });
 
-    activeNotes.set(event.note,{
-        instrument,
-        note
-    });
+    // Safety timeout (in case a NoteOff never arrives from the backend)
+    const timeout = (voice.release + 4) * 1000;
 
+    setTimeout(() => {
+        const current = activeNotes.get(event.note);
+        if (current && current.voice === voice)
+            stopNote(event.note);
+    }, timeout);
 }
 
-function playDrumSound(event){
+function playDrumSound(event, scheduleTime) {
+    const velocity = Math.min(1, Math.max(0.05, (event.velocity || 100) / 127));
+    const drumType = getDrumType(event.note);
+    const drumVoices = instrumentVoices.drums || {};
+    const voice = drumVoices[drumType] || drumVoices.generic;
 
-    toneInstruments.drums.triggerAttackRelease(
-        "16n"
-    );
-
-}
-
-function stopNote(note){
-
-    const voice=activeNotes.get(note);
-
-    if(!voice)
+    if (!voice)
         return;
 
-    voice.instrument.triggerRelease(
-        voice.note
-    );
+    try {
+        if (typeof Tone !== 'undefined' && voice instanceof Tone.MembraneSynth) {
+            const noteName = Tone.Frequency(48, "midi").toNote(); // fixed low kick pitch
+            voice.triggerAttackRelease(noteName, "8n", scheduleTime, velocity);
+        } else if (typeof Tone !== 'undefined' && voice instanceof Tone.MetalSynth) {
+            voice.triggerAttackRelease("8n", scheduleTime, velocity);
+        } else {
+            voice.triggerAttackRelease("16n", scheduleTime, velocity);
+        }
 
+        // Drum hits are transient (no sustain/release we can query), so just keep
+        // "drums" visible in the status for a short window after each hit.
+        const PERCUSSION_VISIBILITY_MS = 600;
+        recentPercussion.set(`${drumType}-${Date.now()}`, Date.now() + PERCUSSION_VISIBILITY_MS);
+    } catch (e) {
+        console.warn('⚠️ Tone.js drum trigger error:', e);
+    }
+}
+
+function stopNote(note) {
+
+    const voiceData = activeNotes.get(note);
+
+    if (!voiceData)
+        return;
+
+    const { voice } = voiceData;
+
+    try {
+        if (!voice.isPluck) {
+            // Monophonic Synth/MonoSynth instances need no note argument for release —
+            // each instance IS one note, so there's nothing ambiguous to match against
+            // (unlike the old shared-PolySynth design this replaces).
+            voice.synth.triggerRelease(Tone.now());
+        }
+        // PluckSynth has no triggerRelease — it just rings out and gets disposed below.
+    }
+    catch(e){}
+
+    disposeVoiceSoon(voice);
     activeNotes.delete(note);
+}
 
+function hardStopAllAudio() {
+    // A true "panic" stop: skips the release-tail fade entirely and silences everything
+    // immediately by disposing the live nodes right away, then briefly dips and restores
+    // the master gain to guarantee no click/pop from cutting nodes off mid-waveform.
+    activeNotes.forEach(({ voice }) => {
+        try {
+            voice.nodes.forEach(n => n.dispose && n.dispose());
+        } catch (e) { /* ignore */ }
+    });
+    activeNotes.clear();
+    recentPercussion.clear();
+
+    if (masterGain && typeof Tone !== 'undefined') {
+        const now = Tone.now();
+        masterGain.gain.cancelScheduledValues(now);
+        masterGain.gain.setValueAtTime(0, now);
+        masterGain.gain.linearRampToValueAtTime(masterGain.gain.value || 0.3, now + 0.05);
+    }
+
+    console.log('🛑 Hard stop: all audio silenced immediately');
 }
 
 function midiNoteToFrequency(note) {
@@ -658,17 +821,16 @@ function getDrumType(midiNote) {
     }
 }
 
-function stopAllActiveNotes(){
+function stopAllActiveNotes() {
 
-    activeNotes.forEach(v=>{
+    activeNotes.forEach((voiceData, note) => {
 
-        v.instrument.triggerRelease(
-            v.note
-        );
+        stopNote(note);
 
     });
 
     activeNotes.clear();
+    recentPercussion.clear();
 
     console.log("🔇 All notes stopped");
 }
@@ -712,19 +874,33 @@ function updateMusicStatusDisplay() {
     updateStatus(message);
 }
 
+function getCurrentlyPlayingInstruments() {
+    const now = Date.now();
+    const instruments = {};
+
+    // Sustained tonal notes that are still actually ringing
+    activeNotes.forEach(voiceData => {
+        const instr = normalizeInstrumentName(voiceData.instrument, 'piano');
+        instruments[instr] = (instruments[instr] || 0) + 1;
+    });
+
+    // Drum hits have no sustain to track, so keep them visible for a short window
+    recentPercussion.forEach((expiresAt, key) => {
+        if (expiresAt <= now) {
+            recentPercussion.delete(key);
+        } else {
+            instruments['drums'] = (instruments['drums'] || 0) + 1;
+        }
+    });
+
+    return instruments;
+}
+
 function updateMusicInfo(musicData) {
     const eventCount = (musicData && Array.isArray(musicData.events)) ? musicData.events.length : 0;
-    const tempo = clampTempoValue((musicData && Number.isInteger(musicData.tempo)) ? musicData.tempo : currentTempo);
     const key = (musicData && musicData.key_signature) ? musicData.key_signature : lastMusicStatus.keySignature;
 
-    const instruments = {};
-    if (musicData && Array.isArray(musicData.events)) {
-        musicData.events.forEach(event => {
-            const instr = normalizeInstrumentName(event.instrument, 'piano');
-            instruments[instr] = (instruments[instr] || 0) + 1;
-        });
-    }
-
+    const instruments = getCurrentlyPlayingInstruments();
     const instrumentSummary = Object.entries(instruments)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([instr, count]) => `${formatInstrumentName(instr)} (${count})`);
@@ -2360,17 +2536,17 @@ function applyTempoSetting() {
 }
 
 function startMusicGeneration() {
-    if (!audioContext) {
+    if (!masterGain) {
         initializeAudioSystem();
     }
-    
-    // Resume audio context if suspended (required by browser)
-    if (audioContext && audioContext.state === 'suspended') {
-        audioContext.resume().then(() => {
-            console.log('🎵 Audio context resumed');
-        });
-    }
-    
+
+    // Unlock/resume the underlying (Tone.js) audio context — required by browsers
+    Tone.start().then(() => {
+        console.log('🎵 Audio context resumed');
+    }).catch(err => {
+        console.warn('⚠️ Unable to resume audio context:', err);
+    });
+
     if (isMusicGenerationActive) {
         stopMusicGeneration();
     } else {
