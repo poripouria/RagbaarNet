@@ -29,4 +29,4 @@ AGENTS.md
 single_file_dataset
 
 .zed/
-logs/platform_logs.log
+logs/
