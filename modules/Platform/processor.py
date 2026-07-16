@@ -778,7 +778,7 @@ class Processor:
         """Set music tempo (BPM)"""
 
         if hasattr(self, 'musician') and self.musician is not None:
-            self.musician.tempo = tempo
+            self.musician.set_tempo(tempo)
             logger.info(f"🎵 Music tempo set to {tempo} BPM")
             return True
         return False
@@ -801,6 +801,7 @@ class Processor:
                 'tempo': self.musician.tempo,
                 'key_signature': self.musician.key_signature,
                 'musician_type': self.musician.musician_type,
+                'instrument': self.musician.instrument,
                 'queue_size': self.music_queue.qsize() if hasattr(self, 'music_queue') else 0
             }
         return {'enabled': False, 'musician_available': False}
@@ -815,10 +816,44 @@ class Processor:
             musicians = []
 
         current = None
+        instrument = 'piano'
         if hasattr(self, 'musician') and self.musician is not None:
             current = self.musician.musician_type
+            instrument = self.musician.instrument
 
-        return {'musicians': musicians, 'current': current}
+        return {'musicians': musicians, 'current': current, 'instrument': instrument}
+
+    def apply_music_settings(self, musician_type: str, tempo: int, instrument: str):
+        """Apply musician, tempo, and LSTM instrument settings together."""
+
+        if not hasattr(self, 'musician') or self.musician is None:
+            return {'success': False, 'error': 'Musician system not initialized'}
+
+        try:
+            tempo = int(tempo)
+            if not 60 <= tempo <= 180:
+                raise ValueError('Tempo must be between 60 and 180 BPM')
+
+            if musician_type != self.musician.musician_type:
+                self.musician.switch_musician(
+                    musician_type,
+                    tempo=tempo,
+                    instrument=instrument
+                )
+            else:
+                self.musician.set_tempo(tempo)
+                if musician_type == 'lstm-onessen':
+                    self.musician.set_instrument(instrument)
+
+            return {
+                'success': True,
+                'musician_type': self.musician.musician_type,
+                'tempo': self.musician.tempo,
+                'instrument': self.musician.instrument
+            }
+        except Exception as e:
+            logger.error(f"❌ Error applying music settings: {e}")
+            return {'success': False, 'error': str(e)}
 
     def switch_musician(self, musician_type: str):
         """Switch to a different music generation model (keeps current tempo/key)"""
@@ -1140,7 +1175,7 @@ def handle_get_music_status():
 
 @socketio.on('get_available_musicians')
 def handle_get_available_musicians():
-    """Send the list of available musicians (for the "Change Musician" picker) to the client"""
+    """Send the available musicians and current music settings to the client."""
 
     try:
         data = processor.get_available_musicians()
@@ -1148,6 +1183,32 @@ def handle_get_available_musicians():
     except Exception as e:
         emit('musicians_list', {'error': str(e), 'musicians': [], 'current': None})
         logger.error("❌ Error getting available musicians: %s", e)
+
+@socketio.on('set_music_settings')
+def handle_set_music_settings(data):
+    """Apply the combined music settings from the platform UI."""
+
+    try:
+        settings = data or {}
+        musician_type = settings.get('musician_type')
+        if not musician_type:
+            emit('music_settings_updated', {'success': False, 'error': 'musician_type is required'})
+            return
+
+        result = processor.apply_music_settings(
+            musician_type=musician_type,
+            tempo=settings.get('tempo', 120),
+            instrument=settings.get('instrument', 'piano')
+        )
+        emit('music_settings_updated', result)
+        if result.get('success'):
+            logger.info(
+                "🎵 Music settings updated: musician=%s, instrument=%s, tempo=%s",
+                result.get('musician_type'), result.get('instrument'), result.get('tempo')
+            )
+    except Exception as e:
+        emit('music_settings_updated', {'success': False, 'error': str(e)})
+        logger.error("❌ Error applying music settings: %s", e)
 
 @socketio.on('switch_musician')
 def handle_switch_musician(data):
