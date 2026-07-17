@@ -195,9 +195,11 @@ class Detector:
             "objects": {},          # object_id -> object info
             "next_object_id": 0
         }
+        self.frame_counter = 0
 
     def __call__(self,
         input: SegmentationResult,
+        frame_id: int = 0,
         roi: Dict[str, Any] = None
         ):
 
@@ -205,6 +207,7 @@ class Detector:
             raise ValueError("Input must be a SegmentationResult instance")
         
         self._set_roi(roi)
+        self.frame_counter = frame_id
 
         detected = self.detect_scene_events(input.bounding_boxes, input.masks)
 
@@ -220,7 +223,7 @@ class Detector:
             self.roi = ROI(corners=roi_payload.get("corners", []), 
                            controls=roi_payload.get("controls", []))
             
-            logger.info(f"💢 ROI updated.")
+            logger.info(f"💢 ROI updated for frame {self.frame_counter}.")
 
     def assign_object_ids(self, objects, max_distance=100):
         """
@@ -374,7 +377,6 @@ class Detector:
 
         logger.info(f"Detected {len(events)} scene events")
         return events
-
 
 class Processor:
     """
@@ -822,12 +824,13 @@ class Processor:
                             try:
                                 scene_events = self.detector(
                                     input=result,
+                                    frame_id=self.frame_counter,
                                     roi={
                                         'corners': roi_points,
                                         'controls': roi_controls
                                     }
                                 )
-
+                                
                                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                                     logger.debug("🎯 Detected %s scene events for frame %s", len(scene_events), self.frame_counter)
                             except Exception as event_err:
