@@ -7,7 +7,6 @@ particularly segmentation maps from computer vision models. It supports various 
 generation strategies with easy integration for additional models.
 """
 
-from math import e
 import os
 import sys
 import numpy as np
