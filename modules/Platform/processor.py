@@ -220,7 +220,7 @@ class Detector:
             self.roi = ROI(corners=roi_payload.get("corners", []), 
                            controls=roi_payload.get("controls", []))
             
-            logger.info(f"ROI updated for frame {self.frame_counter}")
+            logger.info(f"💢 ROI updated.")
 
     def assign_object_ids(self, objects, max_distance=100):
         """
@@ -827,7 +827,7 @@ class Processor:
                                         'controls': roi_controls
                                     }
                                 )
-                                
+
                                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                                     logger.debug("🎯 Detected %s scene events for frame %s", len(scene_events), self.frame_counter)
                             except Exception as event_err:
