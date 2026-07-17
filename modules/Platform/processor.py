@@ -198,9 +198,9 @@ class Detector:
         self.frame_counter = 0
 
     def __call__(self,
-        input: SegmentationResult,
-        frame_id: int = 0,
-        roi: Dict[str, Any] = None
+            input: SegmentationResult,
+            frame_id: int = 0,
+            roi: Dict[str, Any] = None
         ):
 
         if not isinstance(input, SegmentationResult):
@@ -844,6 +844,7 @@ class Processor:
                                 music_frame = self.musician(
                                     results=scene_events,
                                     frame_id=self.frame_counter,
+                                    state=self.detector.state
                                 )
 
                                 # Store music data

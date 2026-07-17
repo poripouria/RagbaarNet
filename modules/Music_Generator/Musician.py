@@ -90,13 +90,14 @@ class BaseMusician(ABC):
         self.frame_counter = 0
         self.max_missing_frames = 4     # Number of frames to keep an object in memory after it disappears
 
-    def __call__(self, results: List[Dict[str, Any]], frame_id: int = 0):
-        return self.generate_music(results, frame_id)
+    def __call__(self, results: List[Dict[str, Any]], frame_id: int = 0, state: Dict[str, Any] = None):
+        return self.generate_music(results, frame_id, state)
 
     @abstractmethod
     def generate_music(self,
         results: List[Dict[str, Any]],
-        frame_id: int = 0
+        frame_id: int = 0,
+        state: Dict[str, Any] = None
     ):
         """
         Convenience method to call generate_music directly.
@@ -104,6 +105,7 @@ class BaseMusician(ABC):
         Args:
             results: Detection result as a list of dictionaries containing scene events
             frame_id: Frame identifier for tracking
+            state: Current state of the detection system
 
         Returns:
             MusicFrame containing generated music events
@@ -148,7 +150,7 @@ class RuleBasedMusician(BaseMusician):
 
         return mapping.get(base_class, None)
     
-    def generate_music(self, results, frame_id):
+    def generate_music(self, results, frame_id, state):
         """
         Generate music based on the input scene data.
         """
@@ -200,7 +202,7 @@ class RuleBasedMusician(BaseMusician):
 
         for object_id, note_info in list(self.active_notes.items()):
 
-            if results.state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+            if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
 
                 music_events.append(
                     MusicEvent(
@@ -210,7 +212,7 @@ class RuleBasedMusician(BaseMusician):
                         velocity=0,
                         instrument=note_info["instrument"],
                         timestamp=self.frame_counter,
-                        metadata={"object_id": object_id, "class": results.state["objects"][object_id]["class_name"]}
+                        metadata={"object_id": object_id, "class": state["objects"][object_id]["class_name"]}
                     )
                 )
 
@@ -311,7 +313,7 @@ class LSTMMusician(BaseMusician):
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
 
-    def generate_music(self, results, frame_id):
+    def generate_music(self, results, frame_id, state):
         """
         Generate music based on the input scene data using the LSTM model.
         """
@@ -404,7 +406,7 @@ class LSTMMusician(BaseMusician):
 
         for object_id, note_info in list(self.active_notes.items()):
 
-            if results.state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+            if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
 
                 music_events.append(
                     MusicEvent(
@@ -414,7 +416,7 @@ class LSTMMusician(BaseMusician):
                         velocity=0,
                         instrument=note_info["instrument"],
                         timestamp=self.frame_counter,
-                        metadata={"object_id": object_id, "class": results.state["objects"][object_id]["class_name"]}
+                        metadata={"object_id": object_id}
                     )
                 )
 
@@ -554,7 +556,8 @@ class Musician:
     def __call__(self, 
                  results,
                  frame_id: int = 0,
-                 ) -> MusicFrame:
+                 state: Dict[str, Any] = None
+                ) -> MusicFrame:
         """
         Generate music based on segmentation data.
 
@@ -566,4 +569,4 @@ class Musician:
             MusicFrame containing generated music events
         """
 
-        return self.musician(results, frame_id)
+        return self.musician(results, frame_id, state)
