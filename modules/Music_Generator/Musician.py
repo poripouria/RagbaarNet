@@ -7,6 +7,7 @@ particularly segmentation maps from computer vision models. It supports various 
 generation strategies with easy integration for additional models.
 """
 
+from math import e
 import os
 import sys
 import numpy as np
@@ -189,46 +190,16 @@ class ROI:
 
         return edges
 
-    def intersects_bbox(self, bbox, return_edges=False):
+    def calculate_intersection_area(self, mask):
 
-        x1, y1, x2, y2 = map(int, bbox["bbox"])
+        intersection = np.logical_and(mask, self.boundary_mask)
+        area = np.sum(intersection)
 
-        x1 = max(0, x1)
-        y1 = max(0, y1)
-        x2 = min(self.boundary_mask.shape[1], x2)
-        y2 = min(self.boundary_mask.shape[0], y2)
-
-        bbox_mask = np.zeros_like(self.boundary_mask, dtype=bool)
-        bbox_mask[y1:y2, x1:x2] = True
-
-        touching = np.logical_and(
-            bbox_mask,
-            self.boundary_mask
-        ).any()
-
-        if not return_edges:
-            return touching
-
-        edge_names = ["top", "right", "bottom", "left"]
-
-        edges = []
-
-        for name, edge_mask in zip(edge_names, self.edge_masks):
-
-            if np.logical_and(bbox_mask, edge_mask).any():
-                edges.append(name)
-
-        return {
-            "touching": touching,
-            "edges": edges
-        }
+        return area
 
     def intersects_mask(self, mask, return_edges=False):
 
-        touching = np.logical_and(
-            mask,
-            self.boundary_mask
-        ).any()
+        touching = np.logical_and(mask, self.boundary_mask).any()
 
         if not return_edges:
             return touching
@@ -237,13 +208,15 @@ class ROI:
         edges = []
 
         for name, edge_mask in zip(edge_names, self.edge_masks):
-
             if np.logical_and(mask, edge_mask).any():
                 edges.append(name)
 
+        erea = self.calculate_intersection_area(mask)
+
         return {
             "touching": touching,
-            "edges": edges
+            "edges": edges,
+            "area": erea
         }
 
 class BaseMusician(ABC):
@@ -430,33 +403,29 @@ class BaseMusician(ABC):
             )
             touching = collision["touching"]
             edges = collision["edges"]
+            erea = collision["area"]
 
             track = self.state["objects"].get(obj_id, {})
             prev = track.get("touching", False)
 
+            event_type = None
             if touching and not prev:
-                events.append({
-                    "type": "ROI_TOUCH",
-                    "object_id": obj_id,
-                    "class": obj_class,
-                    "edges": edges
-                })
+                event_type = "ROI_TOUCH"
                 self.state["objects"][obj_id]["touching"] = True
-
             elif not touching and prev:
-                events.append({
-                    "type": "ROI_RELEASE",
-                    "object_id": obj_id,
-                    "class": obj_class,
-                    "edges": edges
-                })
+                event_type = "ROI_RELEASE"
                 self.state["objects"][obj_id]["touching"] = False
-        
-        else:
-            logger.warning("No bounding boxes or masks provided for scene event detection.")
+
+            events.append({
+                "type": event_type,
+                "object_id": obj_id,
+                "class": obj_class,
+                "edges": edges,
+                "area": erea
+            })
+
 
         logger.info(f"Detected {len(events)} scene events")
-
         return events
 
     @abstractmethod
