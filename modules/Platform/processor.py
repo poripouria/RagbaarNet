@@ -1103,6 +1103,7 @@ def handle_connect():
     is_main_ui = (not referrer) or ('/ui/' in referrer) or (referrer.endswith('/ui'))
 
     if is_main_ui:
+        processor.set_main_ui_connected(True)
         logger.info("🎯 Main UI connected: %s", request.sid)
         return
 
