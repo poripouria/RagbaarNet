@@ -820,6 +820,7 @@ class Processor:
                         self._broadcast_segmentation_update()
 
                         #  Detect scene events based on ROI and detected objects
+                        scene_events = []
                         if self.detector is not None:
                             try:
                                 scene_events = self.detector(
