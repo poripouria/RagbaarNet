@@ -225,7 +225,6 @@ class RuleBasedMusician(BaseMusician):
             key_signature=self.key_signature,
             metadata={
                 "scene_events": scene_events,
-                "active_objects": list(results.state["objects"].values())
             }
         )
 
@@ -430,7 +429,6 @@ class LSTMMusician(BaseMusician):
             key_signature=self.key_signature,
             metadata={
                 "scene_events": scene_events,
-                "active_objects": list(results.state["objects"].values())
             }
         )
 
