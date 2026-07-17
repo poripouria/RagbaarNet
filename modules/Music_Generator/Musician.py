@@ -9,15 +9,12 @@ generation strategies with easy integration for additional models.
 
 import os
 import sys
-import numpy as np
-import cv2
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
-from Segmentation.Segmentor import SegmentationResult
 
 logger = setup_logging("INFO", name="Music_Generator.Musician")
 
@@ -70,154 +67,6 @@ class MusicFrame:
     key_signature: str = "C_major"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-class ROI:
-    """
-    ROI defined by 4 corner points + 4 bezier control points
-    """
-
-    def __init__(
-        self,
-        corners: List[Tuple[float, float]],
-        controls: List[Tuple[float, float]],
-        frame_size: Tuple[int, int] = (1280, 720),
-    ):
-        """
-        Args:
-            corners: List of 4 corner points (x, y)
-            controls: List of 4 bezier control points (x, y)
-            frame_size: (width, height) of the frame these masks must align with.
-                Must match the actual segmentation_map / mask resolution used at
-                collision-check time, or intersects_mask() will silently misfire
-                (wrong shape -> wrong/empty results).
-        """
-
-        if len(corners) != 4 or len(controls) != 4:
-            raise ValueError("ROI must have exactly 4 corners and 4 control points")
-
-        self.corners = corners
-        self.controls = controls
-        self.frame_width, self.frame_height = frame_size
-
-        self.polygon = self._build_polygon()
-        self.edges = self._build_edges()
-
-        self.boundary_mask = self._build_boundary_mask(width=self.frame_width, height=self.frame_height)
-        self.edge_masks = self._build_edge_masks(width=self.frame_width, height=self.frame_height)
-
-    def _build_boundary_mask(self, width, height, thickness=3):
-
-        mask = np.zeros((height, width), dtype=np.uint8)
-
-        pts = np.array(self.polygon, dtype=np.int32)
-
-        cv2.polylines(
-            mask,
-            [pts],
-            isClosed=True,
-            color=255,
-            thickness=thickness
-        )
-
-        return mask.astype(bool)
-
-    def _build_edge_masks(self, width, height, thickness=3):
-
-        edge_masks = []
-
-        samples_per_edge = len(self.polygon) // 4
-
-        for i in range(4):
-
-            mask = np.zeros((height, width), dtype=np.uint8)
-
-            start = i * samples_per_edge
-            end = (i + 1) * samples_per_edge
-
-            pts = np.array(
-                self.polygon[start:end],
-                dtype=np.int32
-            )
-
-            cv2.polylines(
-                mask,
-                [pts],
-                isClosed=False,
-                color=255,
-                thickness=thickness
-            )
-
-            edge_masks.append(mask.astype(bool))
-
-        return edge_masks
-
-    def _quad_bezier(self, p0, p1, p2, t):
-
-        return (
-            (1 - t) ** 2 * np.array(p0)
-            + 2 * (1 - t) * t * np.array(p1)
-            + t ** 2 * np.array(p2)
-        )
-
-    def _build_polygon(self):
-
-        poly = []
-
-        n = len(self.corners)
-
-        for i in range(n):
-
-            p0 = self.corners[i]
-            p2 = self.corners[(i + 1) % n]
-            p1 = self.controls[i]
-
-            for t in np.linspace(0, 1, 20):
-                pt = self._quad_bezier(p0, p1, p2, t)
-                poly.append((pt[0], pt[1]))
-
-        return poly
-
-    def _build_edges(self):
-
-        edges = []
-
-        for i in range(len(self.polygon)):
-
-            a = self.polygon[i]
-            b = self.polygon[(i + 1) % len(self.polygon)]
-
-            edges.append((a, b))
-
-        return edges
-
-    def calculate_intersection_area(self, mask):
-
-        intersection = np.logical_and(mask, self.boundary_mask)
-        area = np.sum(intersection)
-
-        return area
-
-    def intersects_mask(self, mask, return_edges=False):
-
-        touching = np.logical_and(mask, self.boundary_mask).any()
-
-        if not return_edges:
-            return touching
-
-        edge_names = ["top", "right", "bottom", "left"]
-        edges = []
-
-        for name, edge_mask in zip(edge_names, self.edge_masks):
-            if np.logical_and(mask, edge_mask).any():
-                edges.append(name)
-
-        erea = self.calculate_intersection_area(mask)
-
-        return {
-            "touching": touching,
-            "edges": edges,
-            "area": erea
-        }
-
 class BaseMusician(ABC):
     """
     Abstract base class for all music generation models.
@@ -236,225 +85,30 @@ class BaseMusician(ABC):
 
         self.tempo = tempo
         self.key_signature = key_signature
+        self.active_notes = {}          # note -> last frame it was active
 
         self.frame_counter = 0
+        self.max_missing_frames = 4     # Number of frames to keep an object in memory after it disappears
 
-        # state: keeps track of objects
-        self.state = {
-            "objects": {},          # object_id -> object info
-            "next_object_id": 0,    
-            "active_notes": {},     # note -> last frame it was active
-        }
-        self.max_missing_frames = 4  # Number of frames to keep an object in memory after it disappears
-
-        self.roi = None  # Will be set per frame if provided
-        self.prev_roi_payload = None  # To track changes in ROI between frames
-
-    def __call__(self,
-        input: SegmentationResult,
-        frame_id: int = 0,
-        roi: Dict[str, Any] = None
-    ):
-        
-        if not isinstance(input, SegmentationResult):
-            raise ValueError("Input must be a SegmentationResult instance")
-
-        return self.generate_music(input, frame_id, roi)
-
-    def _set_roi(self, roi_payload):
-        
-        if not roi_payload:
-            return
-        
-        if self.prev_roi_payload != roi_payload:
-            self.prev_roi_payload = roi_payload
-            self.roi = ROI(corners=roi_payload.get("corners", []), 
-                           controls=roi_payload.get("controls", []))
-            
-            logger.info(f"ROI updated for frame {self.frame_counter}")
-
-    def assign_object_ids(self, objects, max_distance=100):
-        """
-        Assign unique IDs to detected objects based on their bounding boxes and class names. 
-        The rule is to match objects across frames based on IoU proximity and class similarity, 
-        while also considering the maximum allowed distance for matching.
-        """
-
-        updated_objects = {}
-        used_tracks = set()
-
-        for obj in objects:
-
-            bbox = obj["bbox"]
-            cls = obj["class_name"]
-
-            x1, y1, x2, y2 = bbox
-            if "centroid" in obj.keys():
-                centroid = obj["centroid"]
-            else:
-                centroid = ((x1 + x2) / 2, (y1 + y2) / 2)
-            
-            matched_id = None
-            best_score = float("-inf")
-
-            # Search previous objects
-            for object_id, previous in self.state["objects"].items():
-
-                penalty = 0
-
-                # Class name mismatch penalty
-                if previous["class_name"] != cls:
-                    penalty += -10
-
-                # Already used in this frame penalty
-                if object_id in used_tracks: 
-                    penalty += -1000
-
-                # Distance penalty
-                pcx, pcy = previous["centroid"]
-                cx, cy = centroid
-                distance = ((cx-pcx)**2 + (cy-pcy)**2)**0.5
-                if distance > max_distance:
-                    penalty += -((distance / max_distance) * 100)
-
-                IoU = None
-                px1, py1, px2, py2 = previous["bbox"]
-                ix1, iy1, ix2, iy2 = max(x1, px1), max(y1, py1), min(x2, px2), min(y2, py2)
-                if ix1 >= ix2 or iy1 >= iy2:
-                    IoU = 0.0
-                else:
-                    inter = (ix2 - ix1) * (iy2 - iy1)
-                    area = (x2 - x1) * (y2 - y1)
-                    areap = (px2 - px1) * (py2 - py1)
-                    union = area + areap - inter
-                    IoU = inter / union if union > 0 else 0.0
-
-                score = IoU * 1000 + penalty
-                if score > best_score:
-                    best_score = score
-                    matched_id = object_id
-
-            # Existing object
-            if best_score > 0:
-                obj_id = matched_id
-                used_tracks.add(obj_id)
-                previous = self.state["objects"][obj_id]
-                is_touching = previous["touching"]
-
-            # New object
-            else:
-                obj_id = self.state["next_object_id"]
-                if self.state["next_object_id"] > 5000:
-                    self.state["next_object_id"] = 0
-                    logger.warning("ID counter exceeded 5000, resetting to 0. This may cause ID collisions.")
-                self.state["next_object_id"] += 1
-                is_touching = False
-
-            updated_objects[obj_id] = {
-                "class_name": cls,
-                "centroid": centroid,
-                "bbox": bbox,
-                "touching": is_touching,
-                "missing_frames": 0,
-                "last_seen_frame": self.frame_counter
-            }
-
-            obj["object_id"] = obj_id
-
-        for object_id, previous in self.state["objects"].items():
-
-            if object_id in updated_objects:
-                continue
-
-            previous["missing_frames"] += 1
-            updated_objects[object_id] = previous
-
-        # Replace old objects
-        self.state["objects"] = updated_objects
-
-    def detect_scene_events(self, bounding_boxes=None, masks=None):
-        """
-        Detect scene events and return a list of events.
-        Here, event is defined as an object touching or releasing the ROI boundary.
-        """
-
-        events = []
-
-        if bounding_boxes is None and masks is None:
-            logger.warning("No bounding boxes or masks provided for scene event detection.")
-            return events
-        
-        self.assign_object_ids(bounding_boxes)
-
-        for obj in bounding_boxes:
-
-            obj_id = obj["object_id"]
-            obj_class = obj["class_name"]
-            obj_mask = masks.get(obj_class, None)
-
-            if obj_mask is None:
-                logger.warning(f"No mask found for object class '{obj_class}'. Skipping event detection.")
-                continue
-
-            collision = self.roi.intersects_mask(
-                mask=obj_mask,
-                return_edges=True
-            )
-            touching = collision["touching"]
-            edges = collision["edges"]
-            erea = collision["area"]
-
-            track = self.state["objects"].get(obj_id, {})
-            prev = track.get("touching", False)
-
-            event_type = None
-            if touching and not prev:
-                event_type = "ROI_TOUCH"
-                self.state["objects"][obj_id]["touching"] = True
-            elif not touching and prev:
-                event_type = "ROI_RELEASE"
-                self.state["objects"][obj_id]["touching"] = False
-
-            events.append({
-                "type": event_type,
-                "object_id": obj_id,
-                "class": obj_class,
-                "edges": edges,
-                "area": erea
-            })
-
-
-        logger.info(f"Detected {len(events)} scene events")
-        return events
+    def __call__(self, results: List[Dict[str, Any]], frame_id: int = 0):
+        return self.generate_music(results, frame_id)
 
     @abstractmethod
     def generate_music(self,
-        input: SegmentationResult,
-        frame_id: int = 0,
-        roi: Dict[str, Any] = None
+        results: List[Dict[str, Any]],
+        frame_id: int = 0
     ):
         """
         Convenience method to call generate_music directly.
 
         Args:
-            input: Segmentation result instance
+            results: Detection result as a list of dictionaries containing scene events
             frame_id: Frame identifier for tracking
-            roi: Region of interest for music generation
 
         Returns:
             MusicFrame containing generated music events
         """
         pass
-
-    def extract_features(self, segmentation_data: SegmentationResult) -> Dict[str, Any]:
-        """
-        Default feature extractor (can be overridden).
-
-        Args:
-            segmentation_data: Segmentation result instance
-        """
-
-        return segmentation_data.metadata or {}
 
 class RuleBasedMusician(BaseMusician):
     """
@@ -494,7 +148,7 @@ class RuleBasedMusician(BaseMusician):
 
         return mapping.get(base_class, None)
     
-    def generate_music(self, result, frame_id, roi):
+    def generate_music(self, results, frame_id):
         """
         Generate music based on the input scene data.
         """
@@ -502,9 +156,8 @@ class RuleBasedMusician(BaseMusician):
         logger.info(f"🎵 Generating music for frame {frame_id}")
 
         self.frame_counter = frame_id
-        self._set_roi(roi)
 
-        scene_events = self.detect_scene_events(result.bounding_boxes, result.masks)
+        scene_events = results
         music_events = []
 
         for e in scene_events:
@@ -519,7 +172,7 @@ class RuleBasedMusician(BaseMusician):
             event = None
             if e["type"] == "ROI_TOUCH":
                 event = "note_on"
-                self.state["active_notes"][e["object_id"]] = {
+                self.active_notes[e["object_id"]] = {
                     "voice_id": e["object_id"],
                     "note": note,
                     "velocity": velocity,
@@ -527,7 +180,7 @@ class RuleBasedMusician(BaseMusician):
                 }
             elif e["type"] == "ROI_RELEASE":
                 event = "note_off"
-                self.state["active_notes"].pop(e["object_id"], None)
+                self.active_notes.pop(e["object_id"], None)
             else:
                 continue  # Skip event
                 
@@ -545,9 +198,9 @@ class RuleBasedMusician(BaseMusician):
             
             logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity if e['type'] == 'ROI_TOUCH' else 0}, 'instrument': '{instrument}'")
 
-        for object_id, note_info in list(self.state["active_notes"].items()):
+        for object_id, note_info in list(self.active_notes.items()):
 
-            if self.state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+            if results.state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
 
                 music_events.append(
                     MusicEvent(
@@ -557,11 +210,11 @@ class RuleBasedMusician(BaseMusician):
                         velocity=0,
                         instrument=note_info["instrument"],
                         timestamp=self.frame_counter,
-                        metadata={"object_id": object_id, "class": self.state["objects"][object_id]["class_name"]}
+                        metadata={"object_id": object_id, "class": results.state["objects"][object_id]["class_name"]}
                     )
                 )
 
-                self.state["active_notes"].pop(object_id, None)
+                self.active_notes.pop(object_id, None)
                 
                 logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
@@ -572,8 +225,7 @@ class RuleBasedMusician(BaseMusician):
             key_signature=self.key_signature,
             metadata={
                 "scene_events": scene_events,
-                "active_objects": list(self.state["objects"].values()),
-                "extra": result.metadata or {}
+                "active_objects": list(results.state["objects"].values())
             }
         )
 
@@ -660,7 +312,7 @@ class LSTMMusician(BaseMusician):
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
 
-    def generate_music(self, result, frame_id, roi):
+    def generate_music(self, results, frame_id):
         """
         Generate music based on the input scene data using the LSTM model.
         """
@@ -668,9 +320,8 @@ class LSTMMusician(BaseMusician):
         logger.info(f"🎵 Generating music with LSTM for frame {frame_id}")
 
         self.frame_counter = frame_id
-        self._set_roi(roi)
 
-        scene_events = self.detect_scene_events(result.bounding_boxes, result.masks)
+        scene_events = results
         music_events = []
 
         for e in scene_events:
@@ -707,7 +358,7 @@ class LSTMMusician(BaseMusician):
                     )
                 )
 
-                self.state["active_notes"][e["object_id"]] = {
+                self.active_notes[e["object_id"]] = {
                     "voice_id": e["object_id"],
                     "note": int(new_note),
                     "velocity": 100,
@@ -722,9 +373,9 @@ class LSTMMusician(BaseMusician):
                 
                 # Find the related note for this object_id
                 last_note = None
-                if e["object_id"] in self.state["active_notes"]:
-                    last_note = self.state["active_notes"][e["object_id"]]["note"]
-                    self.state["active_notes"].pop(e["object_id"], None)
+                if e["object_id"] in self.active_notes:
+                    last_note = self.active_notes[e["object_id"]]["note"]
+                    self.active_notes.pop(e["object_id"], None)
 
                 if last_note is not None:
                     music_events.append(
@@ -752,9 +403,9 @@ class LSTMMusician(BaseMusician):
 
             self.last_seed_notes = self._note_buffer[-16:]
 
-        for object_id, note_info in list(self.state["active_notes"].items()):
+        for object_id, note_info in list(self.active_notes.items()):
 
-            if self.state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+            if results.state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
 
                 music_events.append(
                     MusicEvent(
@@ -764,11 +415,11 @@ class LSTMMusician(BaseMusician):
                         velocity=0,
                         instrument=note_info["instrument"],
                         timestamp=self.frame_counter,
-                        metadata={"object_id": object_id, "class": self.state["objects"][object_id]["class_name"]}
+                        metadata={"object_id": object_id, "class": results.state["objects"][object_id]["class_name"]}
                     )
                 )
 
-                self.state["active_notes"].pop(object_id, None)
+                self.active_notes.pop(object_id, None)
 
                 logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
@@ -779,8 +430,7 @@ class LSTMMusician(BaseMusician):
             key_signature=self.key_signature,
             metadata={
                 "scene_events": scene_events,
-                "active_objects": list(self.state["objects"].values()),
-                "extra": result.metadata or {}
+                "active_objects": list(results.state["objects"].values())
             }
         )
 
@@ -904,23 +554,18 @@ class Musician:
         ]
 
     def __call__(self, 
-                 input,  # result
+                 results,
                  frame_id: int = 0,
-                 roi: Dict[str, Any] = None,
                  ) -> MusicFrame:
         """
         Generate music based on segmentation data.
 
         Args:
-            input: Segmentation result
+            results: Detection results
             frame_id: Frame identifier for tracking
-            roi: Region of interest data
 
         Returns:
             MusicFrame containing generated music events
         """
 
-        if not isinstance(input, SegmentationResult):
-            raise ValueError("Input must be a SegmentationResult instance")
-
-        return self.musician(input, frame_id, roi)
+        return self.musician(results, frame_id)
