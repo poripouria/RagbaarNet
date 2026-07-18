@@ -64,7 +64,8 @@ let lastMusicEventTime = 0;
 let availableMusicians = [
     { id: 'rule-based', label: 'Rule-based Musician', description: 'Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).' },
     { id: 'continuous_pianist', label: 'Continuous Pianist', description: 'Piano musician with sustained/continuous note playback.' },
-    { id: 'lstm-onessen', label: 'LSTM (Essen Folk Song)', description: 'Neural LSTM model trained on the Essen folk song collection.' }
+    { id: 'lstm-onessen', label: 'LSTM (Essen Folk Song)', description: 'Neural LSTM model trained on the Essen folk song collection.' },
+    { id: 'lstm-onessen-orchestral', label: 'LSTM (Orchestral)', description: 'Just like the LSTM musician, but with orchestral instruments.' }
 ];
 let currentMusicianType = 'lstm-onessen'; // Matches the processor's default musician on startup
 let pendingMusicianSelection = null;
