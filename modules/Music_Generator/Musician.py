@@ -559,7 +559,7 @@ class LSTMOrchestralMusician(BaseMusician):
                     # Compute velocity based on the touching area size (larger area -> louder note)
                     area_size = e.get("area/ROI", None)
                     if area_size is not None:
-                        velocity = min(max(int((area_size * 16) * 127), 30), 127)  # Scale area to velocity range
+                        velocity = min(max(int((area_size * 32) * 127), 30), 127)  # Scale area to velocity range
 
                 elif instrument == 'strings':
 
@@ -578,7 +578,7 @@ class LSTMOrchestralMusician(BaseMusician):
 
                     area_size = e.get("area/ROI", None)
                     if area_size is not None:
-                        velocity = min(max(int((area_size * 8) * 127), 30), 127)
+                        velocity = min(max(int((area_size * 16) * 127), 30), 127)
 
                 elif instrument == 'bass':
 
@@ -597,7 +597,7 @@ class LSTMOrchestralMusician(BaseMusician):
 
                     area_size = e.get("area/ROI", None)
                     if area_size is not None:
-                        velocity = min(max(int((area_size * 12) * 127), 30), 127)
+                        velocity = min(max(int((area_size * 32) * 127), 30), 127)
 
                 else:
                     logger.warning(f"Unsupported instrument '{instrument}' for object class '{obj_class}'. Skipping event.")
