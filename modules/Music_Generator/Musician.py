@@ -13,6 +13,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from PIL.ExifTags import Base
+from sympy import N
+
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
 
@@ -293,21 +296,21 @@ class LSTMMusician(BaseMusician):
             available = ", ".join(self.AVAILABLE_INSTRUMENTS)
             raise ValueError(f"Unsupported LSTM instrument: {instrument}. Supported instruments: {available}")
         self.instrument = instrument
+        self.temperature = temperature
 
         from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
         self.generator = MelodyGenerator()
-        self.temperature = temperature
+        self._rt_generator = None
 
         self.last_seed_notes = ["67", "_", "67", "_", 
                                 "67", "_", "_", "65", 
                                 "64", "_", "62", "_", 
                                 "60", "_", "60", "_"]
         self._note_buffer = list(self.last_seed_notes)
-        self._rt_generator = None
 
         self.important_labels = [
-            "car", "truck", "bus", 
-            "bicycle", "person", "motorcycle",
+            "car", "truck", "bus", "train", "plane",
+            "bicycle", "motorcycle", "person",
             "traffic light", "traffic sign", "stop sign"
         ]
 
@@ -352,7 +355,7 @@ class LSTMMusician(BaseMusician):
                         event_type="note_on",
                         note=int(new_note),
                         channel=0,
-                        velocity=100 if e["type"] == "ROI_TOUCH" else 0,
+                        velocity=100,
                         instrument=self.instrument,
                         timestamp=self.frame_counter,
                         metadata=e
@@ -434,6 +437,259 @@ class LSTMMusician(BaseMusician):
             }
         )
 
+class LSTMOrchestralMusician(BaseMusician):
+    """
+    LSTM-based orchestral musician that generates music using a trained LSTM model. This musician 
+    is similar to the LSTMMusician but is designed to produce orchestral sounds, allowing for a 
+    richer and more diverse musical output.
+    """
+
+    def __init__(self, tempo=120, key_signature="C_major", temperature=1.0):
+        """
+        Args:
+            tempo: Music tempo in BPM
+            key_signature: Key signature for music generation
+            temperature: Sampling temperature for LSTM model
+        """
+        super().__init__(tempo, key_signature)
+
+        self.temperature = temperature
+
+        from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
+        self.piano_generator = MelodyGenerator()
+        self._rt_piano_generator = None
+        self.strings_generator = MelodyGenerator()
+        self._rt_strings_generator = None
+        self.bass_generator = MelodyGenerator()
+        self._rt_bass_generator = None
+
+        self.last_seed_notes = {
+            "piano": ["64", "_", "67", "_",
+                      "65", "_", "65", "_",
+                      "65", "_", "62", "_",
+                      "62", "_", "64", "_"],
+            "strings": ["67", "_", "67", "_", 
+                        "65", "_", "_", "65",
+                        "64", "_", "62", "_",
+                        "62", "_", "64", "_"],
+            "bass": ["48", "_", "48", "_",
+                     "48", "_", "_", "50",
+                     "50", "_", "52", "_",
+                     "52", "_", "50", "_"]
+        }
+        # Note buffer to store generated notes for each instrument
+        self._note_buffer = {
+            "piano": list(self.last_seed_notes),
+            "strings": list(self.last_seed_notes),
+            "bass": list(self.last_seed_notes)
+        }
+
+        self.important_labels = [
+            "car", "truck", "bus", "train", "plane",
+            "bicycle", "motorcycle", "person",
+            "traffic light", "traffic sign", "stop sign"
+        ]
+
+        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
+
+    def _map_classes(self, obj_class):
+        """
+        Map object class to instrument for orchestral sounds.
+        """
+
+        base_class = obj_class.split("_")[0]
+
+        mapping = {
+            "car": 'piano',
+            "truck": 'piano',
+            "bus": 'piano',
+            "train": 'electric_piano',
+            "plane": 'electric_piano',
+            "bicycle": 'strings',
+            "motorcycle": 'strings',
+            "person": 'strings',
+            "traffic light": 'bass',
+            "traffic sign": 'bass',
+            "stop sign": 'bass',
+        }
+
+        return mapping.get(base_class, None)
+
+    def generate_music(self, results, frame_id, state):
+        """
+        Generate music based on the input scene data using the LSTM orchestral model.
+        """
+
+        logger.info(f"🎵 Generating orchestral music with LSTM for frame {frame_id}")
+
+        self.frame_counter = frame_id
+
+        scene_events = results
+        music_events = []
+
+        for e in scene_events:
+
+            obj_class = e["class"]
+            instrument = self._map_classes(obj_class)
+            if instrument is None:
+                logger.info(f"Skipping unimportant object class '{obj_class}'.")
+                continue
+            channel = 0
+
+            if e["type"] == "ROI_TOUCH":
+
+                velocity = 0
+
+                # Generate new notes using the appropriate LSTM model based on the instrument
+                if instrument == 'piano':
+
+                    self._rt_piano_generator = self.piano_generator.generate_melody_RT(
+                        seed=" ".join(self.last_seed_notes[instrument]),
+                        num_steps=400,
+                        temperature=self.temperature
+                    )
+
+                    while True:
+                        new_note = next(self._rt_piano_generator)
+                        if new_note.isdigit():
+                            break
+
+                    channel = 0
+
+                    # Compute velocity based on the touching area size (larger area -> louder note)
+                    area_size = e.get("area/ROI", None)
+                    if area_size is not None:
+                        velocity = min(max(int((area_size * 16) * 127), 30), 127)  # Scale area to velocity range
+
+                elif instrument == 'strings':
+
+                    self._rt_strings_generator = self.strings_generator.generate_melody_RT(
+                        seed=" ".join(self.last_seed_notes[instrument]),
+                        num_steps=400,
+                        temperature=self.temperature
+                    )
+
+                    while True:
+                        new_note = next(self._rt_strings_generator)
+                        if new_note.isdigit():
+                            break
+
+                    channel = 1
+
+                    area_size = e.get("area/ROI", None)
+                    if area_size is not None:
+                        velocity = min(max(int((area_size * 8) * 127), 30), 127)
+
+                elif instrument == 'bass':
+
+                    self._rt_bass_generator = self.bass_generator.generate_melody_RT(
+                        seed=" ".join(self.last_seed_notes[instrument]),
+                        num_steps=400,
+                        temperature=self.temperature
+                    )
+
+                    while True:
+                        new_note = next(self._rt_bass_generator)
+                        if new_note.isdigit():
+                            break
+
+                    channel = 2
+
+                    area_size = e.get("area/ROI", None)
+                    if area_size is not None:
+                        velocity = min(max(int((area_size * 12) * 127), 30), 127)
+
+                else:
+                    logger.warning(f"Unsupported instrument '{instrument}' for object class '{obj_class}'. Skipping event.")
+                    continue
+
+                music_events.append(
+                    MusicEvent(
+                        event_type="note_on",
+                        note=int(new_note),
+                        channel=channel,
+                        velocity=velocity,
+                        instrument=instrument,
+                        timestamp=self.frame_counter,
+                        metadata=e
+                    )
+                )
+
+                self.active_notes[e["object_id"]] = {
+                    "voice_id": e["object_id"],
+                    "note": int(new_note),
+                    "velocity": velocity,
+                    "instrument": instrument,
+                    "channel": channel
+                }
+
+                self._note_buffer[instrument].append(new_note)
+
+                logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_on"}, 'note': {new_note}, 'velocity': {velocity}, 'instrument': '{instrument}', 'channel': {channel}")
+
+            elif e["type"] == "ROI_RELEASE":
+
+                # Find the related note for this object_id
+                last_note = None
+                if e["object_id"] in self.active_notes:
+                    last_note = self.active_notes[e["object_id"]]["note"]
+                    self.active_notes.pop(e["object_id"], None)
+
+                if last_note is not None:
+                    music_events.append(
+                        MusicEvent(
+                            event_type="note_off",
+                            note=int(last_note),
+                            channel=channel,
+                            velocity=0,
+                            instrument=instrument,
+                            timestamp=self.frame_counter,
+                            metadata=e
+                        )
+                    )
+
+                else:
+                    logger.warning("No previous note found to turn off on ROI_RELEASE event.")
+
+                self._note_buffer[instrument].extend(["r", "_"])
+
+                logger.info(f"Mapped scene event: {e} to music event: 'type': {"note_off"}, 'note': {last_note}, 'velocity': 0, 'instrument': '{instrument}', 'channel': {channel}")
+
+            else:
+                self._note_buffer[instrument].append("_")
+                continue
+
+            self.last_seed_notes[instrument] = self._note_buffer[instrument][-16:]
+
+            for object_id, note_info in list(self.active_notes.items()):
+                if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+
+                    music_events.append(
+                        MusicEvent(
+                            event_type="note_off",
+                            note=note_info["note"],
+                            channel=note_info["channel"],
+                            velocity=0,
+                            instrument=note_info["instrument"],
+                            timestamp=self.frame_counter,
+                            metadata={"object_id": object_id}
+                        )
+                    )
+
+                    self.active_notes.pop(object_id, None)
+
+                    logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
+
+        return MusicFrame(
+            events=music_events,
+            frame_id=frame_id,
+            tempo=self.tempo,
+            key_signature=self.key_signature,
+            metadata={
+                "scene_events": scene_events,
+            }
+        )
+
 
 class Musician:
     """
@@ -459,6 +715,11 @@ class Musician:
             "label": "LSTM (Essen Folk Song)",
             "description": "Neural LSTM model trained on the Essen folk song collection.",
         },
+        "lstm-onessen-orchestral": {
+            "class": LSTMOrchestralMusician,
+            "label": "LSTM (Orchestral)",
+            "description": "Just like the LSTM musician, but with orchestral instruments.",
+        }
     }
 
     def __init__(self, musician_type: str = "lstm-onessen", tempo: int = 120, key_signature: str = "C_major", instrument: str = "piano"):
