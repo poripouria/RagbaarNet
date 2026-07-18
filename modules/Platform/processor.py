@@ -878,30 +878,30 @@ class Processor:
                                 logger.error("❌ Error detecting scene events: %s", event_err)
                                 logger.error("Traceback:\n%s", traceback.format_exc())
 
-                        detections = []
-                        if self.detector is not None:
-                            for object_id, tracked_object in self.detector.state["objects"].items():
-                                if (
-                                    tracked_object.get("last_seen_frame") == self.frame_counter
-                                    and tracked_object.get("touching", False)
-                                ):
-                                    detections.append({
-                                        "object_id": int(object_id),
-                                        "class_name": tracked_object["class_name"],
-                                        "bbox": [float(value) for value in tracked_object["bbox"]],
-                                    })
+                        # detections = []
+                        # if self.detector is not None:
+                        #     for object_id, tracked_object in self.detector.state["objects"].items():
+                        #         if (
+                        #             tracked_object.get("last_seen_frame") == self.frame_counter
+                        #             and tracked_object.get("touching", False)
+                        #         ):
+                        #             detections.append({
+                        #                 "object_id": int(object_id),
+                        #                 "class_name": tracked_object["class_name"],
+                        #                 "bbox": [float(value) for value in tracked_object["bbox"]],
+                        #             })
 
-                        self.current_detection = {
-                            "frame_id": frame_id,
-                            "timestamp": timestamp,
-                            "frame_counter": self.frame_counter,
-                            "frame_width": orig_w,
-                            "frame_height": orig_h,
-                            "detections": detections,
-                        }
+                        # self.current_detection = {
+                        #     "frame_id": frame_id,
+                        #     "timestamp": timestamp,
+                        #     "frame_counter": self.frame_counter,
+                        #     "frame_width": orig_w,
+                        #     "frame_height": orig_h,
+                        #     "detections": detections,
+                        # }
 
-                        # Comment out this call whenever collision boxes are not needed in the UI.
-                        self._broadcast_detection_update()
+                        # # Comment out this call whenever collision boxes are not needed in the UI.
+                        # self._broadcast_detection_update()
 
 
                         # Generate music based on segmentation data
