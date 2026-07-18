@@ -10,6 +10,8 @@ let canvas = null;
 let ctx = null;
 let segmentationCanvas = null;
 let segmentationCtx = null;
+let detectionCanvas = null;
+let detectionCtx = null;
 let roiPoints = []; // Will be initialized based on video dimensions
 let controlPoints = []; // Bézier control points for curves
 let draggingPoint = null;
@@ -42,6 +44,8 @@ let currentSegmentationInfo = null;
 // Prevent stale/out-of-order overlays from replacing newer ones on mobile
 let latestOverlayFrameCounter = -1;
 let drawToken = 0;
+let currentDetectionData = null;
+let latestDetectionFrameCounter = -1;
 
 // Performance optimization variables
 let isProcessingFrame = false; // Prevent concurrent frame processing
@@ -359,6 +363,10 @@ function initializeSocketConnection() {
         
         segmentationSocket.on('frame_update', function(data) {
             updateSegmentationDisplay(data);
+        });
+
+        segmentationSocket.on('detection_update', function(data) {
+            updateDetectionDisplay(data);
         });
         
         segmentationSocket.on('music_update', function(musicData) {
@@ -1069,8 +1077,15 @@ function captureAndSendFrame() {
             frame: frameData,
             frame_id: `frame_${frameCounter}`,
             timestamp: now / 1000,
-            roi_points: roiPoints,        // 4 corners
-            roi_controls: controlPoints   // 4 curve handles
+            // ROI coordinates must use the same dimensions as the transmitted frame.
+            roi_points: roiPoints.map(point => [
+                point[0] * targetW / srcW,
+                point[1] * targetH / srcH
+            ]),
+            roi_controls: controlPoints.map(point => [
+                point[0] * targetW / srcW,
+                point[1] * targetH / srcH
+            ])
         };
         
         // Reduced logging for performance - only log every 10th frame
@@ -1189,6 +1204,102 @@ function updateSegmentationDisplay(data) {
     
     // When display is OFF, keep the latest overlay cached so toggling ON can show it immediately.
     // (Canvas may be hidden anyway, so no need to clear+drop cached data here.)
+}
+
+function updateDetectionDisplay(data) {
+    if (!data || !Array.isArray(data.detections)) {
+        return;
+    }
+
+    const updateCounter = typeof data.frame_counter === 'number' ? data.frame_counter : 0;
+    if (updateCounter < latestDetectionFrameCounter) {
+        return;
+    }
+
+    latestDetectionFrameCounter = updateCounter;
+    currentDetectionData = data;
+    drawDetectionOverlay();
+}
+
+function drawDetectionOverlay() {
+    if (!detectionCanvas || !detectionCtx) {
+        return;
+    }
+
+    detectionCtx.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height);
+
+    if (!currentDetectionData || currentDetectionData.detections.length === 0) {
+        return;
+    }
+
+    const frameWidth = Number(currentDetectionData.frame_width);
+    const frameHeight = Number(currentDetectionData.frame_height);
+    if (!(frameWidth > 0) || !(frameHeight > 0)) {
+        return;
+    }
+
+    const canvasAspect = detectionCanvas.width / detectionCanvas.height;
+    const frameAspect = frameWidth / frameHeight;
+    let drawWidth;
+    let drawHeight;
+    let drawX;
+    let drawY;
+
+    if (frameAspect > canvasAspect) {
+        drawWidth = detectionCanvas.width;
+        drawHeight = detectionCanvas.width / frameAspect;
+        drawX = 0;
+        drawY = (detectionCanvas.height - drawHeight) / 2;
+    } else {
+        drawHeight = detectionCanvas.height;
+        drawWidth = detectionCanvas.height * frameAspect;
+        drawX = (detectionCanvas.width - drawWidth) / 2;
+        drawY = 0;
+    }
+
+    const scaleX = drawWidth / frameWidth;
+    const scaleY = drawHeight / frameHeight;
+    const isMobile = isMobileDevice();
+    const fontSize = isMobile ? 18 : 16;
+    const paddingX = 6;
+    const paddingY = 4;
+
+    detectionCtx.lineWidth = isMobile ? 4 : 3;
+    detectionCtx.strokeStyle = colors.accent;
+    detectionCtx.font = `bold ${fontSize}px Arial`;
+    detectionCtx.textAlign = 'left';
+    detectionCtx.textBaseline = 'top';
+
+    currentDetectionData.detections.forEach(detection => {
+        if (!Array.isArray(detection.bbox) || detection.bbox.length !== 4) {
+            return;
+        }
+
+        const [x1, y1, x2, y2] = detection.bbox.map(Number);
+        if (![x1, y1, x2, y2].every(Number.isFinite)) {
+            return;
+        }
+
+        const boxX = drawX + x1 * scaleX;
+        const boxY = drawY + y1 * scaleY;
+        const boxWidth = (x2 - x1) * scaleX;
+        const boxHeight = (y2 - y1) * scaleY;
+        if (boxWidth <= 0 || boxHeight <= 0) {
+            return;
+        }
+
+        detectionCtx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+        const label = `ID: ${detection.object_id}`;
+        const labelWidth = detectionCtx.measureText(label).width + paddingX * 2;
+        const labelHeight = fontSize + paddingY * 2;
+        const labelY = Math.max(drawY, boxY - labelHeight);
+
+        detectionCtx.fillStyle = colors.accent;
+        detectionCtx.fillRect(boxX, labelY, labelWidth, labelHeight);
+        detectionCtx.fillStyle = '#000000';
+        detectionCtx.fillText(label, boxX + paddingX, labelY + paddingY);
+    });
 }
 
 function updateFrameCounter(count) {
@@ -1616,9 +1727,11 @@ function setupRoiCanvas() {
     canvas = document.getElementById('roiCanvas');
     ctx = canvas.getContext('2d');
     
-    // Setup segmentation canvas
+    // Setup non-interactive result canvases.
     segmentationCanvas = document.getElementById('segmentationCanvas');
     segmentationCtx = segmentationCanvas.getContext('2d');
+    detectionCanvas = document.getElementById('detectionCanvas');
+    detectionCtx = detectionCanvas.getContext('2d');
     
     // Set canvas size to match container
     const container = document.getElementById('videoContainer');
@@ -1626,6 +1739,8 @@ function setupRoiCanvas() {
     canvas.height = container.offsetHeight;
     segmentationCanvas.width = container.offsetWidth;
     segmentationCanvas.height = container.offsetHeight;
+    detectionCanvas.width = container.offsetWidth;
+    detectionCanvas.height = container.offsetHeight;
     
     // Hide the point tooltip whenever the mouse leaves the canvas
     canvas.addEventListener('mouseleave', hidePointTooltip);
@@ -1870,13 +1985,13 @@ function drawRoi() {
         const containerAspect = canvas.width / canvas.height;
         
         let displayWidth, displayHeight;
-        // Use 'cover' behavior - fill the container completely
+        // Match the video's CSS object-fit: contain behavior.
         if (videoAspect > containerAspect) {
-            displayHeight = canvas.height;
-            displayWidth = canvas.height * videoAspect;
-        } else {
             displayWidth = canvas.width;
             displayHeight = canvas.width / videoAspect;
+        } else {
+            displayHeight = canvas.height;
+            displayWidth = canvas.height * videoAspect;
         }
         
         scale.x = displayWidth / videoElement.videoWidth;
@@ -2265,7 +2380,7 @@ function onWindowResize() {
         canvas.width = container.offsetWidth;
         canvas.height = container.offsetHeight;
         
-        // Also resize segmentation canvas
+        // Also resize result canvases.
         if (segmentationCanvas) {
             segmentationCanvas.width = container.offsetWidth;
             segmentationCanvas.height = container.offsetHeight;
@@ -2274,6 +2389,12 @@ function onWindowResize() {
             if (currentSegmentationOverlay) {
                 drawSegmentationOverlay();
             }
+        }
+
+        if (detectionCanvas) {
+            detectionCanvas.width = container.offsetWidth;
+            detectionCanvas.height = container.offsetHeight;
+            drawDetectionOverlay();
         }
         
         drawRoi();

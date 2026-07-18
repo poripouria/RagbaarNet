@@ -102,8 +102,9 @@
     <div class="display-frame" id="displayFrame" style="display: none;">
         <div class="video-container" id="videoContainer">
             <video id="videoElement" class="video-element" autoplay playsinline muted loop></video>
-            <canvas id="roiCanvas" class="canvas-overlay"></canvas>
             <canvas id="segmentationCanvas" class="canvas-overlay" style="display: none; pointer-events: none;"></canvas>
+            <canvas id="detectionCanvas" class="canvas-overlay"></canvas>
+            <canvas id="roiCanvas" class="canvas-overlay"></canvas>
             <div id="roiPointTooltip" class="roi-point-tooltip"></div>
         </div>
         
