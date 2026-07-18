@@ -1501,27 +1501,21 @@ function toggleFrameProcessing() {
 
 function updateSegmentationButtonState() {
     const button = document.getElementById('toggleSegmentationBtn');
-    
-    if (button) {
-        console.log('🎯 Updating button state. segmentationDisplayEnabled:', segmentationDisplayEnabled);
-        
-        if (segmentationDisplayEnabled) {
-            button.textContent = '🔍 Segmentation View: ON';
-            button.style.background = '#00ff88';
-            button.style.color = 'black';
-        } else {
-            button.textContent = '🔍 Segmentation View: OFF';
-            button.style.background = '#4a4a4a';
-            button.style.color = 'white';
-        }
-        
-        console.log('🎯 Button updated to:', button.textContent);
-        
-        // Force a DOM update to ensure the change sticks
-        button.offsetHeight; // This forces a repaint
-        
-    } else {
-        console.error('❌ Segmentation button not found!');
+    const img = document.getElementById('toggleSegmentationBtnImg');
+
+    if (!button) return;
+
+    button.dataset.active = segmentationDisplayEnabled.toString();
+    button.setAttribute('aria-pressed', segmentationDisplayEnabled.toString());
+
+    button.title = segmentationDisplayEnabled
+        ? 'Segmentation View: ON (tap to return to original video)'
+        : 'Segmentation View: OFF (tap to show segmentation overlay)';
+
+    if (img) {
+        img.src = segmentationDisplayEnabled
+            ? '../../assets/icons/segment.png'
+            : '../../assets/icons/segment.png';
     }
 }
 
@@ -1538,9 +1532,8 @@ function startButtonStateMonitoring() {
     buttonStateCheckInterval = setInterval(() => {
         const button = document.getElementById('toggleSegmentationBtn');
         if (button) {
-            const expectedText = segmentationDisplayEnabled ? '🔍 Segmentation View: ON' : '🔍 Segmentation View: OFF';
-            if (button.textContent !== expectedText) {
-                console.log('🔄 Button state reverted! Fixing it. Expected:', expectedText, 'Actual:', button.textContent);
+            const expected = segmentationDisplayEnabled.toString();
+            if (button.dataset.active !== expected) {
                 updateSegmentationButtonState();
             }
         }

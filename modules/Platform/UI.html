@@ -91,7 +91,6 @@
         
         <div class="button-group">
             <button class="menu-btn" id="changeSourceBtn" onclick="changeInputSource()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); changeInputSource();}">📂 Change Source</button>
-            <button class="menu-btn" id="toggleSegmentationBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}">🔍 Segmentation View: OFF</button>
             <button class="menu-btn" id="musicSettingsBtn" onclick="openMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openMusicianModal();}">🎵 Music Settings</button>
         </div>
 
@@ -133,6 +132,25 @@
                     id="toggleRoiFillIconImg"
                     class="roi-fill-toggle__img"
                     src="../../assets/icons/Transparent%20Icon.png"
+                    alt=""
+                    aria-hidden="true"
+                    draggable="false"
+                >
+            </button>
+            <button
+                id="toggleSegmentationBtn"
+                class="roi-fill-toggle"
+                type="button"
+                onclick="toggleFrameProcessing()"
+                ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}"
+                aria-label="Toggle segmentation view"
+                aria-pressed="false"
+                title="Segmentation view: OFF (tap to toggle)"
+            >
+                <img
+                    id="toggleSegmentationBtnImg"
+                    class="roi-fill-toggle__img"
+                    src="../../assets/icons/segment.png"
                     alt=""
                     aria-hidden="true"
                     draggable="false"
