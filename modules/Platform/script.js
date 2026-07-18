@@ -73,6 +73,16 @@ let availableMusicians = [
 ];
 let currentMusicianType = 'lstm-onessen'; // Matches the processor's default musician on startup
 let pendingMusicianSelection = null;
+const instrumentOptions = [
+    { id: 'piano', label: 'Piano', icon: '../../assets/icons/instruments/piano.png' },
+    { id: 'electric_piano', label: 'Electric Piano', icon: '../../assets/icons/instruments/elec-piano.png' },
+    { id: 'strings', label: 'Strings', icon: '../../assets/icons/instruments/violin.png' },
+    { id: 'bass', label: 'Bass', icon: '../../assets/icons/instruments/bass.png' },
+    { id: 'electric_guitar', label: 'Electric Guitar', icon: '../../assets/icons/instruments/elec-guitar.png' },
+    { id: 'acoustic_guitar', label: 'Acoustic Guitar', icon: '../../assets/icons/instruments/guitar.png' },
+    { id: 'pad', label: 'Pad', icon: '../../assets/icons/instruments/pad.png' },
+    { id: 'synth', label: 'Synth', icon: '../../assets/icons/instruments/synth.png' }
+];
 let currentInstrument = 'piano';
 let pendingInstrument = currentInstrument;
 let pendingTempo = 120;
@@ -183,14 +193,6 @@ function setupEventListeners() {
                 event.preventDefault();
                 applyMusicSettings();
             }
-        });
-    }
-
-    const instrumentSelect = document.getElementById('instrumentSelect');
-    if (instrumentSelect) {
-        instrumentSelect.addEventListener('change', function() {
-            pendingInstrument = this.value;
-            updateMusicianApplyButton();
         });
     }
 
@@ -2601,10 +2603,15 @@ function renderMusicianList() {
         option.setAttribute('aria-pressed', isSelected.toString());
         option.innerHTML = `
             <div class="musician-option-name">
-                <span>${escapeHtml(musician.label)}</span>
-                <span class="musician-option-badge">✓ Selected</span>
+                <span class="musician-option-label">${escapeHtml(musician.label)}</span>
+                <span class="musician-option-name-right">
+                    <span class="musician-option-badge"> ✓ </span>
+                    <span class="musician-option-info" tabindex="0" role="button" aria-label="${escapeHtml(musician.label)} info">
+                        <img class="musician-option-info-icon" src="../../assets/icons/round-information-outline-white-icon.png" alt="" aria-hidden="true" draggable="false">
+                        <span class="musician-option-desc">${escapeHtml(musician.description || '')}</span>
+                    </span>
+                </span>
             </div>
-            <div class="musician-option-desc">${escapeHtml(musician.description || '')}</div>
         `;
 
         const selectHandler = (event) => {
@@ -2620,6 +2627,17 @@ function renderMusicianList() {
 
         option.addEventListener('click', selectHandler);
         option.addEventListener('touchend', selectHandler);
+
+        // The info icon only reveals the description tooltip (via CSS :hover/:active) -
+        // stop its clicks/touches from bubbling up and triggering musician selection.
+        const infoIcon = option.querySelector('.musician-option-info');
+        if (infoIcon) {
+            const stopBubble = (event) => event.stopPropagation();
+            infoIcon.addEventListener('click', stopBubble);
+            infoIcon.addEventListener('touchstart', stopBubble, { passive: true });
+            infoIcon.addEventListener('touchend', stopBubble);
+        }
+
         container.appendChild(option);
     });
 }
@@ -2730,13 +2748,43 @@ function calculateAutoTempoFromSpeed(speedKmh) {
     return clampTempoValue(Math.round(bpm));
 }
 
+function renderInstrumentList() {
+    const container = document.getElementById('instrumentList');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    instrumentOptions.forEach(instrument => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        const isSelected = instrument.id === pendingInstrument;
+        chip.className = 'instrument-chip' + (isSelected ? ' selected' : '');
+        chip.setAttribute('role', 'option');
+        chip.setAttribute('aria-selected', isSelected.toString());
+        chip.innerHTML = `
+            <img class="instrument-chip-icon" src="${instrument.icon}" alt="" aria-hidden="true" draggable="false">
+            <span class="instrument-chip-label">${escapeHtml(instrument.label)}</span>
+        `;
+
+        const selectHandler = (event) => {
+            event.preventDefault();
+            pendingInstrument = instrument.id;
+            renderInstrumentList();
+            updateMusicianApplyButton();
+        };
+
+        chip.addEventListener('click', selectHandler);
+        chip.addEventListener('touchend', selectHandler);
+        container.appendChild(chip);
+    });
+}
+
 function updateInstrumentControls() {
     const settings = document.getElementById('instrumentSettings');
-    const select = document.getElementById('instrumentSelect');
     const showInstrument = pendingMusicianSelection === 'lstm-onessen';
 
     if (settings) settings.hidden = !showInstrument;
-    if (select) select.value = pendingInstrument;
+    renderInstrumentList();
 }
 
 function updateTempoControls(value) {

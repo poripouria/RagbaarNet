@@ -38,43 +38,38 @@
     <!-- Music Settings Modal -->
     <div id="musicianModal" class="musician-modal">
         <div class="musician-modal-content">
-            <h2>🎵 Music Settings</h2>
-            <div class="musician-modal-subtitle">Choose the musician, sound, and tempo used to turn the ROI into music.</div>
-
-            <section class="music-settings-section">
-                <h3>Musician</h3>
-                <div id="musicianList" class="musician-list"></div>
-            </section>
-
-            <section id="instrumentSettings" class="music-settings-section" hidden>
-                <label for="instrumentSelect" class="music-settings-label">Choose Instrument</label>
-                <select id="instrumentSelect" class="instrument-select" aria-label="Choose LSTM instrument">
-                    <option value="piano">Piano</option>
-                    <option value="electric_piano">Electric Piano</option>
-                    <option value="strings">Strings</option>
-                    <option value="bass">Bass</option>
-                    <option value="electric_guitar">Electric Guitar</option>
-                    <option value="acoustic_guitar">Acoustic Guitar</option>
-                    <option value="pad">Pad</option>
-                    <option value="synth">Synth</option>
-                </select>
-            </section>
-
-            <section class="music-settings-section">
-                <h3>Tempo</h3>
-                <div class="tempo-control-group">
-                    <div class="tempo-slider-row">
-                        <input type="range" id="tempoSlider" class="tempo-slider" min="60" max="180" step="1" value="120" aria-label="Tempo slider">
-                        <input type="number" id="tempoNumberInput" class="tempo-number-input" min="60" max="180" step="1" value="120" aria-label="Tempo value">
-                    </div>
-                    <div id="tempoValueLabel" class="tempo-value">120 BPM</div>
+            <div class="musician-modal-header">
+                <div class="musician-modal-header-text">
+                    <h2>🎵 Music Settings</h2>
+                    <div id="musicianModalStatus" class="musician-modal-status" role="status" aria-live="polite"></div>
                 </div>
-            </section>
+                <div class="musician-modal-header-actions">
+                    <button id="musicianApplyBtn" class="url-btn confirm-btn" onclick="applyMusicSettings()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); applyMusicSettings();}">Apply</button>
+                    <button id="musicianCloseBtn" class="url-btn cancel-btn" onclick="closeMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); closeMusicianModal();}">Close</button>
+                </div>
+            </div>
 
-            <div id="musicianModalStatus" class="musician-modal-status"></div>
-            <div class="musician-modal-actions">
-                <button id="musicianApplyBtn" class="url-btn confirm-btn" onclick="applyMusicSettings()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); applyMusicSettings();}">Apply</button>
-                <button id="musicianCloseBtn" class="url-btn cancel-btn" onclick="closeMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); closeMusicianModal();}">Close</button>
+            <div class="musician-modal-body">
+                <section class="music-settings-section">
+                    <h3>Musician</h3>
+                    <div id="musicianList" class="musician-list"></div>
+                </section>
+
+                <section id="instrumentSettings" class="music-settings-section" hidden>
+                    <label class="music-settings-label">Choose Instrument</label>
+                    <div id="instrumentList" class="instrument-list" role="listbox" aria-label="Choose LSTM instrument"></div>
+                </section>
+
+                <section class="music-settings-section">
+                    <h3>Tempo</h3>
+                    <div class="tempo-control-group">
+                        <div class="tempo-slider-row">
+                            <input type="range" id="tempoSlider" class="tempo-slider" min="60" max="180" step="1" value="120" aria-label="Tempo slider">
+                            <input type="number" id="tempoNumberInput" class="tempo-number-input" min="60" max="180" step="1" value="120" aria-label="Tempo value">
+                        </div>
+                        <div id="tempoValueLabel" class="tempo-value">120 BPM</div>
+                    </div>
+                </section>
             </div>
         </div>
     </div>
@@ -93,7 +88,7 @@
 
         <div class="volume-control-group">
             <label for="volumeSlider" class="volume-label">Volume</label>
-            <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" step="1" value="40" aria-label="Volume slider">
+            <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" step="2" value="70" aria-label="Volume slider">
         </div>
 
         <div class="status-section">
