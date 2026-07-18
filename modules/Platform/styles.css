@@ -368,7 +368,6 @@ body {
     overflow-y: hidden;
     padding-bottom: 8px;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
 }
 
 .instrument-chip {
@@ -672,6 +671,31 @@ body {
     height: 100vh;
     height: 100dvh;
     height: calc(var(--vh, 1vh) * 100); /* Fallback for older browsers */
+}
+
+/* Hide native scrollbars on scrollable containers and replace them with
+   click-and-drag scrolling (mouse, via enableDragToScroll in script.js) plus
+   native touch/wheel scrolling. Keeps the look clean and on-brand instead of
+   the browser's default scrollbar UI. */
+.menu-frame,
+.musician-modal-body,
+.instrument-list {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* legacy Edge/IE */
+    cursor: grab;
+}
+
+.menu-frame::-webkit-scrollbar,
+.musician-modal-body::-webkit-scrollbar,
+.instrument-list::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/Edge (Chromium) */
+}
+
+.menu-frame.is-drag-scrolling,
+.musician-modal-body.is-drag-scrolling,
+.instrument-list.is-drag-scrolling {
+    cursor: grabbing;
+    user-select: none;
 }
 
 .title {

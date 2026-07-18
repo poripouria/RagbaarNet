@@ -196,6 +196,14 @@ function setupEventListeners() {
         });
     }
 
+    // Custom scrollbars are hidden via CSS; wire up drag-to-scroll (mouse) for the
+    // sidebar, the Music Settings body, and the instrument chip list. Touch users
+    // already get native drag/momentum scrolling from the browser.
+    enableDragToScroll(document.querySelector('.menu-frame'));
+    enableDragToScroll(document.querySelector('.musician-modal-body'));
+    enableDragToScroll(document.getElementById('instrumentList'));
+    enableWheelToHorizontalScroll(document.getElementById('instrumentList'));
+
     // Initialize frame processing
     initializeFrameProcessing();
 }
@@ -2559,6 +2567,93 @@ function setupRoiFillHoldToReset() {
     button.addEventListener('touchstart', startHold, { passive: true });
     button.addEventListener('touchend', cancelHold);
     button.addEventListener('touchcancel', cancelHold);
+}
+
+/**
+ * Custom-scrollbar replacement: lets mouse users click-and-drag to scroll a
+ * container (touch users already get native drag/momentum scrolling once the
+ * OS scrollbar is hidden via CSS). A short move-threshold distinguishes a
+ * genuine drag from a plain click/tap, and the resulting click is swallowed
+ * so buttons inside the container do not fire after a drag gesture.
+ */
+function enableDragToScroll(el) {
+    if (!el) return;
+
+    const DRAG_THRESHOLD_PX = 6;
+    const NON_DRAG_SELECTOR = 'input, textarea, select, a[href]';
+
+    let isPointerDown = false;
+    let hasDragged = false;
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let startScrollTop = 0;
+
+    const suppressNextClick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        el.removeEventListener('click', suppressNextClick, true);
+    };
+
+    const endDrag = () => {
+        if (!isPointerDown) return;
+        isPointerDown = false;
+        el.classList.remove('is-drag-scrolling');
+        if (hasDragged) {
+            el.addEventListener('click', suppressNextClick, true);
+        }
+        hasDragged = false;
+    };
+
+    el.addEventListener('pointerdown', (event) => {
+        if (event.pointerType !== 'mouse') return;
+        if (event.target.closest(NON_DRAG_SELECTOR)) return;
+
+        isPointerDown = true;
+        hasDragged = false;
+        startX = event.clientX;
+        startY = event.clientY;
+        startScrollLeft = el.scrollLeft;
+        startScrollTop = el.scrollTop;
+    });
+
+    el.addEventListener('pointermove', (event) => {
+        if (!isPointerDown) return;
+
+        const deltaX = event.clientX - startX;
+        const deltaY = event.clientY - startY;
+
+        if (!hasDragged && (Math.abs(deltaX) > DRAG_THRESHOLD_PX || Math.abs(deltaY) > DRAG_THRESHOLD_PX)) {
+            hasDragged = true;
+            el.classList.add('is-drag-scrolling');
+        }
+
+        if (hasDragged) {
+            el.scrollLeft = startScrollLeft - deltaX;
+            el.scrollTop = startScrollTop - deltaY;
+            event.preventDefault();
+        }
+    });
+
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+    el.addEventListener('pointerleave', (event) => {
+        if (event.pointerType === 'mouse') endDrag();
+    });
+}
+
+/**
+ * Lets a plain mouse wheel (which only reports vertical delta by default)
+ * scroll a horizontally-scrolling container, such as the instrument list.
+ */
+function enableWheelToHorizontalScroll(el) {
+    if (!el) return;
+
+    el.addEventListener('wheel', (event) => {
+        if (event.deltaY === 0 || event.deltaX !== 0) return;
+        event.preventDefault();
+        el.scrollLeft += event.deltaY;
+    }, { passive: false });
 }
 
 /**
