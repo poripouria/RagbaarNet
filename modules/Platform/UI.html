@@ -90,11 +90,15 @@
             <button class="menu-btn" id="toggleSegmentationBtn" onclick="toggleFrameProcessing()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleFrameProcessing();}">🔍 Segmentation View: OFF</button>
             <button class="menu-btn" id="musicSettingsBtn" onclick="openMusicianModal()" ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); openMusicianModal();}">🎵 Music Settings</button>
         </div>
-        
+
+        <div class="volume-control-group">
+            <label for="volumeSlider" class="volume-label">Volume</label>
+            <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" step="1" value="40" aria-label="Volume slider">
+        </div>
+
         <div class="status-section">
             <div class="status-label">Status:</div>
             <div class="status-text" id="statusText">Ready</div>
-            
             <div class="roi-info" id="roiInfo"></div>
         </div>
     </div>
