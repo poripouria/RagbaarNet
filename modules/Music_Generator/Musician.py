@@ -460,8 +460,8 @@ class LSTMOrchestralMusician(BaseMusician):
         self._rt_piano_generator = None
         self.strings_generator = MelodyGenerator()
         self._rt_strings_generator = None
-        self.bass_generator = MelodyGenerator()
-        self._rt_bass_generator = None
+        self.synth_generator = MelodyGenerator()
+        self._rt_synth_generator = None
 
         self.last_seed_notes = {
             "piano": ["64", "_", "67", "_",
@@ -472,7 +472,7 @@ class LSTMOrchestralMusician(BaseMusician):
                         "65", "_", "_", "65",
                         "64", "_", "62", "_",
                         "62", "_", "64", "_"],
-            "bass": ["48", "_", "48", "_",
+            "synth": ["48", "_", "48", "_",
                      "48", "_", "_", "50",
                      "50", "_", "52", "_",
                      "52", "_", "50", "_"]
@@ -481,7 +481,7 @@ class LSTMOrchestralMusician(BaseMusician):
         self._note_buffer = {
             "piano": list(self.last_seed_notes),
             "strings": list(self.last_seed_notes),
-            "bass": list(self.last_seed_notes)
+            "synth": list(self.last_seed_notes)
         }
 
         self.important_labels = [
@@ -508,9 +508,9 @@ class LSTMOrchestralMusician(BaseMusician):
             "bicycle": 'strings',
             "motorcycle": 'strings',
             "person": 'strings',
-            "traffic light": 'bass',
-            "traffic sign": 'bass',
-            "stop sign": 'bass',
+            "traffic light": 'synth',
+            "traffic sign": 'synth',
+            "stop sign": 'synth',
         }
 
         return mapping.get(base_class, None)
@@ -580,16 +580,16 @@ class LSTMOrchestralMusician(BaseMusician):
                     if area_size is not None:
                         velocity = min(max(int((area_size * 16) * 127), 30), 127)
 
-                elif instrument == 'bass':
+                elif instrument == 'synth':
 
-                    self._rt_bass_generator = self.bass_generator.generate_melody_RT(
+                    self._rt_synth_generator = self.synth_generator.generate_melody_RT(
                         seed=" ".join(self.last_seed_notes[instrument]),
                         num_steps=400,
                         temperature=self.temperature
                     )
 
                     while True:
-                        new_note = next(self._rt_bass_generator)
+                        new_note = next(self._rt_synth_generator)
                         if new_note.isdigit():
                             break
 
