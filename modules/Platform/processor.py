@@ -158,6 +158,11 @@ class ROI:
 
         return area
 
+    def calculate_ROI_area(self):
+
+        area = np.sum(self.boundary_mask)
+        return area
+
     def intersects_mask(self, mask, return_edges=False):
 
         touching = np.logical_and(mask, self.boundary_mask).any()
@@ -372,7 +377,7 @@ class Detector:
                 "object_id": obj_id,
                 "class": obj_class,
                 "edges": edges,
-                "area": erea
+                "area/ROI": erea /self.roi.calculate_ROI_area() if self.roi else None,
             })
 
         logger.info(f"Detected {len(events)} scene events")
