@@ -2853,31 +2853,27 @@ function clampSpeedValue(value) {
     }
     return Math.max(SPEED_MIN, Math.min(SPEED_MAX, parsedValue));
 }
+// Controlable, The higher the value, the slower the curve at low speeds. A value of 1.0 would be linear.
+const N = 1.7;
 
 // Inverse of calculateAutoTempoFromSpeed(); used to position the speed
 // slider to match a known tempo value (e.g. coming from the processor).
-function speedFromTempo(bpm) {
-    const clampedBpm = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, Number(bpm) || TEMPO_MIN));
-    const ratio = (clampedBpm - TEMPO_MIN) / (TEMPO_MAX - TEMPO_MIN);
-    const v = Math.exp(ratio * Math.log(1 + SPEED_MAX)) - 1;
-    return Math.max(SPEED_MIN, Math.min(SPEED_MAX, Math.round(v)));
-}
-
 function calculateAutoTempoFromSpeed(speedKmh) {
     const v = Number(speedKmh);
-    if (!Number.isFinite(v) || v <= 0) {
-        return TEMPO_MIN;
-    }
+    if (!Number.isFinite(v) || v <= 0) return TEMPO_MIN;
 
-    const vMax = SPEED_MAX;
-    const bpmMin = TEMPO_MIN;
-    const bpmMax = TEMPO_MAX;
-
-    const ratio = Math.log(1 + v) / Math.log(1 + vMax);
-    const bpm = bpmMin + (bpmMax - bpmMin) * ratio;
+    const ratio = Math.pow(Math.min(v, SPEED_MAX) / SPEED_MAX, N);
+    const bpm = TEMPO_MIN + (TEMPO_MAX - TEMPO_MIN) * ratio;
     return clampTempoValue(Math.round(bpm));
 }
 
+// The exact inverse of the above formula — no approximation involved
+function speedFromTempo(bpm) {
+    const clampedBpm = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, Number(bpm) || TEMPO_MIN));
+    const ratio = (clampedBpm - TEMPO_MIN) / (TEMPO_MAX - TEMPO_MIN);
+    const v = SPEED_MAX * Math.pow(ratio, 1 / N);
+    return Math.max(SPEED_MIN, Math.min(SPEED_MAX, Math.round(v)));
+}
 function renderInstrumentList() {
     const container = document.getElementById('instrumentList');
     if (!container) return;
