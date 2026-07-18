@@ -1100,6 +1100,8 @@ function captureAndSendFrame() {
         return; // Rate limiting
     }
     
+    const currentFrameId = frameCounter++;
+    lastFrameSentTime = now;
     isProcessingFrame = true; // Set processing flag
     
     try {
@@ -1126,7 +1128,7 @@ function captureAndSendFrame() {
         // Send frame to processor
         const frameInfo = {
             frame: frameData,
-            frame_id: `frame_${frameCounter}`,
+            frame_id: `frame_${currentFrameId}`,
             timestamp: now / 1000,
             // ROI coordinates must use the same dimensions as the transmitted frame.
             roi_points: roiPoints.map(point => [
@@ -1140,25 +1142,23 @@ function captureAndSendFrame() {
         };
         
         // Reduced logging for performance - only log every 10th frame
-        if (frameCounter % 10 === 0) {
-            console.log(`📤 Sending frame ${frameCounter} to processor`);
+        if (currentFrameId  % 10 === 0) {
+            console.log(`📤 Sending frame ${currentFrameId} to processor`);
         }
         
         // Send via HTTP (more reliable than WebSocket for large data)
         sendFrameToProcessor(frameInfo)
             .then(response => {
                 if (response.success) {
-                    frameCounter++;
-                    lastFrameSentTime = now;
                     
                     // Update frame counter in display (throttled)
-                    if (frameCounter % 5 === 0) {
-                        updateFrameCounter(frameCounter);
+                    if (currentFrameId  % 5 === 0) {
+                        updateFrameCounter(currentFrameId);
                     }
                     
                     // Reduced logging for performance
-                    if (frameCounter % 10 === 0) {
-                        console.log(`✅ Frame ${frameCounter} processed successfully`);
+                    if (currentFrameId % 10 === 0) {
+                        console.log(`✅ Frame ${currentFrameId} processed successfully`);
                     }
                     updateSegmentationStatus('Processing');
                 } else {
@@ -2981,17 +2981,19 @@ function handleVolumeSliderInput() {
     updateVolumeControls(this.value);
 }
 
-function startMusicGeneration() {
+async function startMusicGeneration() {
+    // Unlock/resume the underlying (Tone.js) audio context — required by browsers
+    try {
+        await Tone.start();
+        console.log('✅ AudioContext resumed by user gesture');
+    } catch (err) {
+        console.warn('⚠️ Unable to resume audio context:', err);
+        return;
+    }
+
     if (!masterGain) {
         initializeAudioSystem();
     }
-
-    // Unlock/resume the underlying (Tone.js) audio context — required by browsers
-    Tone.start().then(() => {
-        console.log('🎵 Audio context resumed');
-    }).catch(err => {
-        console.warn('⚠️ Unable to resume audio context:', err);
-    });
 
     if (isMusicGenerationActive) {
         stopMusicGeneration();
