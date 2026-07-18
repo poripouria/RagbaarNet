@@ -40,7 +40,7 @@ class SegmentationResult:
     confidence_map: Optional[np.ndarray] = None
     class_labels: List[str] = field(default_factory=list)
     bounding_boxes: List[Dict[str, Any]] = field(default_factory=list)
-    masks: List[np.ndarray] = field(default_factory=list)
+    masks: Dict[str, np.ndarray] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 class BaseSegmentor(ABC):
