@@ -582,6 +582,32 @@ body {
 
 
 
+.tempo-mode-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 4px;
+}
+
+.tempo-mode-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.tempo-mode-option input[type="radio"] {
+    accent-color: var(--accent-color);
+}
+
+.tempo-mode-option-disabled {
+    color: var(--text-secondary);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 .tempo-control-group {
     display: flex;
     flex-direction: column;

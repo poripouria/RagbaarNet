@@ -61,13 +61,22 @@
                 </section>
 
                 <section class="music-settings-section">
-                    <h3>Tempo</h3>
+                    <h3>Tempo (BPM): <span id="tempoDerivedValue">120</span> derived from Car Speed (<span id="speedDerivedValue">12</span> km/h)</h3>
+                    <div class="tempo-mode-toggle" role="radiogroup" aria-label="Speed source">
+                        <label class="tempo-mode-option">
+                            <input type="radio" name="tempoMode" id="tempoModeSlider" value="slider" checked>
+                            <span>Slider</span>
+                        </label>
+                        <label class="tempo-mode-option tempo-mode-option-disabled">
+                            <input type="radio" name="tempoMode" id="tempoModeAuto" value="auto" disabled>
+                            <span>Auto (car speed sensor - coming soon)</span>
+                        </label>
+                    </div>
                     <div class="tempo-control-group">
                         <div class="tempo-slider-row">
-                            <input type="range" id="tempoSlider" class="tempo-slider" min="60" max="180" step="1" value="120" aria-label="Tempo slider">
-                            <input type="number" id="tempoNumberInput" class="tempo-number-input" min="60" max="180" step="1" value="120" aria-label="Tempo value">
+                            <input type="range" id="speedSlider" class="tempo-slider" min="0" max="160" step="1" value="12" aria-label="Car speed slider (km/h)">
+                            <input type="number" id="speedNumberInput" class="tempo-number-input" min="0" max="160" step="1" value="12" aria-label="Car speed value (km/h)">
                         </div>
-                        <div id="tempoValueLabel" class="tempo-value">120 BPM</div>
                     </div>
                 </section>
             </div>

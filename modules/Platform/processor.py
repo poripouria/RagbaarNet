@@ -1272,8 +1272,8 @@ class Processor:
 
         try:
             tempo = int(tempo)
-            if not 60 <= tempo <= 180:
-                raise ValueError('Tempo must be between 60 and 180 BPM')
+            if not 60 <= tempo <= 300:
+                raise ValueError('Tempo must be between 60 and 300 BPM')
 
             if musician_type != self.musician.musician_type:
                 self.musician.switch_musician(

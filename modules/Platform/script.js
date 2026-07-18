@@ -91,7 +91,15 @@ let musicianSwitchTimeoutId = null;
 const MUSICIAN_SWITCH_TIMEOUT_MS = 8000;
 let currentTempo = 120;
 const TEMPO_MIN = 60;
-const TEMPO_MAX = 180;
+const TEMPO_MAX = 300;
+const SPEED_MIN = 0;
+const SPEED_MAX = 160;
+// Tempo is derived from car speed. 'slider' lets the user simulate speed for
+// testing; 'auto' will eventually receive real car speed from a sensor and
+// is disabled until that integration exists.
+let tempoMode = 'slider';
+let pendingSpeedKmh = speedFromTempo(120);
+let currentSpeedKmh = pendingSpeedKmh;
 const VOLUME_MIN = 0;
 const VOLUME_MAX = 100;
 const DEFAULT_VOLUME = 40;
@@ -179,21 +187,31 @@ function setupEventListeners() {
     // Mobile-specific setup for segmentation button
     setupMobileButtons();
     
-    const tempoSlider = document.getElementById('tempoSlider');
-    const tempoNumberInput = document.getElementById('tempoNumberInput');
+    const speedSlider = document.getElementById('speedSlider');
+    const speedNumberInput = document.getElementById('speedNumberInput');
+    const tempoModeSlider = document.getElementById('tempoModeSlider');
+    const tempoModeAuto = document.getElementById('tempoModeAuto');
 
-    if (tempoSlider) {
-        tempoSlider.addEventListener('input', handleTempoSliderInput);
+    if (speedSlider) {
+        speedSlider.addEventListener('input', handleTempoSliderInput);
     }
 
-    if (tempoNumberInput) {
-        tempoNumberInput.addEventListener('input', () => updateTempoControls(tempoNumberInput.value));
-        tempoNumberInput.addEventListener('keydown', function(event) {
+    if (speedNumberInput) {
+        speedNumberInput.addEventListener('input', () => updateTempoControls(speedNumberInput.value));
+        speedNumberInput.addEventListener('keydown', function(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
                 applyMusicSettings();
             }
         });
+    }
+
+    if (tempoModeSlider) {
+        tempoModeSlider.addEventListener('change', () => handleTempoModeChange('slider'));
+    }
+
+    if (tempoModeAuto) {
+        tempoModeAuto.addEventListener('change', () => handleTempoModeChange('auto'));
     }
 
     // Custom scrollbars are hidden via CSS; wire up drag-to-scroll (mouse) for the
@@ -394,8 +412,10 @@ function initializeSocketConnection() {
             if (data && Number.isInteger(data.tempo)) {
                 currentTempo = clampTempoValue(data.tempo);
                 pendingTempo = currentTempo;
+                currentSpeedKmh = speedFromTempo(currentTempo);
+                pendingSpeedKmh = currentSpeedKmh;
                 lastMusicStatus.tempo = currentTempo;
-                updateTempoControls(currentTempo);
+                updateTempoControls(currentSpeedKmh);
                 updateMusicStatusDisplay();
             }
             if (data && data.instrument) {
@@ -433,9 +453,11 @@ function initializeSocketConnection() {
                 currentMusicianType = data.musician_type;
                 currentInstrument = data.instrument || currentInstrument;
                 currentTempo = clampTempoValue(data.tempo);
+                currentSpeedKmh = speedFromTempo(currentTempo);
                 pendingMusicianSelection = currentMusicianType;
                 pendingInstrument = currentInstrument;
                 pendingTempo = currentTempo;
+                pendingSpeedKmh = currentSpeedKmh;
                 lastMusicStatus.tempo = currentTempo;
                 updateMusicStatusDisplay();
                 updateStatus(`🎵 Music settings updated • ${getMusicianLabel(currentMusicianType)} • ${currentTempo} BPM`);
@@ -2752,10 +2774,10 @@ function openMusicianModal() {
 
     pendingMusicianSelection = currentMusicianType;
     pendingInstrument = currentInstrument;
-    pendingTempo = currentTempo;
+    pendingSpeedKmh = currentSpeedKmh;
     renderMusicianList();
     updateInstrumentControls();
-    updateTempoControls(pendingTempo);
+    updateTempoControls(pendingSpeedKmh);
     setMusicianModalStatus('Adjust the settings and tap Apply.');
     setMusicianListInteractive(!isSwitchingMusician);
     updateMusicianApplyButton();
@@ -2772,7 +2794,7 @@ function closeMusicianModal() {
     if (modal) {
         pendingMusicianSelection = currentMusicianType;
         pendingInstrument = currentInstrument;
-        pendingTempo = currentTempo;
+        pendingSpeedKmh = currentSpeedKmh;
         updateMusicianApplyButton();
         modal.style.display = 'none';
     }
@@ -2789,7 +2811,8 @@ function applyMusicSettings() {
         return;
     }
 
-    pendingTempo = clampTempoValue(document.getElementById('tempoNumberInput')?.value || pendingTempo);
+    pendingSpeedKmh = clampSpeedValue(document.getElementById('speedNumberInput')?.value || pendingSpeedKmh);
+    pendingTempo = calculateAutoTempoFromSpeed(pendingSpeedKmh);
     isSwitchingMusician = true;
     setMusicianListInteractive(false);
     updateMusicianApplyButton();
@@ -2827,16 +2850,32 @@ function clampTempoValue(value) {
     return Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, parsedValue));
 }
 
+function clampSpeedValue(value) {
+    const parsedValue = Number.parseInt(value, 10);
+    if (Number.isNaN(parsedValue)) {
+        return pendingSpeedKmh;
+    }
+    return Math.max(SPEED_MIN, Math.min(SPEED_MAX, parsedValue));
+}
+
+// Inverse of calculateAutoTempoFromSpeed(); used to position the speed
+// slider to match a known tempo value (e.g. coming from the processor).
+function speedFromTempo(bpm) {
+    const clampedBpm = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, Number(bpm) || TEMPO_MIN));
+    const ratio = (clampedBpm - TEMPO_MIN) / (TEMPO_MAX - TEMPO_MIN);
+    const v = Math.exp(ratio * Math.log(1 + SPEED_MAX)) - 1;
+    return Math.max(SPEED_MIN, Math.min(SPEED_MAX, Math.round(v)));
+}
+
 function calculateAutoTempoFromSpeed(speedKmh) {
     const v = Number(speedKmh);
     if (!Number.isFinite(v) || v <= 0) {
         return TEMPO_MIN;
     }
 
-    const vMin = 0;
-    const vMax = 160;
-    const bpmMin = 60;
-    const bpmMax = 180;
+    const vMax = SPEED_MAX;
+    const bpmMin = TEMPO_MIN;
+    const bpmMax = TEMPO_MAX;
 
     const ratio = Math.log(1 + v) / Math.log(1 + vMax);
     const bpm = bpmMin + (bpmMax - bpmMin) * ratio;
@@ -2882,28 +2921,47 @@ function updateInstrumentControls() {
     renderInstrumentList();
 }
 
-function updateTempoControls(value) {
-    pendingTempo = clampTempoValue(value);
+function updateTempoControls(speedValue) {
+    pendingSpeedKmh = clampSpeedValue(speedValue);
+    pendingTempo = calculateAutoTempoFromSpeed(pendingSpeedKmh);
 
-    const slider = document.getElementById('tempoSlider');
-    const numberInput = document.getElementById('tempoNumberInput');
-    const label = document.getElementById('tempoValueLabel');
+    const slider = document.getElementById('speedSlider');
+    const numberInput = document.getElementById('speedNumberInput');
+    const tempoValueEl = document.getElementById('tempoDerivedValue');
+    const speedValueEl = document.getElementById('speedDerivedValue');
 
     if (slider) {
-        slider.value = pendingTempo;
+        slider.value = pendingSpeedKmh;
     }
 
     if (numberInput) {
-        numberInput.value = pendingTempo;
+        numberInput.value = pendingSpeedKmh;
     }
 
-    if (label) {
-        label.textContent = `${pendingTempo} BPM`;
+    if (tempoValueEl) {
+        tempoValueEl.textContent = pendingTempo;
+    }
+
+    if (speedValueEl) {
+        speedValueEl.textContent = pendingSpeedKmh;
     }
 }
 
 function handleTempoSliderInput() {
     updateTempoControls(this.value);
+}
+
+function handleTempoModeChange(mode) {
+    // 'auto' is not wired up to a real speed source yet, so it stays disabled
+    // in the UI. This guards against it being selected programmatically.
+    tempoMode = mode === 'auto' ? 'auto' : 'slider';
+
+    const slider = document.getElementById('speedSlider');
+    const numberInput = document.getElementById('speedNumberInput');
+    const isSliderMode = tempoMode === 'slider';
+
+    if (slider) slider.disabled = !isSliderMode;
+    if (numberInput) numberInput.disabled = !isSliderMode;
 }
 
 function clampVolumeValue(value) {
