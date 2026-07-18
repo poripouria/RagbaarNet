@@ -193,7 +193,7 @@ class Detector:
     def __init__(self):
 
         self.roi = None  # Will be set per frame if provided
-        self.prev_roi_payload = None  # To track changes in ROI between frames
+        self.prev_roi_payload = None  # Tracks ROI coordinates and frame dimensions
 
         # state: keeps track of objects
         self.state = {
@@ -211,22 +211,29 @@ class Detector:
         if not isinstance(input, SegmentationResult):
             raise ValueError("Input must be a SegmentationResult instance")
         
-        self._set_roi(roi)
+        frame_height, frame_width = input.segmentation_map.shape[:2]
+        self._set_roi(roi, frame_size=(frame_width, frame_height))
         self.frame_counter = frame_id
 
         detected = self.detect_scene_events(input.bounding_boxes, input.masks)
 
         return detected
 
-    def _set_roi(self, roi_payload):
+    def _set_roi(self, roi_payload, frame_size):
         
         if not roi_payload:
+            self.roi = None
+            self.prev_roi_payload = None
             return
-        
-        if self.prev_roi_payload != roi_payload:
-            self.prev_roi_payload = roi_payload
-            self.roi = ROI(corners=roi_payload.get("corners", []), 
-                           controls=roi_payload.get("controls", []))
+
+        roi_state = (roi_payload, frame_size)
+        if self.prev_roi_payload != roi_state:
+            self.prev_roi_payload = roi_state
+            self.roi = ROI(
+                corners=roi_payload.get("corners", []),
+                controls=roi_payload.get("controls", []),
+                frame_size=frame_size,
+            )
             
             logger.info(f"💢 ROI updated for frame {self.frame_counter}.")
 
@@ -405,6 +412,7 @@ class Processor:
         self.frame_queue = Queue(maxsize=10)
         self.segmentation_queue = Queue(maxsize=5)
         self.current_frame = None
+        self.current_detection = None
         self.current_segmentation = None
         self.is_processing = False
 
@@ -752,6 +760,31 @@ class Processor:
                                         (orig_w, orig_h),
                                         interpolation=cv2.INTER_LINEAR,
                                     )
+
+                                scale_x = orig_w / float(seg_frame.shape[1])
+                                scale_y = orig_h / float(seg_frame.shape[0])
+                                for detected_object in result.bounding_boxes:
+                                    x1, y1, x2, y2 = detected_object['bbox']
+                                    detected_object['bbox'] = [
+                                        x1 * scale_x,
+                                        y1 * scale_y,
+                                        x2 * scale_x,
+                                        y2 * scale_y,
+                                    ]
+                                    if 'centroid' in detected_object:
+                                        cx, cy = detected_object['centroid']
+                                        detected_object['centroid'] = (cx * scale_x, cy * scale_y)
+
+                                if isinstance(result.masks, dict):
+                                    result.masks = {
+                                        key: cv2.resize(
+                                            np.asarray(mask, dtype=np.uint8),
+                                            (orig_w, orig_h),
+                                            interpolation=cv2.INTER_NEAREST,
+                                        ).astype(bool)
+                                        for key, mask in result.masks.items()
+                                    }
+
                                 # Validate and normalize segmentation map to safe uint8 indices
                                 try:
                                     result.segmentation_map = self._validate_segmentation_map(result.segmentation_map)
@@ -845,6 +878,32 @@ class Processor:
                                 logger.error("❌ Error detecting scene events: %s", event_err)
                                 logger.error("Traceback:\n%s", traceback.format_exc())
 
+                        detections = []
+                        if self.detector is not None:
+                            for object_id, tracked_object in self.detector.state["objects"].items():
+                                if (
+                                    tracked_object.get("last_seen_frame") == self.frame_counter
+                                    and tracked_object.get("touching", False)
+                                ):
+                                    detections.append({
+                                        "object_id": int(object_id),
+                                        "class_name": tracked_object["class_name"],
+                                        "bbox": [float(value) for value in tracked_object["bbox"]],
+                                    })
+
+                        self.current_detection = {
+                            "frame_id": frame_id,
+                            "timestamp": timestamp,
+                            "frame_counter": self.frame_counter,
+                            "frame_width": orig_w,
+                            "frame_height": orig_h,
+                            "detections": detections,
+                        }
+
+                        # Comment out this call whenever collision boxes are not needed in the UI.
+                        self._broadcast_detection_update()
+
+
                         # Generate music based on segmentation data
                         if self.music_enabled and self.musician is not None:
                             try:
@@ -917,6 +976,22 @@ class Processor:
         except Exception as e:
             if self.debug_mode:
                 logger.warning("❌ Error broadcasting update: %s", e)
+
+    def _broadcast_detection_update(self):
+        """Broadcast boxes for currently tracked objects intersecting the ROI."""
+        try:
+            if self.main_ui_connected and self.socketio and self.current_detection is not None:
+                self.socketio.emit('detection_update', self.current_detection)
+
+                if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+                    logger.debug(
+                        "📦 Broadcasted %s intersecting detections for frame %s",
+                        len(self.current_detection['detections']),
+                        self.current_detection['frame_counter'],
+                    )
+        except Exception as e:
+            if self.debug_mode:
+                logger.warning("❌ Error broadcasting detection update: %s", e)
 
     def _broadcast_music_update(self, music_data):
         """Broadcast music events to connected WebSocket clients"""
