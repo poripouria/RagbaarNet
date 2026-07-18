@@ -275,6 +275,61 @@ body {
     font-weight: bold;
 }
 
+/* Volume Control Group
+ Positioned directly above the status box (bottom of the side menu bar).
+ Styled to match the Tempo slider in the Music Settings modal.
+*/
+.volume-control-group {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+    width: 100%;
+}
+
+.volume-label {
+    flex: 0 0 auto;
+    color: var(--text-primary);
+    margin: 0;
+    font-size: 14px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.volume-slider {
+    width: 100%;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--border-color) 0%, var(--accent-color) 100%);
+    outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    border: 2px solid white;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+}
+
+.volume-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    border: 2px solid white;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+}
+
 .instrument-select {
     width: 100%;
     padding: 11px 12px;
@@ -391,10 +446,9 @@ body {
 .tempo-control-group {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     margin-top: 12px;
 }
-
 
 
 .tempo-slider-row {
@@ -410,7 +464,7 @@ body {
     -webkit-appearance: none;
     height: 6px;
     border-radius: 999px;
-    background: linear-gradient(90deg, var(--accent-color) 0%, var(--border-color) 100%);
+    background: linear-gradient(90deg, var(--border-color) 0%, var(--accent-color) 100%);
     outline: none;
 }
 

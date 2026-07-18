@@ -82,6 +82,10 @@ const MUSICIAN_SWITCH_TIMEOUT_MS = 8000;
 let currentTempo = 120;
 const TEMPO_MIN = 60;
 const TEMPO_MAX = 180;
+const VOLUME_MIN = 0;
+const VOLUME_MAX = 100;
+const DEFAULT_VOLUME = 40;
+let currentVolume = DEFAULT_VOLUME;
 let lastMusicStatus = {
     eventCount: 0,
     tempo: currentTempo,
@@ -558,7 +562,16 @@ let masterLimiter = null;
 function initializeAudioSystem() {
     try {
         // Tone.js manages its own internal AudioContext.
-        masterGain = new Tone.Gain(0.3).toDestination();
+        const initialVolume = clampVolumeValue(document.getElementById('volumeSlider')?.value ?? DEFAULT_VOLUME);
+        masterGain = new Tone.Gain(initialVolume / 100).toDestination();
+
+        // Volume slider control
+        const volumeSlider = document.getElementById('volumeSlider');
+        if (volumeSlider) {
+            volumeSlider.addEventListener('input', handleVolumeSliderInput);
+        }
+
+        updateVolumeControls(initialVolume);
 
         // --- Mastering chain (sits right before the final volume stage) ---
         // EQ: shave a touch of low-mud, add a little "air" on top.
@@ -2746,13 +2759,34 @@ function updateTempoControls(value) {
     }
 }
 
-
-
 function handleTempoSliderInput() {
     updateTempoControls(this.value);
 }
 
+function clampVolumeValue(value) {
+    const parsedValue = Number.parseInt(value, 10);
+    if (Number.isNaN(parsedValue)) {
+        return currentVolume;
+    }
+    return Math.max(VOLUME_MIN, Math.min(VOLUME_MAX, parsedValue));
+}
 
+function updateVolumeControls(value) {
+    currentVolume = clampVolumeValue(value);
+
+    const slider = document.getElementById('volumeSlider');
+    if (slider) {
+        slider.value = currentVolume;
+    }
+
+    if (masterGain) {
+        masterGain.gain.value = currentVolume / 100;
+    }
+}
+
+function handleVolumeSliderInput() {
+    updateVolumeControls(this.value);
+}
 
 function startMusicGeneration() {
     if (!masterGain) {
