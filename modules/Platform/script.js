@@ -102,6 +102,8 @@ const TEMPO_MIN = 60;
 const TEMPO_MAX = 300;
 const SPEED_MIN = 0;
 const SPEED_MAX = 160;
+// Controlable, The higher the value, the slower the curve at low speeds. A value of 1.0 would be linear.
+const N = 1.7;
 // Tempo is derived from car speed. 'slider' lets the user simulate speed for
 // testing; 'auto' will eventually receive real car speed from a sensor and
 // is disabled until that integration exists.
@@ -2853,8 +2855,6 @@ function clampSpeedValue(value) {
     }
     return Math.max(SPEED_MIN, Math.min(SPEED_MAX, parsedValue));
 }
-// Controlable, The higher the value, the slower the curve at low speeds. A value of 1.0 would be linear.
-const N = 1.7;
 
 // Inverse of calculateAutoTempoFromSpeed(); used to position the speed
 // slider to match a known tempo value (e.g. coming from the processor).
