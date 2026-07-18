@@ -57,10 +57,18 @@ let audioContext = null;
 let masterGain = null;
 let isMusicGenerationActive = false;
 let activeNotes = new Map(); // Track currently playing (sustained, tonal) notes
-let recentPercussion = new Map(); // Track short-lived drum hits: key -> expiry timestamp
 let instrumentVoices = {}; // Store instrument voice settings
 let musicEventQueue = []; // Queue for scheduling music events
+let recentPercussion = new Map(); // Track short-lived drum hits: key -> expiry timestamp
 let lastMusicEventTime = 0;
+
+let instrumentFactories = {}; // instrument name -> () => fresh { synth, nodes, release, isPluck }
+let reverbBus = null;       // the reverb "tank" itself (100% wet — mix is handled via sends)
+let reverbPreFilter = null; // high-pass before the tank, so bass frequencies stay out of the reverb
+let masterBusIn = null;     // everything (dry + wet) sums here before mastering
+let masterEQ = null;
+let masterCompressor = null;
+let masterLimiter = null;
 
 // Music settings variables
 // Fallback list (mirrors Musician.MUSICIAN_REGISTRY) used until the server responds,
@@ -583,13 +591,6 @@ async function checkProcessorStatus() {
 /**
  * Audio System Functions (Tone.js synthesis engine)
  */
-let instrumentFactories = {}; // instrument name -> () => fresh { synth, nodes, release, isPluck }
-let reverbBus = null;       // the reverb "tank" itself (100% wet — mix is handled via sends)
-let reverbPreFilter = null; // high-pass before the tank, so bass frequencies stay out of the reverb
-let masterBusIn = null;     // everything (dry + wet) sums here before mastering
-let masterEQ = null;
-let masterCompressor = null;
-let masterLimiter = null;
 
 function initializeAudioSystem() {
     try {
@@ -630,6 +631,8 @@ function initializeAudioSystem() {
         updateStatus('Audio initialization failed');
     }
 }
+
+
 
 // Connects a voice's final node to the mix as a proper AUX SEND: the dry signal goes
 // straight to the master bus at full level, and a separate, independently-controlled
