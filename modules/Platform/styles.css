@@ -707,6 +707,12 @@ body {
     pointer-events: none;
 }
 
+/* Collision boxes sit above segmentation and below the interactive ROI. */
+#detectionCanvas {
+    z-index: 12;
+    pointer-events: none;
+}
+
 /* Specific z-index for ROI canvas (interactive foreground layer) */
 #roiCanvas {
     z-index: 15;
