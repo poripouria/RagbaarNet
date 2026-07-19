@@ -58,7 +58,7 @@ class MelodyGenerator:
 
         logger.info(f"✅ Model loaded successfully (Best loss: {checkpoint.get('best_loss', 'N/A')})")
 
-    def generate_melody_RT(self, seed: str, num_steps: int = 500, temperature: float = 0.8):
+    def generate_melody_RT(self, seed: str, length: int = 500, temperature: float = 0.8):
         """Generates a melody using the trained LSTM model. 
         Real-time generation mode yields one note at a time, allowing for immediate playback.
         
@@ -80,7 +80,7 @@ class MelodyGenerator:
         seed_idx = [self.mapping.get(symbol, 0) for symbol in seed_list]
         seed_tensor = torch.tensor(seed_idx[-SEQUENCE_LENGTH:], dtype=torch.long, device=self.device)
 
-        for _ in range(num_steps):
+        for _ in range(length):
 
             input_seq = torch.nn.functional.one_hot(seed_tensor, num_classes=self.vocab_size).float().unsqueeze(0)
 
@@ -108,7 +108,7 @@ class MelodyGenerator:
         logger.info(f"🎵 Generated melody (length {len(melody)}): {' '.join(melody)}")
         return melody
         
-    def generate_melody(self, seed: str, num_steps: int = 500, temperature: float = 0.8):
+    def generate_melody(self, seed: str, length: int = 500, temperature: float = 0.8):
         """Generates a melody using the trained LSTM model.
         
         Args:
@@ -129,7 +129,7 @@ class MelodyGenerator:
         seed_idx = [self.mapping.get(symbol, 0) for symbol in seed_list]
         seed_tensor = torch.tensor(seed_idx[-SEQUENCE_LENGTH:], dtype=torch.long, device=self.device)
 
-        for _ in range(num_steps):
+        for _ in range(length):
 
             input_seq = torch.nn.functional.one_hot(seed_tensor, num_classes=self.vocab_size).float().unsqueeze(0)
 
@@ -258,6 +258,6 @@ if __name__ == "__main__":
     seed_exmpl3 = "67 _ _ _ _ _ 65 _ 64 _ 62 _ 60 _ _ _"
     seed_exmpl4 = "73 _ _ _ 75 _ _ _ 76 _ _ _ 73 _ _ _ 80 _ _ _ _ _ r _ _ _ 73 _ 80 _ 78 _ _ _ _ _ _ 71 _ 80 _ 78 _ _ _ _ _"
 
-    generated_melody = generator.generate_melody(seed_exmpl4, 600, 0.8)
+    generated_melody = generator.generate_melody(seed_exmpl4, 400, 0.8)
 
     generator.save_melody(generated_melody, step_duration=0.25, file_name="generated_melody4.mid")
