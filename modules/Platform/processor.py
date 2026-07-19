@@ -379,14 +379,13 @@ class Detector:
                 event_type = "ROI_RELEASE"
                 self.state["objects"][obj_id]["touching"] = False
 
-            area_fraction = erea /self.roi.calculate_ROI_area()
-
             events.append({
                 "type": event_type,
                 "object_id": obj_id,
                 "class": obj_class,
                 "edges": edges,
-                "area/ROI": float(area_fraction) if self.roi else None,
+                "area": erea,
+                "area/ROI": float(erea /self.roi.calculate_ROI_area()) if self.roi else None,
             })
 
         logger.info(f"Detected {len(events)} scene events")
