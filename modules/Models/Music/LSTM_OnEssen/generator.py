@@ -11,15 +11,20 @@ import torch
 import music21 as m21
 import os
 import sys
+from pathlib import Path
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 from utils.logging_setup import setup_logging
-from Models.Music.LSTM_OnEssen.train import LSTM_OnEssen, MODEL_SAVE_PATH
-from Models.Music.LSTM_OnEssen.preprocess import SEQUENCE_LENGTH, MAPPING_PATH
+from Models.Music.LSTM_OnEssen.train import LSTM_OnEssen
+from Models.Music.LSTM_OnEssen.preprocess import SEQUENCE_LENGTH
 
 logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.generator")
 np.random.seed(42)
 torch.manual_seed(42)
+
+BASE_DIR = Path(__file__).parent
+MODEL_SAVE_PATH = BASE_DIR / 'LSTM_OnEssen.pt'
+MAPPING_PATH = BASE_DIR / 'mapping.json' 
 
 class MelodyGenerator:
     """A class that wraps the LSTM model and offers utilities to generate melodies.
