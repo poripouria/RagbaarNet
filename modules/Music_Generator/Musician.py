@@ -360,7 +360,7 @@ class LSTMMusician(BaseMusician):
                     "instrument": self.instrument,
                 }
 
-                self._note_buffer.append(note)
+                self._note_buffer.append(new_note)
 
             elif e["type"] == "ROI_RELEASE":
                 event = "note_off"
@@ -551,15 +551,15 @@ class LSTMOrchestralMusician(BaseMusician):
                     "instrument": instrument,
                 }
 
-                self._note_buffer[instrument].append(note)
+                self._note_buffer[instrument].append(new_note)
 
             elif e["type"] == "ROI_RELEASE":
                 event = "note_off"
 
                 related_note = None
                 if e["object_id"] in self.active_notes:
-                    related_note = self.active_notes[e["object_id"]]["note"]
-                    self.active_notes.pop(e["object_id"], None)
+                    related_note = self.active_notes[channel][e["object_id"]]["note"]
+                    self.active_notes[channel].pop(e["object_id"], None)
                 else:
                     logger.warning("No previous note found to turn off on ROI_RELEASE event.")
                     continue
@@ -586,7 +586,7 @@ class LSTMOrchestralMusician(BaseMusician):
 
             self.last_seed_notes[instrument] = self._note_buffer[instrument][-16:]
 
-        for object_id, note_info in list(self.active_notes.items()):
+        for object_id, note_info in list(self.active_notes[channel].items()):
             if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
                 music_events.append(
                     MusicEvent(
@@ -599,7 +599,7 @@ class LSTMOrchestralMusician(BaseMusician):
                         metadata={"object_id": object_id}
                     )
                 )
-                self.active_notes.pop(object_id, None)
+                self.active_notes[channel].pop(object_id, None)
                 logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
