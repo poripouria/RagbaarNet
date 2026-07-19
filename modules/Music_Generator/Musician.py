@@ -535,7 +535,7 @@ class LSTMOrchestralMusician(BaseMusician):
 
                 self._rt_generator = self.generator.generate_melody_RT(
                     seed=" ".join(self.last_seed_notes[instrument]),
-                    num_steps=200,
+                    length=200,
                     temperature=self.temperature
                 )
                 while True:
