@@ -513,10 +513,11 @@ class LSTMOrchestralMusician(BaseMusician):
         for e in scene_events:
 
             obj_class = e["class"]
-            instrument, channel = self._map_classes(obj_class)
-            if instrument is None:
+            mapped = self._map_classes(obj_class)
+            if mapped is None:
                 logger.info(f"Skipping unimportant object class '{obj_class}'.")
                 continue
+            instrument, channel = mapped
             
             event = None
             note = None
