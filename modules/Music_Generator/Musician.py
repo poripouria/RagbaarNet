@@ -592,7 +592,7 @@ class LSTMOrchestralMusician(BaseMusician):
                     MusicEvent(
                         event_type="note_off",
                         note=note_info["note"],
-                        channel=note_info["channel"],
+                        channel=channel,
                         velocity=0,
                         instrument=note_info["instrument"],
                         timestamp=self.frame_counter,
