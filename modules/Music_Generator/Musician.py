@@ -557,7 +557,7 @@ class LSTMOrchestralMusician(BaseMusician):
                 event = "note_off"
 
                 related_note = None
-                if e["object_id"] in self.active_notes:
+                if e["object_id"] in self.active_notes[channel]:
                     related_note = self.active_notes[channel][e["object_id"]]["note"]
                     self.active_notes[channel].pop(e["object_id"], None)
                 else:
@@ -577,7 +577,7 @@ class LSTMOrchestralMusician(BaseMusician):
                     note=note,
                     channel=channel,
                     velocity=velocity,
-                    instrument=self.instrument,
+                    instrument=instrument,
                     timestamp=self.frame_counter,
                     metadata=e
                 )
