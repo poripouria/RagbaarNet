@@ -235,7 +235,7 @@ class Detector:
                 frame_size=frame_size,
             )
             
-            logger.info(f"💢 ROI updated for frame {self.frame_counter}.")
+            logger.info(f"💢 ROI updated for frame {self.frame_counter}. ROI area: {self.roi.calculate_ROI_area}")
 
     def assign_object_ids(self, objects, max_distance=100):
         """
