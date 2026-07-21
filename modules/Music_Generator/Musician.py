@@ -7,15 +7,11 @@ particularly segmentation maps from computer vision models. It supports various 
 generation strategies with easy integration for additional models.
 """
 
-from calendar import c
 import os
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-
-from PIL.ExifTags import Base
-from sympy import N
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
