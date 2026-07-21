@@ -3,8 +3,7 @@ Modular Music Generation Framework for Real-Time Visual-to-Audio Mapping
 ========================================================================
 
 This module provides an extensible framework for generating music based on visual data,
-particularly segmentation maps from computer vision models. It supports various music
-generation strategies with easy integration for additional models.
+It supports various music generation strategies with easy integration for additional models.
 """
 
 import os
