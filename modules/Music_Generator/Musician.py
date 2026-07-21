@@ -312,6 +312,9 @@ class LSTMMusician(BaseMusician):
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
 
+    def _map_classes(self, obj_class):
+        pass
+
     def generate_music(self, results, frame_id, state):
         """
         Generate music based on the input scene data using the LSTM model.
