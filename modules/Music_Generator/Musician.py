@@ -452,7 +452,7 @@ class LSTMOrchestralMusician(BaseMusician):
                         "65", "_", "_", "65",
                         "64", "_", "62", "_",
                         "62", "_", "64", "_"],
-            "synth": ["48", "_", "48", "_",
+            "bass": ["48", "_", "48", "_",
                      "48", "_", "_", "50",
                      "50", "_", "52", "_",
                      "52", "_", "50", "_"]
@@ -486,9 +486,9 @@ class LSTMOrchestralMusician(BaseMusician):
             "bicycle": ('strings', 2),
             "motorcycle": ('strings', 2),
             "person": ('strings', 2),
-            "traffic light": ('synth', 3),
-            "traffic sign": ('synth', 3),
-            "stop sign": ('synth', 3),
+            "traffic light": ('bass', 3),
+            "traffic sign": ('bass', 3),
+            "stop sign": ('bass', 3),
         }
 
         return mapping.get(base_class, None)
@@ -580,21 +580,22 @@ class LSTMOrchestralMusician(BaseMusician):
 
             self.last_seed_notes[instrument] = self._note_buffer[instrument][-16:]
 
-        for object_id, note_info in list(self.active_notes[channel].items()):
-            if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
-                music_events.append(
-                    MusicEvent(
-                        event_type="note_off",
-                        note=note_info["note"],
-                        channel=channel,
-                        velocity=0,
-                        instrument=note_info["instrument"],
-                        timestamp=self.frame_counter,
-                        metadata={"object_id": object_id}
+        for channel in self.active_notes:
+            for object_id, note_info in list(self.active_notes[channel].items()):
+                if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+                    music_events.append(
+                        MusicEvent(
+                            event_type="note_off",
+                            note=note_info["note"],
+                            channel=channel,
+                            velocity=0,
+                            instrument=note_info["instrument"],
+                            timestamp=self.frame_counter,
+                            metadata={"object_id": object_id}
+                        )
                     )
-                )
-                self.active_notes[channel].pop(object_id, None)
-                logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
+                    self.active_notes[channel].pop(object_id, None)
+                    logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
             events=music_events,
@@ -738,7 +739,6 @@ class Musician:
         Use the current time for file name for easy access.
 
         Args:
-            output_path: Path to save the MIDI file
             step_duration: Duration of each time step in quarter length.
         """
         import music21 as m21
@@ -749,7 +749,7 @@ class Musician:
             return
         
         # Folder to save generated melodies
-        output_dir = os.path.join(os.getcwd(), "Generated Melodies")
+        output_dir = os.path.join(os.getcwd(), "modules", "Music_Generator", "Generated Melodies")
         os.makedirs(output_dir, exist_ok=True)
 
         filename = f"generated_melody_{int(time.time())}.mid"
