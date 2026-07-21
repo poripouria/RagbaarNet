@@ -93,19 +93,6 @@ class BaseMusician(ABC):
         return self.generate_music(results, frame_id, state)
 
     @abstractmethod
-    def _map_classes(self, obj_class: str):
-        """
-        Map object class to music parameters (note, velocity, instrument, channel).
-
-        Args:
-            obj_class: Detected object class
-
-        Returns:
-            Tuple of (note, velocity, instrument, channel) or None if no mapping exists
-        """
-        pass
-
-    @abstractmethod
     def generate_music(self,
         results: List[Dict[str, Any]],
         frame_id: int = 0,
@@ -311,9 +298,6 @@ class LSTMMusician(BaseMusician):
         ]
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
-
-    def _map_classes(self, obj_class):
-        pass
 
     def generate_music(self, results, frame_id, state):
         """
@@ -547,7 +531,7 @@ class LSTMOrchestralMusician(BaseMusician):
                     length=200,
                     temperature=self.temperature
                 )
-                
+
                 new_note = next(self._rt_generator)
                 note = int(new_note)
 
