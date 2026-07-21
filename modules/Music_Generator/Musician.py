@@ -93,6 +93,19 @@ class BaseMusician(ABC):
         return self.generate_music(results, frame_id, state)
 
     @abstractmethod
+    def _map_classes(self, obj_class: str):
+        """
+        Map object class to music parameters (note, velocity, instrument, channel).
+
+        Args:
+            obj_class: Detected object class
+
+        Returns:
+            Tuple of (note, velocity, instrument, channel) or None if no mapping exists
+        """
+        pass
+
+    @abstractmethod
     def generate_music(self,
         results: List[Dict[str, Any]],
         frame_id: int = 0,
