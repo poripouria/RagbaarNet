@@ -22,6 +22,7 @@ from utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="segmentation.segmentor")
 
+
 @dataclass
 class SegmentationResult:
     """
