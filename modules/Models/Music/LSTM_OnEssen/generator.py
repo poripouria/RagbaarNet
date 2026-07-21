@@ -6,6 +6,7 @@ This module contains functions to generate melodies using a trained PyTorch LSTM
 """
 
 import json
+from unicodedata import digit
 import numpy as np
 import torch
 import music21 as m21
@@ -94,14 +95,16 @@ class MelodyGenerator:
                 output = output.squeeze(0)
 
             probs = torch.softmax(output, dim=-1).cpu().numpy()
-            output_int = self._sample_with_temperature(probs, temperature)
+            valid_indices = [i for i, symbol in self.reverse_mapping.items() if symbol.isdigit()]
+            digit_probs = probs[valid_indices]
+            digit_probs /= digit_probs.sum()    # Normalize to ensure they sum to 1
+
+            # output_int = np.random.choice(valid_indices, p=digit_probs)
+            output_int = self._sample_with_temperature(digit_probs, temperature)
 
             seed_tensor = torch.cat([seed_tensor[1:], torch.tensor([output_int], device=self.device)])
 
-            output_symbol = self.reverse_mapping.get(output_int, "?")
-
-            if not output_symbol.isdigit() and output_symbol not in ["_", "r", "/"]:
-                output_symbol = "r"
+            output_symbol = self.reverse_mapping.get(output_int, "r")
 
             yield output_symbol
 
@@ -147,10 +150,7 @@ class MelodyGenerator:
 
             seed_tensor = torch.cat([seed_tensor[1:], torch.tensor([output_int], device=self.device)])
 
-            output_symbol = self.reverse_mapping.get(output_int, "?")
-
-            if not output_symbol.isdigit() and output_symbol not in ["_", "r", "/"]:
-                output_symbol = "r"
+            output_symbol = self.reverse_mapping.get(output_int, "r")
 
             if output_symbol == "/":
                 break

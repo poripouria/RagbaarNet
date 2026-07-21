@@ -357,13 +357,10 @@ class LSTMMusician(BaseMusician):
                     length=200,
                     temperature=self.temperature
                 )
-                # Skip non-digit notes ('_' (hold) and 'r' (rest)) until we get a valid note
-                while True:
-                    new_note = next(self._rt_generator)
-                    if new_note.isdigit():
-                        break
+                
+                new_note = next(self._rt_generator)
                 note = int(new_note)
-
+                
                 self.active_notes[0][e["object_id"]] = {
                     "voice_id": e["object_id"],
                     "note": note,
@@ -550,10 +547,8 @@ class LSTMOrchestralMusician(BaseMusician):
                     length=200,
                     temperature=self.temperature
                 )
-                while True:
-                    new_note = next(self._rt_generator)
-                    if new_note.isdigit():
-                        break
+                
+                new_note = next(self._rt_generator)
                 note = int(new_note)
 
                 self.active_notes[channel][e["object_id"]] = {
