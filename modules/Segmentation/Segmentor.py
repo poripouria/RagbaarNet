@@ -47,7 +47,6 @@ class SegmentationResult:
 class BaseSegmentor(ABC):
     """
     Abstract base class for all segmentation models.
-
     This class defines the interface that all segmentation models must implement,
     ensuring consistency and extensibility across different model architectures.
     """
