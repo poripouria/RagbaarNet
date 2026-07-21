@@ -99,8 +99,8 @@ class MelodyGenerator:
             digit_probs = probs[valid_indices]
             digit_probs /= digit_probs.sum()    # Normalize to ensure they sum to 1
 
-            # output_int = np.random.choice(valid_indices, p=digit_probs)
-            output_int = self._sample_with_temperature(digit_probs, temperature)
+            output_int = np.random.choice(valid_indices, p=digit_probs)
+            # output_int = self._sample_with_temperature(digit_probs, temperature)
 
             seed_tensor = torch.cat([seed_tensor[1:], torch.tensor([output_int], device=self.device)])
 
