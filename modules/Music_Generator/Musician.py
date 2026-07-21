@@ -10,7 +10,10 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from turtle import end_fill
 from typing import Any, Dict, List, Optional
+
+from isort import file
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
@@ -658,6 +661,8 @@ class Musician:
         
         self.musician = self._create_musician(entry)
 
+        self.generated_melody = []
+
         logger.info(f"🎵 Musician initialized: {musician_type}")
 
     def _create_musician(self, entry):
@@ -727,6 +732,89 @@ class Musician:
             for musician_id, info in cls.MUSICIAN_REGISTRY.items()
         ]
 
+    def save_generated_melody(self, step_duration: float = 0.25) -> None:
+        """
+        Save the generated melody (List of MusicFrames) to a MIDI file.
+        Use the current time for file name for easy access.
+
+        Args:
+            output_path: Path to save the MIDI file
+            step_duration: Duration of each time step in quarter length.
+        """
+        import music21 as m21
+        import time
+
+        if not self.generated_melody:
+            logger.warning("No generated melody to save.")
+            return
+        
+        # Folder to save generated melodies
+        output_dir = os.path.join(os.getcwd(), "Generated Melodies")
+        os.makedirs(output_dir, exist_ok=True)
+
+        filename = f"generated_melody_{int(time.time())}.mid"
+        file_path = os.path.join(output_dir, filename)
+
+        stream = m21.stream.Stream()
+        active_notes = {}   # Key: (channel, note), Value: (start_time, velocity, instrument)
+
+        for frame in self.generated_melody:
+
+            current_time = frame.frame_id * step_duration
+
+            for event in frame.events:
+
+                key = (event.channel, event.note)
+
+                if event.event_type == "note_on":
+
+                    active_notes[key] = {
+                        "start_time": current_time,
+                        "velocity": event.velocity,
+                        "instrument": event.instrument,
+                    }
+                
+                elif event.event_type == "note_off":
+
+                    if key in active_notes:
+                        note_info = active_notes.pop(key)
+                        start_time = note_info["start_time"]
+                        duration = current_time - start_time
+
+                        midi_note = m21.note.Note(event.note)
+                        midi_note.volume.velocity = note_info["velocity"]
+                        midi_note.quarterLength = duration
+                        midi_note.offset = start_time
+                        midi_note.storedInstrument = m21.instrument.fromString(note_info["instrument"])
+
+                        stream.append(midi_note)
+
+            # Close remaining active notes
+            if self.generated_melody:
+
+                end_time = (self.generated_melody[-1].frame_id + 1) * step_duration
+
+                for (channel, note), note_info in active_notes.items():
+
+                    start_time = note_info["start_time"]
+                    duration = end_time - start_time
+
+                    midi_note = m21.note.Note(note)
+                    midi_note.volume.velocity = note_info["velocity"]
+                    midi_note.quarterLength = duration
+                    midi_note.offset = start_time
+                    midi_note.storedInstrument = m21.instrument.fromString(note_info["instrument"])
+
+                    stream.append(midi_note)    
+
+        try:
+            stream.write("midi", file_path)
+            logger.info(f"✅ Generated melody saved to {file_path}")
+            return file_path
+        except Exception as e:
+            logger.error(f"❌ Error saving MIDI: {e}")
+            return None
+
     def __call__(self, 
                  results,
                  frame_id: int = 0,
@@ -743,4 +831,11 @@ class Musician:
             MusicFrame containing generated music events
         """
 
-        return self.musician(results, frame_id, state)
+        generated_frame =  self.musician(results, frame_id, state)
+        self.generated_melody.append(generated_frame)
+
+        if frame_id % 100 == 0:
+            self.save_generated_melody(output_path="Generated Melodies", step_duration=0.25)  
+            logger.info(f"✅ Saved generated melody at frame {frame_id}")          
+
+        return generated_frame
