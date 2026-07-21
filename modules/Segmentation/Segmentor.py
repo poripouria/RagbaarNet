@@ -6,16 +6,16 @@ This module provides an extensible framework for semantic segmentation using var
 It supports YOLO and Segformer models with easy integration for additional models.
 """
 
-import torch
-import cv2
-import numpy as np
-from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Union, Optional, Any
-from dataclasses import dataclass, field
-from ultralytics import YOLO
-from transformers import SegformerConfig, SegformerImageProcessor, SegformerForSemanticSegmentation
 import os
 import sys
+import cv2
+import torch
+import numpy as np
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple, Union, Optional, Any
+from ultralytics import YOLO
+from transformers import SegformerConfig, SegformerImageProcessor, SegformerForSemanticSegmentation
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.logging_setup import setup_logging
