@@ -834,8 +834,8 @@ class Musician:
         generated_frame =  self.musician(results, frame_id, state)
         self.generated_melody.append(generated_frame)
 
-        if frame_id % 100 == 0:
-            self.save_generated_melody(output_path="Generated Melodies", step_duration=0.25)  
+        if frame_id % 200 == 0:
+            self.save_generated_melody()  
             logger.info(f"✅ Saved generated melody at frame {frame_id}")          
 
         return generated_frame
