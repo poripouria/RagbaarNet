@@ -303,12 +303,6 @@ class SegformerSegmentor(BaseSegmentor):
         #  "traffic sign", "vegetation", "terrain", "sky", "person", "rider", "car",
         #  "truck", "bus", "train", "motorcycle", "bicycle"]
 
-        # Check and log if GPU is available and will be used
-        if torch.cuda.is_available():
-            logger.info("🔥CUDA is available. Segformer will run on GPU.")
-        else:
-            logger.info("⚠️CUDA is NOT available. Segformer will run on CPU, which may be slow.")
-
     def _resolve_model_identifier(self, local_files_only: bool) -> Tuple[str, bool]:
         """Resolve the model identifier/path with offline/online support to load.
 
@@ -561,6 +555,12 @@ class Segmentor:
         self.device = device
         self._color_mapping_cache = {}
         self.segmentor = self._create_segmentor(model_type, model_path, device)
+
+        # Check and log if GPU is available and will be used
+        if torch.cuda.is_available():
+            logger.info(f"🔥CUDA is available. {self.model_type} will run on GPU.")
+        else:
+            logger.info(f"⚠️CUDA is NOT available. {self.model_type} will run on CPU, which may be slow.")
 
     def _create_segmentor(self, model_type: str, model_path: str, device: str) -> BaseSegmentor:
         """Create the appropriate segmentor based on model type."""
