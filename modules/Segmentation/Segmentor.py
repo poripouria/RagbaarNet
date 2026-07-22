@@ -160,7 +160,7 @@ class YOLOSegmentor(BaseSegmentor):
             self.model.to(self.device)
             self.model.eval()
             self.is_loaded = True
-            logger.info("✅ YOLO model loaded on %s", self.device)
+            logger.info(f"✅ YOLO model ({len(self.model.names)} classes) loaded on {self.device}")
 
         except Exception as e:
             raise RuntimeError(f"Failed to load YOLO model: {e}")
