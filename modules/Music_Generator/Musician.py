@@ -477,12 +477,12 @@ class LSTMOrchestralMusician(BaseMusician):
             "bus": ('piano', 0),
             "train": ('electric_piano', 1),
             "plane": ('electric_piano', 1),
-            "bicycle": ('strings', 2),
-            "motorcycle": ('strings', 2),
-            "person": ('strings', 2),
-            "traffic light": ('bass', 3),
-            "traffic sign": ('bass', 3),
-            "stop sign": ('bass', 3),
+            "bicycle": ('bass', 2),
+            "motorcycle": ('bass', 2),
+            "person": ('bass', 2),
+            "traffic light": ('strings', 3),
+            "traffic sign": ('strings', 3),
+            "stop sign": ('strings', 3),
         }
 
         return mapping.get(base_class, None)
