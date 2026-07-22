@@ -583,31 +583,18 @@ class Segmentor:
             raise ValueError(f"Unsupported model type: {model_type}.\n"
                              f"Supported types: 'yolo', 'segformer'")
 
-    def __call__(self, image: Union[np.ndarray, str]) -> SegmentationResult:
+    def switch_model(self, model_type: str, model_path: str = None) -> None:
         """
-        Perform segmentation on input image.
+        Switch to a different segmentation model.
 
         Args:
-            image: Input image as numpy array (RGB) or path to image file
-
-        Returns:
-            SegmentationResult containing all segmentation information
+            model_type: New model type ('yolo', 'segformer')
+            model_path: Path to new model
         """
 
-        # Handle different input types
-        if isinstance(image, str):
-            image_path = image
-            image = cv2.imread(image_path)
-            if image is None:
-                raise ValueError(f"Failed to read image from path: {image_path}")
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        elif isinstance(image, np.ndarray) and len(image.shape) == 3 and image.shape[2] == 3:
-            # Assume it's already in RGB format
-            pass
-        else:
-            raise ValueError("Image must be a numpy array (RGB) or path to image file")
-
-        return self.segmentor(image)
+        self.model_type = model_type.lower()
+        self.segmentor = self._create_segmentor(model_type, model_path, self.device)
+        logger.info("Switched to %s model", model_type)
 
     def get_class_labels(self) -> List[str]:
         """Get class labels for the current model."""
@@ -913,15 +900,28 @@ class Segmentor:
 
         return rgb_segmentation
 
-    def switch_model(self, model_type: str, model_path: str = None) -> None:
+    def __call__(self, image: Union[np.ndarray, str]) -> SegmentationResult:
         """
-        Switch to a different segmentation model.
+        Perform segmentation on input image.
 
         Args:
-            model_type: New model type ('yolo', 'segformer')
-            model_path: Path to new model
+            image: Input image as numpy array (RGB) or path to image file
+
+        Returns:
+            SegmentationResult containing all segmentation information
         """
 
-        self.model_type = model_type.lower()
-        self.segmentor = self._create_segmentor(model_type, model_path, self.device)
-        logger.info("Switched to %s model", model_type)
+        # Handle different input types
+        if isinstance(image, str):
+            image_path = image
+            image = cv2.imread(image_path)
+            if image is None:
+                raise ValueError(f"Failed to read image from path: {image_path}")
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        elif isinstance(image, np.ndarray) and len(image.shape) == 3 and image.shape[2] == 3:
+            # Assume it's already in RGB format
+            pass
+        else:
+            raise ValueError("Image must be a numpy array (RGB) or path to image file")
+
+        return self.segmentor(image)
