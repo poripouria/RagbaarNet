@@ -195,8 +195,9 @@ class ROIEventsDetector(BaseDetector):
     def __init__(self):
         super().__init__()
 
-        self.roi = None  # Will be set per frame if provided
-        self.prev_roi_payload = None  # Tracks ROI coordinates and frame dimensions
+        self.roi = None                 # Will be set per frame if provided
+        self.prev_roi_payload = None    # Tracks ROI coordinates and frame dimensions
+        self.max_missing_frames = 6     # Number of frames to keep an object in memory after it disappears
 
     def __call__(self,
             input: SegmentationResult,
@@ -233,7 +234,7 @@ class ROIEventsDetector(BaseDetector):
             
             logger.info(f"💢 ROI updated for frame {self.frame_counter}. ROI area: {self.roi.calculate_ROI_area()}")
 
-    def assign_object_ids(self, objects, max_distance=100):
+    def assign_object_ids(self, objects, masks, max_distance=100):
         """
         Assign unique IDs to detected objects based on their bounding boxes and class names. 
         The rule is to match objects across frames based on IoU proximity and class similarity, 
@@ -245,17 +246,15 @@ class ROIEventsDetector(BaseDetector):
 
         for obj in objects:
 
-            bbox = obj["bbox"]
             cls = obj["class_name"]
-
-            x1, y1, x2, y2 = bbox
-            if "centroid" in obj.keys():
-                centroid = obj["centroid"]
-            else:
-                centroid = ((x1 + x2) / 2, (y1 + y2) / 2)
+            bbox = obj["bbox"]
+            mask = masks.get(cls, None)
             
             matched_id = None
             best_score = float("-inf")
+
+            x1, y1, x2, y2 = bbox
+            centroid = obj["centroid"] if "centroid" in obj.keys() else ((x1 + x2) / 2, (y1 + y2) / 2)
 
             # Search previous objects
             for object_id, previous in self.state["objects"].items():
@@ -268,15 +267,19 @@ class ROIEventsDetector(BaseDetector):
 
                 # Already used in this frame penalty
                 if object_id in used_tracks: 
-                    penalty += -1000
+                    penalty += -5000
 
                 # Distance penalty
                 pcx, pcy = previous["centroid"]
                 cx, cy = centroid
                 distance = ((cx-pcx)**2 + (cy-pcy)**2)**0.5
                 if distance > max_distance:
-                    penalty += -((distance / max_distance) * 100)
+                    penalty += -((distance / max_distance) * 200)
 
+                # Age reward: older objects are more likely to be the same object
+                age = previous["age"]
+
+                # Compute IoU for bounding boxes
                 IoU = None
                 px1, py1, px2, py2 = previous["bbox"]
                 ix1, iy1, ix2, iy2 = max(x1, px1), max(y1, py1), min(x2, px2), min(y2, py2)
@@ -289,7 +292,21 @@ class ROIEventsDetector(BaseDetector):
                     union = area + areap - inter
                     IoU = inter / union if union > 0 else 0.0
 
-                score = IoU * 1000 + penalty
+                # # Compute IoU for masks
+                # MIoU = None
+                # if mask is not None and previous["mask"] is not None:
+                #     intersection = np.logical_and(mask, previous["mask"]).sum()
+                #     union = np.logical_or(mask, previous["mask"]).sum()
+                #     MIoU = intersection / union if union > 0 else 0.0
+                # else:
+                #     MIoU = 0.0
+
+                score = (
+                    IoU * 500 + 
+                    # MIoU * 500 + 
+                    age * 10 +
+                    penalty
+                )
                 if score > best_score:
                     best_score = score
                     matched_id = object_id
@@ -300,34 +317,37 @@ class ROIEventsDetector(BaseDetector):
                 used_tracks.add(obj_id)
                 previous = self.state["objects"][obj_id]
                 is_touching = previous["touching"]
+                age = previous["age"] + 1
 
             # New object
             else:
                 obj_id = self.state["next_object_id"]
-                if self.state["next_object_id"] > 5000:
+                if self.state["next_object_id"] > 2000:
                     self.state["next_object_id"] = 0
-                    logger.warning("ID counter exceeded 5000, resetting to 0. This may cause ID collisions.")
+                    logger.warning("ID counter exceeded 2000, resetting to 0. This may cause ID collisions.")
                 self.state["next_object_id"] += 1
                 is_touching = False
+                age = 0
+
+            obj["object_id"] = obj_id
 
             updated_objects[obj_id] = {
                 "class_name": cls,
                 "centroid": centroid,
                 "bbox": bbox,
+                "mask": mask,
                 "touching": is_touching,
                 "missing_frames": 0,
-                "last_seen_frame": self.frame_counter
+                "age": age,
+                "last_seen_frame": self.frame_counter,
             }
 
-            obj["object_id"] = obj_id
-
         for object_id, previous in self.state["objects"].items():
-
             if object_id in updated_objects:
                 continue
-
             previous["missing_frames"] += 1
-            updated_objects[object_id] = previous
+            if previous["missing_frames"] <= self.max_missing_frames:
+                updated_objects[object_id] = previous
 
         # Replace old objects
         self.state["objects"] = updated_objects
@@ -344,7 +364,7 @@ class ROIEventsDetector(BaseDetector):
             logger.warning("No bounding boxes or masks provided for scene event detection.")
             return events
         
-        self.assign_object_ids(bounding_boxes)
+        self.assign_object_ids(bounding_boxes, masks)
 
         for obj in bounding_boxes:
 
