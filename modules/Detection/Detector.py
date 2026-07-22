@@ -267,7 +267,7 @@ class ROIEventsDetector(BaseDetector):
 
                 # Already used in this frame penalty
                 if object_id in used_tracks: 
-                    penalty += -5000
+                    penalty += -10000
 
                 # Distance penalty
                 pcx, pcy = previous["centroid"]
@@ -292,18 +292,8 @@ class ROIEventsDetector(BaseDetector):
                     union = area + areap - inter
                     IoU = inter / union if union > 0 else 0.0
 
-                # # Compute IoU for masks
-                # MIoU = None
-                # if mask is not None and previous["mask"] is not None:
-                #     intersection = np.logical_and(mask, previous["mask"]).sum()
-                #     union = np.logical_or(mask, previous["mask"]).sum()
-                #     MIoU = intersection / union if union > 0 else 0.0
-                # else:
-                #     MIoU = 0.0
-
                 score = (
                     IoU * 500 + 
-                    # MIoU * 500 + 
                     age * 10 +
                     penalty
                 )
