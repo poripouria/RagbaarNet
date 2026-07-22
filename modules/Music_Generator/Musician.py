@@ -332,9 +332,9 @@ class LSTMMusician(BaseMusician):
                 area = e.get("area/ROI", None)
                 if area is not None: 
                     # Scale area to velocity range (MinMax Scaler)
-                    scaled_area = (area - 0.0001) / (0.6 - 0.0001)
+                    scaled_area = (area - 0.005) / (0.6 - 0.005)
                     velocity = int(scaled_area * (127 - 32) + 32)
-                if area < 0.0001:
+                if area < 0.005:
                     logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
                     continue
 
@@ -517,9 +517,9 @@ class LSTMOrchestralMusician(BaseMusician):
 
                 area = e.get("area/ROI", None)
                 if area is not None: 
-                    scaled_area = (area - 0.0001) / (0.6 - 0.0001)
+                    scaled_area = (area - 0.005) / (0.6 - 0.005)
                     velocity = int(scaled_area * (127 - 32) + 32)
-                if area < 0.0001:
+                if area < 0.005:
                     logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
                     continue
 
