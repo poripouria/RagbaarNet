@@ -205,7 +205,7 @@ class ROIEventsDetector(BaseDetector):
             roi: Dict[str, Any] = None
         ):
 
-        if not isinstance(input, SegmentationResult):
+        if not hasattr(input, "segmentation_map"):
             raise ValueError("Input must be a SegmentationResult instance")
         
         frame_height, frame_width = input.segmentation_map.shape[:2]
