@@ -419,6 +419,8 @@ class Detector:
         self.strategy = strategy
         self.detector = self._initialize_detector(strategy)
 
+        logger.info(f"Detector initialized with strategy: {strategy}")
+
     def _initialize_detector(self, strategy: str):
         if strategy == "roi-events":
             return ROIEventsDetector()
