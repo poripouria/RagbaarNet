@@ -288,42 +288,19 @@ class LSTMMusician(BaseMusician):
         self.generator = MelodyGenerator()
         self._rt_generator = None
 
-        self.last_seed_notes = {
-            "piano" : ["67", "_", "67", "_", 
-                       "67", "_", "_", "65", 
-                       "64", "_", "62", "_", 
-                       "60", "_", "60", "_"],
-            "electric_piano" : ["67", "_", "67", "_", 
+        self.last_seed_notes = ["67", "_", "67", "_", 
                                 "67", "_", "_", "65", 
                                 "64", "_", "62", "_", 
-                                "60", "_", "60", "_"],
-        }
-        self._note_buffer = {
-            instrument: list(self.last_seed_notes[instrument]) for instrument in self.last_seed_notes
-        }
+                                "60", "_", "60", "_"]
+        self._note_buffer = list(self.last_seed_notes)
+
+        self.important_labels = [
+            "car", "truck", "bus", "train", "plane",
+            "bicycle", "motorcycle", "person",
+            "traffic light", "traffic sign", "stop sign"
+        ]
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
-
-    def _map_classes(self, obj_class):
-        """
-        Map object class to MIDI note, velocity, instrument, and channel."""
-
-        base_class = obj_class.split("_")[0]
-
-        mapping = {
-            "car": ('piano', 0),
-            "truck": ('piano', 0),
-            "bus": ('piano', 0),
-            "bicycle": ('electric_piano', 1),
-            "person": ('electric_piano', 1),
-            "motorcycle": ('electric_piano', 1),
-            "traffic light": ('piano', 2),
-            "traffic sign": ('piano', 2),
-            "stop sign": ('piano', 2),
-            # "road": ('piano', 0),
-        }
-
-        return mapping.get(base_class, None)
 
     def generate_music(self, results, frame_id, state):
         """
@@ -340,11 +317,9 @@ class LSTMMusician(BaseMusician):
         for e in scene_events:
 
             obj_class = e["class"]
-            mapped = self._map_classes(obj_class)
-            if mapped is None:
+            if obj_class.split("_")[0] not in self.important_labels:
                 logger.info(f"Skipping unimportant object class '{obj_class}'.")
                 continue
-            instrument, channel = mapped
             
             event = None
             note = None
@@ -365,7 +340,7 @@ class LSTMMusician(BaseMusician):
 
                 # Generate new notes using the LSTM model
                 self._rt_generator = self.generator.generate_melody_RT(
-                    seed=" ".join(self.last_seed_notes[instrument]),
+                    seed=" ".join(self.last_seed_notes),
                     length=200,
                     temperature=self.temperature
                 )
@@ -373,39 +348,39 @@ class LSTMMusician(BaseMusician):
                 new_note = next(self._rt_generator)
                 note = int(new_note)
                 
-                self.active_notes[channel][e["object_id"]] = {
+                self.active_notes[0][e["object_id"]] = {
                     "voice_id": e["object_id"],
                     "note": note,
                     "velocity": velocity,
                     "instrument": self.instrument,
                 }
 
-                self._note_buffer[instrument].append(new_note)
+                self._note_buffer.append(new_note)
 
             elif e["type"] == "ROI_RELEASE":
                 event = "note_off"
                 
                 # Find the related note for this object_id
                 related_note = None
-                if e["object_id"] in self.active_notes[channel]:
-                    related_note = self.active_notes[channel][e["object_id"]]["note"]
-                    self.active_notes[channel].pop(e["object_id"], None)
+                if e["object_id"] in self.active_notes[0]:
+                    related_note = self.active_notes[0][e["object_id"]]["note"]
+                    self.active_notes[0].pop(e["object_id"], None)
                 else:
                     logger.warning("No previous note found to turn off on ROI_RELEASE event.")
                     continue
                 note = related_note
 
-                self._note_buffer[instrument].extend(["r", "_"])
+                self._note_buffer.extend(["r", "_"])
 
             else:
-                self._note_buffer[instrument].append("_")
+                self._note_buffer.append("_")
                 continue
 
             music_events.append(
                 MusicEvent(
                     event_type=event,
                     note=note,
-                    channel=channel,
+                    channel=0,
                     velocity=velocity,
                     instrument=self.instrument,
                     timestamp=self.frame_counter,
@@ -414,24 +389,23 @@ class LSTMMusician(BaseMusician):
             )
             logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity}, 'instrument': '{self.instrument}'")
 
-            self.last_seed_notes[instrument] = self._note_buffer[instrument][-16:]
+            self.last_seed_notes = self._note_buffer[-16:]
 
-        for channel in self.active_notes:
-            for object_id, note_info in list(self.active_notes[channel].items()):
-                if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
-                    music_events.append(
-                        MusicEvent(
-                            event_type="note_off",
-                            note=note_info["note"],
-                            channel=channel,
-                            velocity=0,
-                            instrument=note_info["instrument"],
-                            timestamp=self.frame_counter,
-                            metadata={"object_id": object_id}
-                        )
+        for object_id, note_info in list(self.active_notes[0].items()):
+            if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+                music_events.append(
+                    MusicEvent(
+                        event_type="note_off",
+                        note=note_info["note"],
+                        channel=0,
+                        velocity=0,
+                        instrument=note_info["instrument"],
+                        timestamp=self.frame_counter,
+                        metadata={"object_id": object_id}
                     )
-                    self.active_notes[channel].pop(object_id, None)
-                    logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
+                )
+                self.active_notes[0].pop(object_id, None)
+                logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
             events=music_events,
@@ -503,12 +477,12 @@ class LSTMOrchestralMusician(BaseMusician):
             "bus": ('piano', 0),
             "train": ('electric_piano', 1),
             "plane": ('electric_piano', 1),
-            "bicycle": ('bass', 2),
-            "motorcycle": ('bass', 2),
-            "person": ('bass', 2),
-            "traffic light": ('strings', 3),
-            "traffic sign": ('strings', 3),
-            "stop sign": ('strings', 3),
+            "bicycle": ('strings', 2),
+            "motorcycle": ('strings', 2),
+            "person": ('strings', 2),
+            "traffic light": ('bass', 3),
+            "traffic sign": ('bass', 3),
+            "stop sign": ('bass', 3),
         }
 
         return mapping.get(base_class, None)
