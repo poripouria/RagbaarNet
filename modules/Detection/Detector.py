@@ -407,15 +407,27 @@ class Detector:
 
     def __init__(self, strategy: str = "roi-events"):
         self.strategy = strategy
-        self.detector = self._initialize_detector(strategy)
+        self.detector = self._create_detector(strategy)
 
         logger.info(f"Detector initialized with strategy: {strategy}")
 
-    def _initialize_detector(self, strategy: str):
+    def _create_detector(self, strategy: str):
         if strategy == "roi-events":
             return ROIEventsDetector()
         else:
             raise ValueError(f"Unknown detection strategy: {strategy}")
+
+    def switch_strategy(self, new_strategy: str):
+        """
+        Switch the detection strategy at runtime.
+        This allows for dynamic changes in detection behavior without restarting the application.
+        """
+        if new_strategy != self.strategy:
+            self.strategy = new_strategy
+            self.detector = self._create_detector(new_strategy)
+            logger.info(f"Switched detection strategy to: {new_strategy}")
+        else:
+            logger.info(f"Detection strategy remains unchanged: {new_strategy}")
 
     def __call__(self, input: SegmentationResult, frame_id: int = 0, roi: Dict[str, Any] = None):
         return self.detector(input=input, frame_id=frame_id, roi=roi)
