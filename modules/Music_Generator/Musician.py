@@ -10,10 +10,7 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from turtle import end_fill
 from typing import Any, Dict, List, Optional
-
-from isort import file
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
@@ -332,7 +329,7 @@ class LSTMMusician(BaseMusician):
                 area = e.get("area/ROI", None)
                 if area is not None: 
                     # Scale area to velocity range (MinMax Scaler)
-                    scaled_area = (area - 0.005) / (0.6 - 0.005)
+                    scaled_area = (area - 0.005) / (0.4 - 0.005)
                     velocity = int(scaled_area * (127 - 32) + 32)
                 if area < 0.005:
                     logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
@@ -517,7 +514,7 @@ class LSTMOrchestralMusician(BaseMusician):
 
                 area = e.get("area/ROI", None)
                 if area is not None: 
-                    scaled_area = (area - 0.005) / (0.6 - 0.005)
+                    scaled_area = (area - 0.005) / (0.4 - 0.005)
                     velocity = int(scaled_area * (127 - 32) + 32)
                 if area < 0.005:
                     logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
