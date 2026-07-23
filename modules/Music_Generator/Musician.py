@@ -136,15 +136,17 @@ class RuleBasedMusician(BaseMusician):
 
         mapping = {     # MIDI note, velocity, instrument, channel
             "car": (60, 100, 'piano', 0),
-            "truck": (48, 80, 'electric_piano', 1),
-            "bus": (48, 80, 'electric_piano', 1),
+            "truck": (48, 120, 'piano', 0),
+            "bus": (48, 90, 'piano', 0),
+            "train": (55, 110, 'electric_piano', 1),
+            "plane": (72, 100, 'electric_piano', 1),
             "bicycle": (64, 90, 'acoustic_guitar', 2),
             "person": (72, 110, 'acoustic_guitar', 2),
             "motorcycle": (70, 100, 'electric_guitar', 3),
             "traffic light": (67, 70, 'strings', 4),
             "traffic sign": (67, 70, 'strings', 4),
             "stop sign": (69, 80, 'strings', 4),
-            "road": (36, 50, 'drums', 9),
+            # "road": (36, 50, 'drums', 9),
         }
 
         return mapping.get(base_class, None)
@@ -239,12 +241,14 @@ class ContinuousPianistMusician(RuleBasedMusician):
         base_class = obj_class.split("_")[0]
 
         mapping = {
-            "car": (60, 110, 'piano', 0),
-            "truck": (48, 80, 'piano', 0),
-            "bus": (42, 80, 'piano', 0),
+            "car": (60, 100, 'piano', 0),
+            "truck": (48, 120, 'piano', 0),
+            "bus": (42, 120, 'piano', 0),
+            "train": (55, 110, 'piano', 0),
+            "plane": (72, 100, 'piano', 0),
             "bicycle": (64, 90, 'electric_piano', 1),
             "person": (72, 110, 'electric_piano', 1),
-            "motorcycle": (70, 100, 'electric_piano', 1),
+            "motorcycle": (70, 92, 'electric_piano', 1),
             "traffic light": (80, 70, 'piano', 2),
             "traffic sign": (67, 70, 'piano', 2),
             "stop sign": (69, 80, 'piano', 2),
