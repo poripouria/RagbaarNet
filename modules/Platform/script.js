@@ -267,8 +267,8 @@ function setupSegmentationButtonMobile() {
             segButton.removeAttribute('onclick');
             segButton.removeAttribute('ontouchend');
             
-            // Start monitoring button state to prevent reversion
-            startButtonStateMonitoring();
+            // // Start monitoring button state to prevent reversion
+            // startButtonStateMonitoring();
             
         } else {
             console.warn('Segmentation button not found for mobile setup');
@@ -612,12 +612,12 @@ function initializeAudioSystem() {
         // EQ: shave a touch of low-mud, add a little "air" on top.
         // Compressor: gently glues everything together so quiet/loud events feel cohesive.
         // Limiter: safety net so nothing ever clips, even with several instruments stacked.
-        masterLimiter = new Tone.Limiter(-1).connect(masterGain);
+        masterLimiter = new Tone.Limiter(-2).connect(masterGain);
         masterCompressor = new Tone.Compressor({
-            threshold: -18,
-            ratio: 3,
-            attack: 0.003,
-            release: 0.25
+            threshold: -8,
+            ratio: 2,
+            attack: 0.03,
+            release: 0.15
         }).connect(masterLimiter);
         masterEQ = new Tone.EQ3({ low: -1, mid: 0, high: 1.5 }).connect(masterCompressor);
         masterBusIn = new Tone.Gain(1).connect(masterEQ);
@@ -643,11 +643,11 @@ function initializeAudioSystem() {
  one fixed wet% for everything. 
  * Returns the send Gain node (if any) so callers can add it to their disposable `nodes` list.
  */
-function connectWithReverbSend(node, sendAmount) {
-    node.connect(masterBusIn);
 
+function connectWithReverbSend(node, sendAmount, velocity = 1) {
+    node.connect(masterBusIn);
     if (sendAmount > 0 && reverbPreFilter) {
-        const send = new Tone.Gain(sendAmount).connect(reverbPreFilter);
+        const send = new Tone.Gain(sendAmount * (0.5 + velocity * 0.5)).connect(reverbPreFilter);
         node.connect(send);
         return send;
     }
@@ -821,11 +821,13 @@ function handleMusicEvents(musicData) {
         
         console.log(`🎵 Received ${musicData.events.length} music events for frame ${musicData.frame_counter}`);
         
+        // Slight delay between events to avoid overwhelming
+        const scheduleTime = Tone.now() + 0.02;
+        // human feel
+        const jitter = (Math.random() - 0.5) * 0.008; 
         // Schedule each music event
         musicData.events.forEach((event, index) => {
-            // Slight delay between events to avoid overwhelming
-            const scheduleTime = Tone.now() + (index * 0.01);
-            playMusicEvent(event, scheduleTime);
+            playMusicEvent(event, scheduleTime + jitter);
         });
         
         // Update UI with music info
@@ -837,26 +839,27 @@ function handleMusicEvents(musicData) {
 }
 
 function playMusicEvent(event, scheduleTime) {
-
     const type = event.event_type || event.type;
+    const channel = event.channel !== undefined ? event.channel : 0;
+    
+    let instrument = event.instrument || currentInstrument;
+    
+    if (channel === 9 || instrument === "drums") {
+        instrument = "drums";
+    }
 
     if (type === "note_off") {
-        // Releasing a note must always be allowed, even if generation was toggled off
-        // mid-note — otherwise a note started while active can outlive the "active" flag
-        // and never get silenced.
-        stopNote(event.note);
+        stopNote(event.note, channel);
         return;
     }
 
-    if (!isMusicGenerationActive)
-        return;
+    if (!isMusicGenerationActive) return;
 
-    const instrument = event.instrument || "piano";
-
-    if (instrument === "drums")
+    if (instrument === "drums") {
         playDrumSound(event, scheduleTime);
-    else
-        playTonalInstrument(event, instrument, scheduleTime);
+    } else {
+        playTonalInstrument(event, instrument, channel, scheduleTime);
+    }
 }
 
 function disposeVoiceSoon(voice) {
@@ -869,16 +872,23 @@ function disposeVoiceSoon(voice) {
     }, (voice.release + 0.3) * 1000);
 }
 
-function playTonalInstrument(event, instrument, scheduleTime) {
+function playTonalInstrument(event, instrument, channel, scheduleTime) {
 
-    // If this exact note number is already sounding (e.g. a stray retrigger), cut it
-    // first so we never have two voices fighting over the same pitch.
-    stopNote(event.note);
+    // If this exact note number is already sounding (e.g. a stray retrigger),
+    // cut it first so we never have two voices fighting over the same pitch.
+    const voiceKey = `${channel ?? 0}-${event.note}`;
+    stopNote(event.note, channel);
 
-    const factory = instrumentFactories[instrument] || instrumentFactories.piano;
+    // Use the sent instrument name, but fall back to piano if it's unknown/invalid.
+    const factoryName = normalizeInstrumentName(instrument, 'piano');
+    const factory = instrumentFactories[factoryName] || instrumentFactories.piano;
     const voice = factory();
+    
     const noteName = Tone.Frequency(event.note, "midi").toNote();
-    const velocity = Math.min(1, Math.max(0.05, (event.velocity || 100) / 127));
+    
+    // Velocity mapping: this ensures that soft hits are truly soft
+    const rawVelocity = (event.velocity ?? 100) / 127;
+    const velocity = Math.pow(Math.max(0.01, Math.pow(rawVelocity, 2)), 1.8);
 
     try {
         voice.synth.triggerAttack(noteName, scheduleTime, velocity);
@@ -888,20 +898,20 @@ function playTonalInstrument(event, instrument, scheduleTime) {
         return;
     }
 
-    activeNotes.set(event.note, { voice, instrument });
+    activeNotes.set(voiceKey, { voice, instrument, channel });
 
     // Safety timeout (in case a NoteOff never arrives from the backend)
     const timeout = (voice.release + 4) * 1000;
-
     setTimeout(() => {
-        const current = activeNotes.get(event.note);
-        if (current && current.voice === voice)
-            stopNote(event.note);
+        const current = activeNotes.get(voiceKey);
+        if (current && current.voice === voice) {
+            stopNote(event.note, channel);
+        }
     }, timeout);
 }
 
 function playDrumSound(event, scheduleTime) {
-    const velocity = Math.min(1, Math.max(0.05, (event.velocity || 100) / 127));
+    const velocity = Math.pow(Math.max(0.1, (event.velocity || 100) / 127), 1.6);
     const drumType = getDrumType(event.note);
     const drumVoices = instrumentVoices.drums || {};
     const voice = drumVoices[drumType] || drumVoices.generic;
@@ -928,12 +938,11 @@ function playDrumSound(event, scheduleTime) {
     }
 }
 
-function stopNote(note) {
+function stopNote(note, channel = 0) {
+    const voiceKey = `${channel}-${note}`;
+    const voiceData = activeNotes.get(voiceKey);
 
-    const voiceData = activeNotes.get(note);
-
-    if (!voiceData)
-        return;
+    if (!voiceData) return;
 
     const { voice } = voiceData;
 
@@ -945,11 +954,10 @@ function stopNote(note) {
             voice.synth.triggerRelease(Tone.now());
         }
         // PluckSynth has no triggerRelease — it just rings out and gets disposed below.
-    }
-    catch(e){}
+    } catch(e){}
 
     disposeVoiceSoon(voice);
-    activeNotes.delete(note);
+    activeNotes.delete(voiceKey);
 }
 
 function hardStopAllAudio() {
@@ -1524,33 +1532,6 @@ function updateSegmentationButtonState() {
     }
 }
 
-// Add a periodic check to ensure button state stays correct
-let buttonStateCheckInterval;
-
-function startButtonStateMonitoring() {
-    // Clear any existing interval
-    if (buttonStateCheckInterval) {
-        clearInterval(buttonStateCheckInterval);
-    }
-    
-    // Check button state every 100ms to ensure it doesn't revert
-    buttonStateCheckInterval = setInterval(() => {
-        const button = document.getElementById('toggleSegmentationBtn');
-        if (button) {
-            const expected = segmentationDisplayEnabled.toString();
-            if (button.dataset.active !== expected) {
-                updateSegmentationButtonState();
-            }
-        }
-    }, 100);
-}
-
-function stopButtonStateMonitoring() {
-    if (buttonStateCheckInterval) {
-        clearInterval(buttonStateCheckInterval);
-        buttonStateCheckInterval = null;
-    }
-}
 
 /**
  * Input Source Selection
