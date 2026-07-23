@@ -1716,7 +1716,7 @@ function toggleFrameProcessing() {
         }
         if (roiCanvas) roiCanvas.style.display = 'block';
         if (segCanvas) segCanvas.style.display = 'none';
-        setInstructionsText('Drag green points to adjust ROI corners • Drag red points to control edge curves');
+        setInstructionsText('Drag green points to adjust ROI corners • Drag cyan points to control edge curves');
         
         updateStatus('Showing original video with ROI (segmentation processing continues in background)');
         console.log('❌ Segmentation DISPLAY: Hidden (background processing continues)');
