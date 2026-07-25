@@ -859,18 +859,28 @@ function initializeInstrumentVoices() {
             return { synth, nodes: [synth, filter, dist, send].filter(Boolean), release: 0.4 };
         },
         acoustic_guitar: (velocity = 1) => {
-            // Physically-modeled plucked string (Karplus-Strong) — a world apart from an
-            // oscillator trying to fake a pluck with a fast decay. Harder plucks get more
-            // pick noise at the attack and ring brighter (less high-frequency dampening),
-            // exactly like a real string reacts to pluck force.
-            const body = new Tone.Filter(90, 'highpass'); // trims sub-100Hz mud, guitars aren't bass instruments
-            const send = connectWithReverbSend(body, 0.18, velocity);
+            // PluckSynth is a genuine Karplus-Strong string model (a feedback delay loop
+            // seeded with a noise burst) — it CAN sound like a real plucked string. The
+            // previous settings pushed `attackNoise` up to 2.0 (a large, dominant noise
+            // burst on every pluck) and `resonance` up to 0.96 (a feedback loop that close
+            // to 1 gets edgy/unstable-sounding rather than a clean, decaying string tone) —
+            // together that reads as "just noise" instead of a wooden, resonant pluck.
+            // Pulling both back into a normal working range, and adding real body EQ (a
+            // low-shelf bump for wooden warmth, a lowpass to round off harsh top end that
+            // PluckSynth's raw noise-seed otherwise leaves exposed) makes it sound like an
+            // actual instrument body instead of a bare string simulation.
+            const lowShelf = new Tone.Filter({ type: 'lowshelf', frequency: 200, gain: 4 });
+            const lowpass = new Tone.Filter(4500, 'lowpass');
+            const highpass = new Tone.Filter(80, 'highpass'); // trims sub-80Hz mud, guitars aren't bass instruments
+            lowShelf.connect(lowpass);
+            lowpass.connect(highpass);
+            const send = connectWithReverbSend(highpass, 0.16, velocity);
             const synth = new Tone.PluckSynth({
-                attackNoise: 0.6 + velocity * 1.4,
-                dampening: 4200 - velocity * 1800,
-                resonance: 0.88 + velocity * 0.08
-            }).connect(body);
-            return { synth, nodes: [synth, body, send].filter(Boolean), release: 1.0, isPluck: true };
+                attackNoise: 0.4 + velocity * 0.5,    // harder pluck = a bit more pick noise, kept subtle
+                dampening: 3200 - velocity * 900,     // harder pluck = a touch brighter, stays warm
+                resonance: 0.72 + velocity * 0.12     // harder pluck = a bit more sustain, stays stable
+            }).connect(lowShelf);
+            return { synth, nodes: [synth, lowShelf, lowpass, highpass, send].filter(Boolean), release: 1.1, isPluck: true };
         },
         pad: (velocity = 1) => {
             const release = 2.0 + velocity * 0.8;
@@ -953,24 +963,21 @@ function initializeInstrumentVoices() {
                 noise: { type: 'white' },
                 envelope: { attack: 0.001, decay: 0.18, sustain: 0 }
             }).connect(snareFilter),
-            // Was producing no audible sound at all. Root cause: nothing here boosted its
-            // level, and its energy sits mostly above ~4kHz (resonance/harmonicity settings)
-            // — a region that's both quieter to begin with and the first to get swallowed
-            // by simultaneous louder/lower content hitting the shared master compressor.
-            // Fix: longer decay so the transient has time to actually register, a highpass
-            // filter to keep it out of the way of everything else instead of blending into
-            // it, and an explicit +8dB volume boost.
+            // Now that the triggerAttackRelease bug above is fixed, this actually produces
+            // real metallic content — the external filter just needs to trim rumble, not
+            // fight the synth's own internal highpass (driven by `resonance`/`octaves`),
+            // so it's set well below resonance now instead of stacked right on top of it.
             hihat: (() => {
-                const hihatFilter = new Tone.Filter(7000, 'highpass');
+                const hihatFilter = new Tone.Filter(3500, 'highpass');
                 connectDrumWithReverbSend(hihatFilter, 0.08);
                 const node = new Tone.MetalSynth({
-                    envelope: { attack: 0.001, decay: 0.22, release: 0.05 },
+                    envelope: { attack: 0.001, decay: 0.16, release: 0.05 },
                     harmonicity: 5.1,
                     modulationIndex: 32,
                     resonance: 5000,
                     octaves: 1.5
                 }).connect(hihatFilter);
-                node.volume.value = 8;
+                node.volume.value = 2;
                 return node;
             })(),
             // NEW — previously missing entirely. getDrumType() already mapped MIDI notes
@@ -987,7 +994,7 @@ function initializeInstrumentVoices() {
                     resonance: 3000,
                     octaves: 2.5
                 }).connect(crashFilter);
-                node.volume.value = 4;
+                node.volume.value = 1;
                 return node;
             })(),
             generic: new Tone.NoiseSynth({
@@ -1136,7 +1143,17 @@ function playDrumSound(event, scheduleTime) {
             const noteName = Tone.Frequency(48, "midi").toNote(); // fixed low kick pitch
             voice.triggerAttackRelease(noteName, "8n", scheduleTime, velocity);
         } else if (typeof Tone !== 'undefined' && voice instanceof Tone.MetalSynth) {
-            voice.triggerAttackRelease("8n", scheduleTime, velocity);
+            // BUG FIX: MetalSynth extends Monophonic, so — unlike NoiseSynth — its
+            // triggerAttackRelease signature is (note, duration, time, velocity), NOT
+            // (duration, time, velocity). The old call `triggerAttackRelease("8n",
+            // scheduleTime, velocity)` was passing "8n" as the NOTE (which Tone.Frequency
+            // can't parse as a pitch, producing a near-zero/garbage frequency), scheduleTime
+            // as the DURATION, and velocity as the TIME. That's why hihat was silent (its
+            // oscillators had no valid pitch to run at) and crash — same broken call —
+            // degenerated into unpitched broadband noise indistinguishable from `generic`.
+            // A fixed base frequency is enough here: resonance/octaves (set per-voice above)
+            // already do the real tonal shaping via the built-in highpass sweep.
+            voice.triggerAttackRelease(200, "8n", scheduleTime, velocity);
         } else {
             voice.triggerAttackRelease("16n", scheduleTime, velocity);
         }
