@@ -131,6 +131,7 @@ const colors = {
     text: '#ffffff'
 };
 
+
 /**
  * Device Detection
  */
@@ -153,6 +154,7 @@ function setInstructionsText(text) {
     }
 }
 
+
 /**
  * Processor URL Detection for Mobile/Desktop Compatibility
  */
@@ -167,6 +169,7 @@ function detectProcessorUrl() {
     return url;
 }
 
+
 /**
  * Application Initialization
  */
@@ -174,6 +177,7 @@ window.onload = function() {
     setupEventListeners();
     showInputSelection();
 };
+
 
 /**
  * Event Listeners Setup
@@ -322,6 +326,7 @@ function handleSegButtonClick(e) {
         }, 50);
     }
 }
+
 
 /**
  * Frame Processing Functions
@@ -591,6 +596,7 @@ async function checkProcessorStatus() {
     return response.json();
 }
 
+
 /**
  * Audio System Functions (Tone.js synthesis engine)
  */
@@ -639,6 +645,7 @@ function initializeAudioSystem() {
         updateStatus('Audio initialization failed');
     }
 }
+
 
 /**
  * Connects a voice's final node to the mix as a proper AUX SEND: the dry signal goes
@@ -1580,6 +1587,7 @@ function updateFrameCounter(count) {
     // Frame counter is now updated directly in updateSegmentationDisplay
 }
 
+
 /**
  * Draw segmentation overlay on the segmentation canvas
  * Now displays ONLY the segmentation data (like processor.py)
@@ -1641,6 +1649,7 @@ function drawSegmentationOverlay() {
         console.error('❌ Error drawing segmentation overlay:', error);
     }
 }
+
 
 /**
  * Clear the segmentation overlay
@@ -1820,6 +1829,7 @@ function selectInputSource(source) {
     }
 }
 
+
 /**
  * URL Input Modal Functions
  */
@@ -1842,6 +1852,7 @@ function cancelUrl() {
     document.getElementById('urlModal').style.display = 'none';
     showInputSelection();
 }
+
 
 /**
  * Video File Handling
@@ -1876,6 +1887,7 @@ function handleVideoFile(event) {
     }
 }
 
+
 /**
  * Main Interface Setup
  */
@@ -1909,6 +1921,7 @@ function setupMainInterface() {
     
     updateStatus('Ready');
 }
+
 
 /**
  * Video Display Setup
@@ -1959,6 +1972,7 @@ function setupVideoDisplay() {
     });
 }
 
+
 /**
  * ROI Canvas Setup
  */
@@ -2003,6 +2017,7 @@ function setupRoiCanvas() {
     // Enable press-and-hold on the fill-toggle icon to reset the ROI
     setupRoiFillHoldToReset();
 }
+
 
 /**
  * ROI Point Initialization
@@ -2049,6 +2064,7 @@ function initializeRoiPoints() {
     // Initialize control points after setting ROI points
     initializeControlPoints();
 }
+
 
 /**
  * Video Capture Management
@@ -2197,6 +2213,7 @@ function startVideoCapture() {
     }
 }
 
+
 /**
  * Video Feed Update Loop
  */
@@ -2209,6 +2226,7 @@ function updateVideoFeed() {
     }
     requestAnimationFrame(updateVideoFeed);
 }
+
 
 /**
  * ROI Drawing Functions
@@ -2335,6 +2353,7 @@ function drawRoi() {
         });
     }
 }
+
 
 /**
  * Mouse Event Handlers
@@ -2517,6 +2536,7 @@ function onCanvasRelease(event) {
     hidePointTooltip();
 }
 
+
 /**
  * Touch Event Handlers for Mobile
  */
@@ -2614,6 +2634,7 @@ function onCanvasTouchEnd(event) {
     hidePointTooltip();
 }
 
+
 /**
  * Window Event Handlers
  */
@@ -2644,6 +2665,7 @@ function onWindowResize() {
     }
 }
 
+
 /**
  * UI Update Functions
  */
@@ -2671,6 +2693,7 @@ function hidePointTooltip() {
 function updateStatus(message) {
     document.getElementById('statusText').textContent = message;
 }
+
 
 /**
  * Menu Button Functions
@@ -2744,6 +2767,7 @@ function updateRoiFillButtonState() {
     }
 }
 
+
 /**
  * Pressing and holding the ROI fill-toggle icon resets the ROI to its
  * default rectangle, instead of toggling fill transparency (a normal
@@ -2783,6 +2807,7 @@ function setupRoiFillHoldToReset() {
     button.addEventListener('touchend', cancelHold);
     button.addEventListener('touchcancel', cancelHold);
 }
+
 
 /**
  * Custom-scrollbar replacement: lets mouse users click-and-drag to scroll a
@@ -2857,6 +2882,7 @@ function enableDragToScroll(el) {
     });
 }
 
+
 /**
  * Lets a plain mouse wheel (which only reports vertical delta by default)
  * scroll a horizontally-scrolling container, such as the instrument list.
@@ -2870,6 +2896,7 @@ function enableWheelToHorizontalScroll(el) {
         el.scrollLeft += event.deltaY;
     }, { passive: false });
 }
+
 
 /**
  * Musician Selection Modal
@@ -3069,6 +3096,7 @@ function speedFromTempo(bpm) {
     const v = SPEED_MAX * Math.pow(ratio, 1 / N);
     return Math.max(SPEED_MIN, Math.min(SPEED_MAX, Math.round(v)));
 }
+
 function renderInstrumentList() {
     const container = document.getElementById('instrumentList');
     if (!container) return;
@@ -3279,6 +3307,7 @@ function takeScreenshot() {
         updateStatus('No video frame available for screenshot');
     }
 }
+
 
 /**
  * Mobile Viewport Height Fix
