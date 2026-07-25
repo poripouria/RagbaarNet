@@ -187,12 +187,7 @@ class RuleBasedMusician(BaseMusician):
                 event = "note_off"
                 self.active_notes[channel].pop(e["object_id"], None)
             else:
-                if state["objects"].get(e["object_id"], {}).get("missing_frames", 0) > self.max_missing_frames:
-                    event = "note_off"
-                    self.active_notes[channel].pop(e["object_id"], None)
-                    logger.info(f"Auto-released note for object_id {e['object_id']} due to missing frames.")
-                else:
-                    continue
+                continue
 
             music_events.append(
                 MusicEvent(
@@ -206,6 +201,13 @@ class RuleBasedMusician(BaseMusician):
                 )
             )
             logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity if e['type'] == 'ROI_TOUCH' else 0}, 'instrument': '{instrument}'")
+
+        for channel in self.active_notes:
+            for object_id in list(self.active_notes[channel].keys()):
+                if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+                    event = "note_off"
+                    self.active_notes[channel].pop(object_id, None)
+                    logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
             events=music_events,
