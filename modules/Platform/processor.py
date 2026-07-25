@@ -94,6 +94,8 @@ class Processor:
                         'Pre-trained Models',
                         'yolo26',
                         'yolo26n-seg.pt',
+                        # 'yolo11',
+                        # 'yolo11s-seg.pt',
                     )
                 self.segmentor = Segmentor('yolo', model_path=model_path)
                 logger.info("✅ YOLO Segmentor initialized successfully")
@@ -108,6 +110,7 @@ class Processor:
                                 'Segmentation',
                                 'Pre-trained Models',
                                 'segformer-b2-finetuned-cityscapes-1024-1024',
+                                # 'segformer-b0finetuned-cityscapes-512-1024',
                             )
                         )
                     )
