@@ -160,7 +160,7 @@ class YOLOSegmentor(BaseSegmentor):
             self.model.to(self.device)
             self.model.eval()
             self.is_loaded = True
-            logger.info(f"✅ YOLO model ({len(self.model.names)} classes) loaded on {self.device}")
+            logger.info(f"✅ YOLO model ({len(self.model.names)} classes) loaded on {self.device}: {self.model_path}")
 
         except Exception as e:
             raise RuntimeError(f"Failed to load YOLO model: {e}")
@@ -383,7 +383,7 @@ class SegformerSegmentor(BaseSegmentor):
 
             torch.backends.cudnn.benchmark = True
 
-            logger.info(f"✅ Segformer ({len(self.cityscapes_labels)} classes) loaded on {self.device}")
+            logger.info(f"✅ Segformer ({len(self.cityscapes_labels)} classes) loaded on {self.device}: {self.model_path}")
 
         except Exception as e:
             if self._local_files_only_override is None:
