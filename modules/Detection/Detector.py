@@ -179,13 +179,16 @@ class BaseDetector(ABC):
     """
 
     def __init__(self):
+        # All sequential data is tracked by frame_id, which is passed in at each call.
+        self.frame_counter = 0  
 
-        # state: keeps track of objects
-        self.state = {
-            "objects": {},          # object_id -> object info
-            "next_object_id": 0
-        }
-        self.frame_counter = 0
+    @abstractmethod
+    def detect_scene_events(self, *args, **kwargs):
+        """
+        Detect scene events.
+        This method must be implemented by all subclasses.
+        """
+        pass
 
 class ROIEventsDetector(BaseDetector):
     """
@@ -194,6 +197,12 @@ class ROIEventsDetector(BaseDetector):
 
     def __init__(self):
         super().__init__()
+
+        # state: keeps track of objects
+        self.state = {
+            "objects": {},          # object_id -> object info
+            "next_object_id": 0
+        }
 
         self.roi = None                 # Will be set per frame if provided
         self.prev_roi_payload = None    # Tracks ROI coordinates and frame dimensions
@@ -263,21 +272,27 @@ class ROIEventsDetector(BaseDetector):
 
                 # Class name mismatch penalty
                 if previous["class_name"] != cls:
-                    penalty += -10
+                    if previous["class_name"].split("_")[0] == cls.split("_")[0]:  # Allow for class variants (e.g., "person_3" vs "person_1")
+                        penalty += -200
+                    else:
+                        # penalty += -10000
+                        continue        # Hard constraint: different classes cannot match
 
                 # Already used in this frame penalty
                 if object_id in used_tracks: 
-                    penalty += -10000
+                    # penalty += -10000
+                    continue            # Hard constraint: already matched in this frame
 
                 # Distance penalty
                 pcx, pcy = previous["centroid"]
                 cx, cy = centroid
                 distance = ((cx-pcx)**2 + (cy-pcy)**2)**0.5
                 if distance > max_distance:
-                    penalty += -((distance / max_distance) * 200)
+                    penalty += -((distance / max_distance) * 500)
 
                 # Age reward: older objects are more likely to be the same object
                 age = previous["age"]
+                age_reward = min(age, 100)
 
                 # Compute IoU for bounding boxes
                 IoU = None
@@ -294,7 +309,7 @@ class ROIEventsDetector(BaseDetector):
 
                 score = (
                     IoU * 500 + 
-                    age * 10 +
+                    age_reward * 10 +
                     penalty
                 )
                 if score > best_score:
@@ -312,9 +327,9 @@ class ROIEventsDetector(BaseDetector):
             # New object
             else:
                 obj_id = self.state["next_object_id"]
-                if self.state["next_object_id"] > 2000:
-                    self.state["next_object_id"] = 0
-                    logger.warning("ID counter exceeded 2000, resetting to 0. This may cause ID collisions.")
+                # if self.state["next_object_id"] > 10000:
+                #     self.state["next_object_id"] = 0
+                #     logger.warning("ID counter exceeded 10000, resetting to 0. This may cause ID collisions.")
                 self.state["next_object_id"] += 1
                 is_touching = False
                 age = 0
@@ -354,7 +369,7 @@ class ROIEventsDetector(BaseDetector):
             logger.warning("No bounding boxes or masks provided for scene event detection.")
             return events
         
-        self.assign_object_ids(bounding_boxes, masks)
+        self.assign_object_ids(bounding_boxes, masks, 100)
 
         for obj in bounding_boxes:
 
@@ -385,14 +400,15 @@ class ROIEventsDetector(BaseDetector):
                 event_type = "ROI_RELEASE"
                 self.state["objects"][obj_id]["touching"] = False
 
-            events.append({
-                "type": event_type,
-                "object_id": obj_id,
-                "class": obj_class,
-                "edges": edges,
-                "area": erea,
-                "area/ROI": float(erea /self.roi.calculate_ROI_area()) if self.roi else None,
-            })
+            if event_type:
+                events.append({
+                    "type": event_type,
+                    "object_id": obj_id,
+                    "class": obj_class,
+                    "edges": edges,
+                    "area": erea,
+                    "area/ROI": float(erea /self.roi.calculate_ROI_area()) if self.roi else None,
+                })
 
         logger.info(f"Detected {len(events)} scene events")
         return events
@@ -406,12 +422,13 @@ class Detector:
     """
 
     def __init__(self, strategy: str = "roi-events"):
+        
         self.strategy = strategy
         self.detector = self._create_detector(strategy)
-
         logger.info(f"Detector initialized with strategy: {strategy}")
 
     def _create_detector(self, strategy: str):
+
         if strategy == "roi-events":
             return ROIEventsDetector()
         else:
@@ -422,6 +439,7 @@ class Detector:
         Switch the detection strategy at runtime.
         This allows for dynamic changes in detection behavior without restarting the application.
         """
+
         if new_strategy != self.strategy:
             self.strategy = new_strategy
             self.detector = self._create_detector(new_strategy)
@@ -430,4 +448,5 @@ class Detector:
             logger.info(f"Detection strategy remains unchanged: {new_strategy}")
 
     def __call__(self, input: SegmentationResult, frame_id: int = 0, roi: Dict[str, Any] = None):
+
         return self.detector(input=input, frame_id=frame_id, roi=roi)
