@@ -681,7 +681,7 @@ const INSTRUMENT_OUTPUT_TRIM = {
     strings: 0.6,
     bass: 1.05,
     electric_guitar: 0.95,
-    acoustic_guitar: 0.9,
+    acoustic_guitar: 1.0,
     pad: 0.85,
     synth: 0.9
 };
@@ -859,28 +859,27 @@ function initializeInstrumentVoices() {
             return { synth, nodes: [synth, filter, dist, send].filter(Boolean), release: 0.4 };
         },
         acoustic_guitar: (velocity = 1) => {
-            // PluckSynth is a genuine Karplus-Strong string model (a feedback delay loop
-            // seeded with a noise burst) — it CAN sound like a real plucked string. The
-            // previous settings pushed `attackNoise` up to 2.0 (a large, dominant noise
-            // burst on every pluck) and `resonance` up to 0.96 (a feedback loop that close
-            // to 1 gets edgy/unstable-sounding rather than a clean, decaying string tone) —
-            // together that reads as "just noise" instead of a wooden, resonant pluck.
-            // Pulling both back into a normal working range, and adding real body EQ (a
-            // low-shelf bump for wooden warmth, a lowpass to round off harsh top end that
-            // PluckSynth's raw noise-seed otherwise leaves exposed) makes it sound like an
-            // actual instrument body instead of a bare string simulation.
-            const lowShelf = new Tone.Filter({ type: 'lowshelf', frequency: 200, gain: 4 });
-            const lowpass = new Tone.Filter(4500, 'lowpass');
-            const highpass = new Tone.Filter(80, 'highpass'); // trims sub-80Hz mud, guitars aren't bass instruments
-            lowShelf.connect(lowpass);
-            lowpass.connect(highpass);
-            const send = connectWithReverbSend(highpass, 0.16, velocity);
+            // PluckSynth IS a Karplus-Strong comb filter fed by a noise burst — its own
+            // `dampening` parameter (the comb filter's internal lowpass) is already the
+            // real "string brightness" control. The previous attempt stacked an EXTRA
+            // lowpass(4500) on top, AND pulled attackNoise/dampening/resonance all well
+            // BELOW Tone's own defaults (attackNoise:1, dampening:4000, resonance:0.7) —
+            // darker, shorter, and extra-filtered all at once, hence "worse and quieter".
+            // This version stays close to (mostly above) those defaults, and fixes an
+            // inverted assumption: a HARDER pluck should sound BRIGHTER (more high-frequency
+            // energy from a harder string excitation), so dampening now correctly rises
+            // with velocity instead of falling. No extra lowpass — just a small body-warmth
+            // shelf and a mud-cleanup highpass.
+            const bodyShelf = new Tone.Filter({ type: 'lowshelf', frequency: 180, gain: 3 });
+            const highpass = new Tone.Filter(75, 'highpass');
+            bodyShelf.connect(highpass);
+            const send = connectWithReverbSend(highpass, 0.2, velocity);
             const synth = new Tone.PluckSynth({
-                attackNoise: 0.4 + velocity * 0.5,    // harder pluck = a bit more pick noise, kept subtle
-                dampening: 3200 - velocity * 900,     // harder pluck = a touch brighter, stays warm
-                resonance: 0.72 + velocity * 0.12     // harder pluck = a bit more sustain, stays stable
-            }).connect(lowShelf);
-            return { synth, nodes: [synth, lowShelf, lowpass, highpass, send].filter(Boolean), release: 1.1, isPluck: true };
+                attackNoise: 0.8 + velocity * 0.6,   // 0.8 -> 1.4 (Tone's own default is 1)
+                dampening: 3500 + velocity * 2000,   // 3500 -> 5500: harder pluck = brighter
+                resonance: 0.82 + velocity * 0.12    // 0.82 -> 0.94: real ring/sustain, still stable
+            }).connect(bodyShelf);
+            return { synth, nodes: [synth, bodyShelf, highpass, send].filter(Boolean), release: 1.2, isPluck: true };
         },
         pad: (velocity = 1) => {
             const release = 2.0 + velocity * 0.8;
