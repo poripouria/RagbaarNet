@@ -965,6 +965,30 @@ def after_request(response):
 # Global processor instance - pass socketio for real-time broadcasting
 processor = Processor(socketio_instance=socketio)
 
+
+# Telemetry receiver (Android app)
+telemetry_app = Flask('telemetry_receiver')
+
+@telemetry_app.route('/telemetry', methods=['GET', 'POST'])
+def receive_telemetry():
+    if request.method == 'GET':
+        return jsonify({'success': True, 'message': 'Telemetry server is alive!'})
+
+    data = request.get_json(silent=True) or {}
+
+    socketio.emit('telemetry_update', {
+        'speed_kmh': data.get('speed_kmh'),
+        'accel': data.get('accel'),
+        'rpm': data.get('rpm'),
+    })
+
+    return jsonify({'success': True})
+
+def run_telemetry_server(host='0.0.0.0', port=5500):
+    logger.info("📡 Starting telemetry receiver on %s:%s (POST /telemetry)", host, port)
+    telemetry_app.run(host=host, port=port, debug=False, use_reloader=False)
+
+
 @app.route('/')
 def index():
     """Redirect the root URL to the main UI so the processor server is usable directly."""
@@ -1285,8 +1309,11 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     logger.info("   - GET  /api/status       - Get processor status")
     logger.info("   - POST /api/debug/enable - Enable verbose debug logging")
     logger.info("   - POST /api/debug/disable - Disable debug logging for performance")
+    logger.info("   - POST http://%s:5500/telemetry - Receive Android telemetry (speed/accel/rpm)", host)
     logger.info("🚀 Performance Mode: Debug logging %s", "ON" if processor.debug_mode else "OFF")
     logger.info("⚡ Optimizations: Reduced queues, vectorized color mapping, throttled updates")
+
+    threading.Thread(target=run_telemetry_server, daemon=True).start()
 
     try:
         socketio.run(app, host=host, port=port, debug=debug)
