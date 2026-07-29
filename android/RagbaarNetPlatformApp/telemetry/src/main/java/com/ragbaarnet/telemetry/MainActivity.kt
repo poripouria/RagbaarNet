@@ -35,16 +35,8 @@ import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
-import java.io.IOException
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.concurrent.ExecutorService
@@ -69,10 +61,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
 
     private var isAutoMode = true
     private var isStreaming = false
-    private val client = OkHttpClient()
     private val handler = Handler(Looper.getMainLooper())
     private var cameraExecutor: ExecutorService? = null
-    private var mjpegServer: MjpegServer? = null
+    private var webSocketManager: WebSocketManager? = null
     private var cameraProvider: ProcessCameraProvider? = null
 
     // Sensors
@@ -84,9 +75,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
     private lateinit var locationManager: LocationManager
     private var currentGpsSpeed: Float? = null
 
-    private val sendDataRunnable = object : Runnable {
+    private val sendTelemetryRunnable = object : Runnable {
         override fun run() {
-            sendTelemetry()
+            broadcastTelemetry()
             handler.postDelayed(this, 250)
         }
     }
@@ -137,7 +128,31 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
 
         updateUiMode()
         checkPermissions()
-        handler.post(sendDataRunnable)
+        initWebSocket()
+        handler.post(sendTelemetryRunnable)
+    }
+
+    private fun initWebSocket() {
+        val prefs = getSharedPreferences("TelemetryPrefs", MODE_PRIVATE)
+        val ip = prefs.getString("server_ip", "192.168.1.100")
+        val port = prefs.getString("server_port", "5500")
+        // Note: The platform server will need to handle /ws endpoint or similar
+        val url = "ws://$ip:$port/telemetry" 
+
+        webSocketManager = WebSocketManager(url).apply {
+            listener = object : WebSocketManager.ConnectionListener {
+                override fun onConnected() {
+                    runOnUiThread { updateStatusDisplay() }
+                }
+                override fun onDisconnected() {
+                    runOnUiThread { updateStatusDisplay() }
+                }
+                override fun onError(error: String) {
+                    runOnUiThread { updateStatusDisplay() }
+                }
+            }
+            connect()
+        }
     }
 
     private fun toggleStreaming(enable: Boolean) {
@@ -157,35 +172,23 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             cameraOverlay.visibility = View.VISIBLE
             
             cameraExecutor = Executors.newSingleThreadExecutor()
-            startMjpegServer()
             startCamera()
             
-            Toast.makeText(this, "Remember to set Platform Input to 'Network Stream'", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Camera stream over WebSocket active", Toast.LENGTH_SHORT).show()
         } else {
             isStreaming = false
             streamToggleButton.text = "Stream: OFF"
             streamToggleButton.setTextColor(Color.WHITE)
             streamToggleButton.setBackgroundColor(Color.TRANSPARENT)
-            streamToggleButton.setStrokeColor(ContextCompat.getColorStateList(this, android.R.color.white)) // Simplification
+            streamToggleButton.setStrokeColor(ContextCompat.getColorStateList(this, android.R.color.white))
             
             viewFinder.visibility = View.GONE
             cameraOverlay.visibility = View.GONE
             
             stopCamera()
-            stopMjpegServer()
             cameraExecutor?.shutdown()
             cameraExecutor = null
         }
-    }
-
-    private fun startMjpegServer() {
-        mjpegServer = MjpegServer(8080)
-        mjpegServer?.start()
-    }
-
-    private fun stopMjpegServer() {
-        mjpegServer?.stop()
-        mjpegServer = null
     }
 
     private fun getLocalIpAddress(): String? {
@@ -222,6 +225,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
                 .build()
                 .also {
                     it.setAnalyzer(cameraExecutor!!) { imageProxy ->
+                        // CameraX pipeline: ImageProxy -> NV21 -> JPEG
                         val yuvImage = YuvImage(
                             yuvBytes(imageProxy),
                             ImageFormat.NV21,
@@ -231,7 +235,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
                         )
                         val out = ByteArrayOutputStream()
                         yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 70, out)
-                        mjpegServer?.updateFrame(out.toByteArray())
+                        
+                        // TRANSMIT BINARY JPEG via WebSocket
+                        webSocketManager?.sendFrame(out.toByteArray())
+                        
                         imageProxy.close()
                     }
                 }
@@ -317,17 +324,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
 
         if (isAutoMode) {
             startAutoSensors()
-            
-            // Reset values when switching to Auto
             speedSeekBar.progress = 0
             speedValueText.text = "0 km/h"
             accelSeekBar.progress = 0
             accelValueText.text = "0.00"
-            
             rpmValueText.text = "null"
             rpmValueText.setTextColor(Color.parseColor("#888888"))
             rpmSeekBar.progress = 0
-            
             currentGpsSpeed = 0f
             currentLinearAccel = 0f
         } else {
@@ -390,48 +393,35 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
         }
     }
 
-    private fun sendTelemetry() {
-        val prefs = getSharedPreferences("TelemetryPrefs", MODE_PRIVATE)
-        val ip = prefs.getString("server_ip", "192.168.1.100")
-        val port = prefs.getString("server_port", "5500")
-        val url = "http://$ip:$port/telemetry"
-
-        val json = JSONObject()
-        if (isAutoMode) {
-            json.put("speed_kmh", if (currentGpsSpeed != null) currentGpsSpeed!!.toInt() else JSONObject.NULL)
-            json.put("accel", if (currentLinearAccel != null) currentLinearAccel else JSONObject.NULL)
-            json.put("rpm", JSONObject.NULL)
-        } else {
-            json.put("speed_kmh", speedSeekBar.progress)
-            json.put("rpm", rpmSeekBar.progress)
-            json.put("accel", accelSeekBar.progress / 10.0)
+    private fun broadcastTelemetry() {
+        val json = JSONObject().apply {
+            if (isAutoMode) {
+                put("speed_kmh", if (currentGpsSpeed != null) currentGpsSpeed!!.toInt() else JSONObject.NULL)
+                put("accel", if (currentLinearAccel != null) currentLinearAccel else JSONObject.NULL)
+                put("rpm", JSONObject.NULL)
+            } else {
+                put("speed_kmh", speedSeekBar.progress)
+                put("rpm", rpmSeekBar.progress)
+                put("accel", accelSeekBar.progress / 10.0)
+            }
+            put("type", "telemetry") // Discriminate from binary frames on receiver if needed
         }
 
-        val body = json.toString().toRequestBody("application/json".toMediaType())
-        val request = Request.Builder().url(url).post(body).build()
+        // TRANSMIT JSON TELEMETRY via WebSocket
+        webSocketManager?.sendTelemetry(json.toString())
+    }
 
-        client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                runOnUiThread {
-                    val ipStr = getLocalIpAddress() ?: "Unknown"
-                    statusText.text = "Status: Error (My IP: $ipStr)"
-                }
-            }
-            override fun onResponse(call: Call, response: Response) {
-                runOnUiThread {
-                    val ipStr = getLocalIpAddress() ?: "Unknown"
-                    statusText.text = "Status: Online | IP: $ipStr (${response.code})"
-                }
-                response.close()
-            }
-        })
+    private fun updateStatusDisplay() {
+        val ipStr = getLocalIpAddress() ?: "Unknown"
+        val status = if (webSocketManager?.isConnected() == true) "Online" else "Connecting..."
+        statusText.text = "Status: $status | IP: $ipStr"
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        webSocketManager?.disconnect()
         cameraExecutor?.shutdown()
-        mjpegServer?.stop()
-        handler.removeCallbacks(sendDataRunnable)
+        handler.removeCallbacks(sendTelemetryRunnable)
         stopAutoSensors()
     }
 
