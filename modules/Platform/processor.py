@@ -52,7 +52,6 @@ class Processor:
         self.frame_queue = Queue(maxsize=10)
         self.segmentation_queue = Queue(maxsize=5)
         self.current_frame = None
-        self.current_detection = None
         self.current_segmentation = None
         self.is_processing = False
 
@@ -521,31 +520,6 @@ class Processor:
                                 logger.error("❌ Error detecting scene events: %s", event_err)
                                 logger.error("Traceback:\n%s", traceback.format_exc())
 
-                        # detections = []
-                        # if self.detector is not None:
-                        #     for object_id, tracked_object in self.detector.state["objects"].items():
-                        #         if (
-                        #             tracked_object.get("last_seen_frame") == self.frame_counter
-                        #             and tracked_object.get("touching", False)
-                        #         ):
-                        #             detections.append({
-                        #                 "object_id": int(object_id),
-                        #                 "class_name": tracked_object["class_name"],
-                        #                 "bbox": [float(value) for value in tracked_object["bbox"]],
-                        #             })
-
-                        # self.current_detection = {
-                        #     "frame_id": frame_id,
-                        #     "timestamp": timestamp,
-                        #     "frame_counter": self.frame_counter,
-                        #     "frame_width": orig_w,
-                        #     "frame_height": orig_h,
-                        #     "detections": detections,
-                        # }
-
-                        # # Comment out this call whenever collision boxes are not needed in the UI.
-                        # self._broadcast_detection_update()
-
                         # Generate music based on segmentation data
                         if self.music_enabled and self.musician is not None:
                             try:
@@ -618,22 +592,6 @@ class Processor:
         except Exception as e:
             if self.debug_mode:
                 logger.warning("❌ Error broadcasting update: %s", e)
-
-    def _broadcast_detection_update(self):
-        """Broadcast boxes for currently tracked objects intersecting the ROI."""
-        try:
-            if self.main_ui_connected and self.socketio and self.current_detection is not None:
-                self.socketio.emit('detection_update', self.current_detection)
-
-                if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
-                    logger.debug(
-                        "📦 Broadcasted %s intersecting detections for frame %s",
-                        len(self.current_detection['detections']),
-                        self.current_detection['frame_counter'],
-                    )
-        except Exception as e:
-            if self.debug_mode:
-                logger.warning("❌ Error broadcasting detection update: %s", e)
 
     def _broadcast_music_update(self, music_data):
         """Broadcast music events to connected WebSocket clients"""
