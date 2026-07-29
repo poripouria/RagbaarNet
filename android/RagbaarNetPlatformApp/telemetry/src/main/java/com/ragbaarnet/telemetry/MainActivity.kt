@@ -317,9 +317,19 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
 
         if (isAutoMode) {
             startAutoSensors()
+            
+            // Reset values when switching to Auto
+            speedSeekBar.progress = 0
+            speedValueText.text = "0 km/h"
+            accelSeekBar.progress = 0
+            accelValueText.text = "0.00"
+            
             rpmValueText.text = "null"
             rpmValueText.setTextColor(Color.parseColor("#888888"))
             rpmSeekBar.progress = 0
+            
+            currentGpsSpeed = 0f
+            currentLinearAccel = 0f
         } else {
             stopAutoSensors()
             updateValueLabels()
