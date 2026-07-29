@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.RagbaarNetPlatform" parent="Theme.AppCompat.Light.NoActionBar">
-        <!-- Customize your theme here. -->
+    <style name="Theme.RagbaarNetPlatform" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#00ff88</item>
+        <item name="android:windowBackground">#1a1a1a</item>
+        <item name="android:statusBarColor">#1a1a1a</item>
     </style>
 </resources>

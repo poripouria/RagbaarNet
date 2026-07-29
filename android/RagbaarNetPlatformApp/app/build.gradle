@@ -11,8 +11,8 @@ android {
         applicationId 'com.ragbaarnet.platform'
         minSdk 24
         targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1"
 
         // IMPORTANT: set this to your laptop IP on the same Wi‑Fi/LAN.
         // Example: "http://192.168.1.12:5000/ui/"
@@ -42,4 +42,6 @@ android {
 dependencies {
     implementation 'androidx.core:core-ktx:1.15.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
 }

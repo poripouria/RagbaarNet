@@ -67,8 +67,7 @@ class SettingsActivity : AppCompatActivity() {
 
             override fun onResponse(call: Call, response: Response) {
                 runOnUiThread {
-                    if (response.code == 404 || response.code == 405) {
-                        // 405 is likely because we did GET instead of POST, but at least the server is there
+                    if (response.isSuccessful) {
                         Toast.makeText(this@SettingsActivity, "Server reachable!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(this@SettingsActivity, "Server responded with ${response.code}", Toast.LENGTH_SHORT).show()
