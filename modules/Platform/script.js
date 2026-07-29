@@ -99,10 +99,10 @@ const SPEED_MIN = 0;
 const SPEED_MAX = 160;
 // Controlable, The higher the value, the slower the curve at low speeds. A value of 1.0 would be linear.
 const N = 1.7;
-// Tempo is derived from car speed. Slider mode and Auto mode.
-let tempoMode = 'slider';
 let pendingSpeedKmh = speedFromTempo(120);
 let currentSpeedKmh = pendingSpeedKmh;
+//Latest telemetry pushed by the processor
+let latestTelemetry = { speed_kmh: null, accel: null, rpm: null };
 const VOLUME_MIN = 0;
 const VOLUME_MAX = 100;
 const DEFAULT_VOLUME = 40;
@@ -189,32 +189,6 @@ function setupEventListeners() {
     
     // Video file input
     document.getElementById('videoFileInput').addEventListener('change', handleVideoFile);
-    
-    //Tempo controls
-    const speedSlider = document.getElementById('speedSlider');
-    const speedNumberInput = document.getElementById('speedNumberInput');
-    const tempoModeSlider = document.getElementById('tempoModeSlider');
-    const tempoModeAuto = document.getElementById('tempoModeAuto');
-
-    if (speedSlider) {
-        speedSlider.addEventListener('input', handleTempoSliderInput);
-    }
-    if (speedNumberInput) {
-        speedNumberInput.addEventListener('input', () => updateTempoControls(speedNumberInput.value));
-        speedNumberInput.addEventListener('keydown', function(event) {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                applyMusicSettings();
-            }
-        });
-    }
-
-    if (tempoModeSlider) {
-        tempoModeSlider.addEventListener('change', () => handleTempoModeChange('slider'));
-    }
-    if (tempoModeAuto) {
-        tempoModeAuto.addEventListener('change', () => handleTempoModeChange('auto'));
-    }
 
     // Custom scrollbars are hidden via CSS; wire up drag-to-scroll (mouse)
     enableDragToScroll(document.querySelector('.menu-frame'));
@@ -337,6 +311,32 @@ function initializeSocketConnection() {
             if (data && data.key_signature) {
                 lastMusicStatus.keySignature = data.key_signature;
                 updateMusicStatusDisplay();
+            }
+        });
+
+        // Pushed by the processor whenever it receives fresh telemetry
+        segmentationSocket.on('telemetry_update', function(data) {
+            if (!data) return;
+
+            latestTelemetry = {
+                speed_kmh: Number.isFinite(data.speed_kmh) ? data.speed_kmh : latestTelemetry.speed_kmh,
+                accel: Number.isFinite(data.accel) ? data.accel : latestTelemetry.accel,
+                rpm: Number.isFinite(data.rpm) ? data.rpm : latestTelemetry.rpm
+            };
+
+            currentSpeedKmh = latestTelemetry.speed_kmh != null ? clampSpeedValue(latestTelemetry.speed_kmh) : currentSpeedKmh;
+            currentTempo = calculateAutoTempoFromSpeed(currentSpeedKmh);
+            pendingSpeedKmh = currentSpeedKmh;
+            pendingTempo = currentTempo;
+            lastMusicStatus.tempo = currentTempo;
+
+            updateTempoControls(currentSpeedKmh);
+            updateMusicStatusDisplay();
+
+            const telemetryStatusEl = document.getElementById('telemetryStatus');
+            if (telemetryStatusEl) {
+                telemetryStatusEl.textContent = `📡 Live: ${Math.round(latestTelemetry.speed_kmh ?? 0)} km/h`
+                    + (latestTelemetry.rpm != null ? ` • ${Math.round(latestTelemetry.rpm)} RPM` : '');
             }
         });
         
@@ -2712,8 +2712,9 @@ function applyMusicSettings() {
         return;
     }
 
-    pendingSpeedKmh = clampSpeedValue(document.getElementById('speedNumberInput')?.value || pendingSpeedKmh);
+    pendingSpeedKmh = latestTelemetry.speed_kmh != null ? clampSpeedValue(latestTelemetry.speed_kmh) : pendingSpeedKmh;
     pendingTempo = calculateAutoTempoFromSpeed(pendingSpeedKmh);
+
     isSwitchingMusician = true;
     setMusicianListInteractive(false);
     updateMusicianApplyButton();
@@ -2821,44 +2822,13 @@ function updateTempoControls(speedValue) {
     pendingSpeedKmh = clampSpeedValue(speedValue);
     pendingTempo = calculateAutoTempoFromSpeed(pendingSpeedKmh);
 
-    const slider = document.getElementById('speedSlider');
-    const numberInput = document.getElementById('speedNumberInput');
     const tempoValueEl = document.getElementById('tempoDerivedValue');
     const speedValueEl = document.getElementById('speedDerivedValue');
 
-    if (slider) {
-        slider.value = pendingSpeedKmh;
-    }
-
-    if (numberInput) {
-        numberInput.value = pendingSpeedKmh;
-    }
-
-    if (tempoValueEl) {
-        tempoValueEl.textContent = pendingTempo;
-    }
-
-    if (speedValueEl) {
-        speedValueEl.textContent = pendingSpeedKmh;
-    }
+    if (tempoValueEl) tempoValueEl.textContent = pendingTempo;
+    if (speedValueEl) speedValueEl.textContent = pendingSpeedKmh;
 }
 
-function handleTempoSliderInput() {
-    updateTempoControls(this.value);
-}
-
-function handleTempoModeChange(mode) {
-    // 'auto' is not wired up to a real speed source yet, so it stays disabled
-    // in the UI. This guards against it being selected programmatically.
-    tempoMode = mode === 'auto' ? 'auto' : 'slider';
-
-    const slider = document.getElementById('speedSlider');
-    const numberInput = document.getElementById('speedNumberInput');
-    const isSliderMode = tempoMode === 'slider';
-
-    if (slider) slider.disabled = !isSliderMode;
-    if (numberInput) numberInput.disabled = !isSliderMode;
-}
 
 function clampVolumeValue(value) {
     const parsedValue = Number.parseInt(value, 10);
