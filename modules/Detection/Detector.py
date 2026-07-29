@@ -243,7 +243,7 @@ class ROIEventsDetector(BaseDetector):
             
             logger.info(f"💢 ROI updated for frame {self.frame_counter}. ROI area: {self.roi.calculate_ROI_area()}")
 
-    def assign_object_ids(self, objects, masks, max_distance=100):
+    def assign_object_ids(self, objects, masks, max_distance=200):
         """
         Assign unique IDs to detected objects based on their bounding boxes and class names. 
         The rule is to match objects across frames based on IoU proximity and class similarity, 
@@ -272,15 +272,14 @@ class ROIEventsDetector(BaseDetector):
 
                 # Class name mismatch penalty
                 if previous["class_name"] != cls:
-                    if previous["class_name"].split("_")[0] == cls.split("_")[0]:  # Allow for class variants (e.g., "person_3" vs "person_1")
-                        penalty += -200
+                    # Allow for class variants (e.g., "person_3" vs "person_1")
+                    if previous["class_name"].split("_")[0] == cls.split("_")[0]:  
+                        penalty += -100
                     else:
-                        # penalty += -10000
                         continue        # Hard constraint: different classes cannot match
 
                 # Already used in this frame penalty
                 if object_id in used_tracks: 
-                    # penalty += -10000
                     continue            # Hard constraint: already matched in this frame
 
                 # Distance penalty
@@ -288,7 +287,7 @@ class ROIEventsDetector(BaseDetector):
                 cx, cy = centroid
                 distance = ((cx-pcx)**2 + (cy-pcy)**2)**0.5
                 if distance > max_distance:
-                    penalty += -((distance / max_distance) * 500)
+                    penalty += -((distance / max_distance) * 200)
 
                 # Age reward: older objects are more likely to be the same object
                 age = previous["age"]
@@ -327,9 +326,6 @@ class ROIEventsDetector(BaseDetector):
             # New object
             else:
                 obj_id = self.state["next_object_id"]
-                # if self.state["next_object_id"] > 10000:
-                #     self.state["next_object_id"] = 0
-                #     logger.warning("ID counter exceeded 10000, resetting to 0. This may cause ID collisions.")
                 self.state["next_object_id"] += 1
                 is_touching = False
                 age = 0
@@ -369,7 +365,7 @@ class ROIEventsDetector(BaseDetector):
             logger.warning("No bounding boxes or masks provided for scene event detection.")
             return events
         
-        self.assign_object_ids(bounding_boxes, masks, 100)
+        self.assign_object_ids(bounding_boxes, masks)
 
         for obj in bounding_boxes:
 
