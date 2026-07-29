@@ -110,7 +110,7 @@
         <div class="video-container" id="videoContainer">
             <video id="videoElement" class="video-element" autoplay playsinline muted loop></video>
             <canvas id="segmentationCanvas" class="canvas-overlay" style="display: none; pointer-events: none;"></canvas>
-            <canvas id="detectionCanvas" class="canvas-overlay"></canvas>
+            <!-- <canvas id="detectionCanvas" class="canvas-overlay"></canvas> -->
             <canvas id="roiCanvas" class="canvas-overlay"></canvas>
             <div id="roiPointTooltip" class="roi-point-tooltip"></div>
         </div>
@@ -119,24 +119,6 @@
             <div class="instructions">
                 <span id="instructionsText">Drag green points to adjust ROI corners • Drag cyan points to control edge curves</span>
             </div>
-            <button
-                id="toggleRoiFillIcon"
-                class="roi-fill-toggle"
-                type="button"
-                onclick="toggleRoiFill()"
-                ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleRoiFill();}"
-                aria-label="Toggle ROI area transparency (hold to reset ROI)"
-                title="ROI area: Filled (tap for transparent, hold to reset ROI)"
-            >
-                <img
-                    id="toggleRoiFillIconImg"
-                    class="roi-fill-toggle__img"
-                    src="../../assets/icons/Transparent%20Icon.png"
-                    alt=""
-                    aria-hidden="true"
-                    draggable="false"
-                >
-            </button>
             <button
                 id="toggleSegmentationBtn"
                 class="roi-fill-toggle"
@@ -151,6 +133,24 @@
                     id="toggleSegmentationBtnImg"
                     class="roi-fill-toggle__img"
                     src="../../assets/icons/segment.png"
+                    alt=""
+                    aria-hidden="true"
+                    draggable="false"
+                >
+            </button>
+            <button
+                id="toggleRoiFillIcon"
+                class="roi-fill-toggle"
+                type="button"
+                onclick="toggleRoiFill()"
+                ontouchend="if(event.target===this && isMobileDevice()){event.preventDefault(); toggleRoiFill();}"
+                aria-label="Toggle ROI area transparency (hold to reset ROI)"
+                title="ROI area: Filled (tap for transparent, hold to reset ROI)"
+            >
+                <img
+                    id="toggleRoiFillIconImg"
+                    class="roi-fill-toggle__img"
+                    src="../../assets/icons/Transparent%20Icon.png"
                     alt=""
                     aria-hidden="true"
                     draggable="false"

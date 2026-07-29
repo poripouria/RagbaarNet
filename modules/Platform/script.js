@@ -546,12 +546,11 @@ function initializeAudioSystem() {
 
 
 /**
- * Connects a voice's final node to the mix as a proper AUX SEND: the dry signal goes
- straight to the master bus at full level, and a separate, independently-controlled
- copy is sent into the shared reverb tank at `sendAmount` (0-1).
- * This is the standard mixing-console approach — it lets every instrument have its own
- reverb amount (bass stays tight and dry, pads/strings get washed in space) instead of
- one fixed wet% for everything.
+ * Connects a voice's final node to the mix as a proper AUX SEND: the dry signal goes straight to 
+ the master bus at full level, and a separate, independently-controlled copy is sent into the shared 
+ reverb tank at `sendAmount` (0-1).
+ * This is the standard mixing-console approach — it lets every instrument have its own reverb amount 
+ (bass stays tight and dry, pads/strings get washed in space) instead of one fixed wet% for everything.
  * Returns the send Gain node (if any) so callers can add it to their disposable `nodes` list.
  */
 function connectWithReverbSend(node, sendAmount, velocity = 1) {
