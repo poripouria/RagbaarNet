@@ -19,3 +19,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "RagbaarNetPlatformApp"
 include(":app")
+include(":telemetry")

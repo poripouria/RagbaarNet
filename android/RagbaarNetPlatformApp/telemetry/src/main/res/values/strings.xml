@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RagbaarTelemetry</string>
+    <string name="title_activity_settings">Settings</string>
+    <string name="speed_label">Speed: %1$d km/h</string>
+    <string name="rpm_label">RPM: %1$d</string>
+    <string name="accel_label">Accel: %1$.2f m/s²</string>
+    <string name="mode_auto">Auto</string>
+    <string name="mode_manual">Manual</string>
+    <string name="test_connection">Test Connection</string>
+    <string name="save_settings">Save</string>
+    <string name="server_ip">Server IP</string>
+    <string name="server_port">Server Port</string>
+    <string name="settings">Settings</string>
+</resources>
