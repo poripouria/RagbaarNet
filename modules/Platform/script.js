@@ -317,9 +317,9 @@ function initializeSocketConnection() {
             updateSegmentationDisplay(data);
         });
 
-        segmentationSocket.on('detection_update', function(data) {
-            updateDetectionDisplay(data);
-        });
+        // segmentationSocket.on('detection_update', function(data) {
+        //     updateDetectionDisplay(data);
+        // });
         
         segmentationSocket.on('music_update', function(musicData) {
             if (isMusicGenerationActive) {
@@ -1127,6 +1127,9 @@ function updateMusicInfo(musicData) {
     }
 }
 
+/**
+ * Frame Processing and Transmission
+*/
 function captureAndSendFrame() {
     // Prevent concurrent frame processing
     if (isProcessingFrame || !videoElement || !videoElement.videoWidth) {
@@ -1256,6 +1259,11 @@ function updateSegmentationStatus(status) {
     } else if (status === 'Offline') {
         updateStatus('Segmentation processor offline');
     }
+}
+
+function updateFrameCounter(count) {
+    // This function is kept for backward compatibility
+    // Frame counter is now updated directly in updateSegmentationDisplay
 }
 
 function updateSegmentationDisplay(data) {
@@ -1391,16 +1399,6 @@ function drawDetectionOverlay() {
     });
 }
 
-function updateFrameCounter(count) {
-    // This function is kept for backward compatibility
-    // Frame counter is now updated directly in updateSegmentationDisplay
-}
-
-
-/**
- * Draw segmentation overlay on the segmentation canvas
- * Now displays ONLY the segmentation data (like processor.py)
- */
 function drawSegmentationOverlay() {
     if (!segmentationCanvas || !segmentationCtx || !currentSegmentationOverlay) {
         return;
@@ -1459,10 +1457,6 @@ function drawSegmentationOverlay() {
     }
 }
 
-
-/**
- * Clear the segmentation overlay
- */
 function clearSegmentationOverlay() {
     if (segmentationCanvas && segmentationCtx) {
         segmentationCtx.clearRect(0, 0, segmentationCanvas.width, segmentationCanvas.height);
@@ -1570,8 +1564,8 @@ function updateSegmentationButtonState() {
  */
 function showInputSelection() {
     const modal = document.getElementById('inputModal');
-    modal.style.display = 'flex'; // Use flex instead of block for centering
-    modal.classList.add('show'); // Add show class for better styling
+    modal.style.display = 'flex';       // Use flex instead of block for centering
+    modal.classList.add('show');        // Add show class for better styling
     
     // Add mobile-specific event listeners for input buttons
     if (isMobileDevice()) {
@@ -1579,7 +1573,6 @@ function showInputSelection() {
         inputButtons.forEach((button, index) => {
             // Remove any existing listeners
             button.removeEventListener('touchend', handleInputButtonTouch);
-            
             // Add touch event listener
             button.addEventListener('touchend', handleInputButtonTouch, { passive: false });
         });
@@ -2477,8 +2470,7 @@ function onWindowResize() {
  */
 
 /**
- * ROI point coordinate tooltip (shown only while hovering/dragging a corner
- * or curve control point; hidden the rest of the time).
+ * ROI point coordinate tooltip
  */
 function showPointTooltip(canvasX, canvasY, frameX, frameY) {
     const tooltip = document.getElementById('roiPointTooltip');
@@ -2575,9 +2567,7 @@ function updateRoiFillButtonState() {
 
 
 /**
- * Pressing and holding the ROI fill-toggle icon resets the ROI to its
- * default rectangle, instead of toggling fill transparency (a normal
- * tap/click still toggles fill).
+ * Pressing and holding the ROI fill-toggle icon resets the ROI to its default rectangle
  */
 function setupRoiFillHoldToReset() {
     const button = document.getElementById('toggleRoiFillIcon');
