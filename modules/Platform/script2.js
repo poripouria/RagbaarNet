@@ -12,8 +12,8 @@ let segmentationCanvas = null;
 let segmentationCtx = null;
 let detectionCanvas = null;
 let detectionCtx = null;
-let roiPoints = [];                     // Will be initialized based on video dimensions
-let controlPoints = [];                 // Bézier control points for curves
+let roiPoints = []; // Will be initialized based on video dimensions
+let controlPoints = []; // Bézier control points for curves
 let draggingPoint = null;
 let draggingControl = null;
 let scale = {x: 1, y: 1};
@@ -21,13 +21,13 @@ let offset = {x: 0, y: 0};
 let isPaused = false;
 let settings = {};
 let showControlPoints = true;
-let roiFillEnabled = true;              // When false, ROI area is transparent (outline + vertices still visible)
+let roiFillEnabled = true; // When false, ROI area is transparent (outline + vertices still visible)
 let roiFillHoldTimer = null;
 let roiFillLongPressTriggered = false;
 const ROI_RESET_HOLD_DURATION_MS = 600;
 
 // Frame processing variables
-let frameProcessingEnabled = true;      // Always keep processing enabled
+let frameProcessingEnabled = true; // Always keep processing enabled
 let segmentationDisplayEnabled = false; // Only control display - Start with segmentation display OFF
 
 // Dynamic processor URL detection for mobile/desktop compatibility
@@ -48,30 +48,32 @@ let currentDetectionData = null;
 let latestDetectionFrameCounter = -1;
 
 // Performance optimization variables
-let isProcessingFrame = false;      // Prevent concurrent frame processing
+let isProcessingFrame = false; // Prevent concurrent frame processing
 let lastUpdateTime = 0;
-let updateThrottleInterval = 50;    // Throttle updates to 50ms (20 FPS)
+let updateThrottleInterval = 50; // Throttle updates to 50ms (20 FPS)
 
 // Audio system variables
 let audioContext = null;
 let masterGain = null;
 let isMusicGenerationActive = false;
-let activeNotes = new Map();        // Track currently playing (sustained, tonal) notes
-let instrumentVoices = {};          // Store instrument voice settings
-let musicEventQueue = [];           // Queue for scheduling music events
-let recentPercussion = new Map();   // Track short-lived drum hits: key -> expiry timestamp
+let activeNotes = new Map(); // Track currently playing (sustained, tonal) notes
+let instrumentVoices = {}; // Store instrument voice settings
+let musicEventQueue = []; // Queue for scheduling music events
+let recentPercussion = new Map(); // Track short-lived drum hits: key -> expiry timestamp
 let lastMusicEventTime = 0;
 
-let instrumentFactories = {};       // instrument name -> () => fresh { synth, nodes, release, isPluck }
-let reverbBus = null;               // the reverb "tank" itself (100% wet — mix is handled via sends)
-let reverbPreFilter = null;         // high-pass before the tank, so bass frequencies stay out of the reverb
-let masterBusIn = null;             // everything (dry + wet) sums here before mastering
-let drumsBus = null;                // small submix bus so percussion isn't swallowed by tonal dynamics
+let instrumentFactories = {}; // instrument name -> () => fresh { synth, nodes, release, isPluck }
+let reverbBus = null;       // the reverb "tank" itself (100% wet — mix is handled via sends)
+let reverbPreFilter = null; // high-pass before the tank, so bass frequencies stay out of the reverb
+let masterBusIn = null;     // everything (dry + wet) sums here before mastering
+let drumsBus = null;        // small submix bus so percussion isn't swallowed by tonal dynamics
 let masterEQ = null;
 let masterCompressor = null;
 let masterLimiter = null;
 
 // Music settings variables
+// Fallback list (mirrors Musician.MUSICIAN_REGISTRY) used until the server responds,
+// so the settings modal is usable even before/without a socket round-trip.
 let availableMusicians = [
     { id: 'rule-based', label: 'Rule-based Musician', description: 'Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).' },
     { id: 'continuous_pianist', label: 'Continuous Pianist', description: 'Piano musician with sustained/continuous note playback.' },
@@ -103,7 +105,9 @@ const SPEED_MIN = 0;
 const SPEED_MAX = 160;
 // Controlable, The higher the value, the slower the curve at low speeds. A value of 1.0 would be linear.
 const N = 1.7;
-// Tempo is derived from car speed. Slider mode and Auto mode.
+// Tempo is derived from car speed. 'slider' lets the user simulate speed for
+// testing; 'auto' will eventually receive real car speed from a sensor and
+// is disabled until that integration exists.
 let tempoMode = 'slider';
 let pendingSpeedKmh = speedFromTempo(120);
 let currentSpeedKmh = pendingSpeedKmh;
@@ -117,6 +121,7 @@ let lastMusicStatus = {
     keySignature: 'C_major',
     instruments: []
 };
+
 // Color scheme
 const colors = {
     bg: '#2b2b2b',
@@ -194,7 +199,9 @@ function setupEventListeners() {
     // Video file input
     document.getElementById('videoFileInput').addEventListener('change', handleVideoFile);
     
-    //Tempo controls
+    // Mobile-specific setup for segmentation button
+    setupMobileButtons();
+    
     const speedSlider = document.getElementById('speedSlider');
     const speedNumberInput = document.getElementById('speedNumberInput');
     const tempoModeSlider = document.getElementById('tempoModeSlider');
@@ -203,6 +210,7 @@ function setupEventListeners() {
     if (speedSlider) {
         speedSlider.addEventListener('input', handleTempoSliderInput);
     }
+
     if (speedNumberInput) {
         speedNumberInput.addEventListener('input', () => updateTempoControls(speedNumberInput.value));
         speedNumberInput.addEventListener('keydown', function(event) {
@@ -216,11 +224,14 @@ function setupEventListeners() {
     if (tempoModeSlider) {
         tempoModeSlider.addEventListener('change', () => handleTempoModeChange('slider'));
     }
+
     if (tempoModeAuto) {
         tempoModeAuto.addEventListener('change', () => handleTempoModeChange('auto'));
     }
 
-    // Custom scrollbars are hidden via CSS; wire up drag-to-scroll (mouse)
+    // Custom scrollbars are hidden via CSS; wire up drag-to-scroll (mouse) for the
+    // sidebar, the Music Settings body, and the instrument chip list. Touch users
+    // already get native drag/momentum scrolling from the browser.
     enableDragToScroll(document.querySelector('.menu-frame'));
     enableDragToScroll(document.querySelector('.musician-modal-body'));
     enableDragToScroll(document.getElementById('instrumentList'));
@@ -228,6 +239,92 @@ function setupEventListeners() {
 
     // Initialize frame processing
     initializeFrameProcessing();
+}
+
+function setupMobileButtons() {
+    if (isMobileDevice()) {
+        // Add additional touch event handling for segmentation button
+        document.addEventListener('DOMContentLoaded', function() {
+            setupSegmentationButtonMobile();
+        });
+    }
+}
+
+function setupSegmentationButtonMobile() {
+    if (isMobileDevice()) {
+        const segButton = document.getElementById('toggleSegmentationBtn');
+        if (segButton) {
+            console.log('Setting up mobile touch events for segmentation button');
+            
+            // Remove ALL existing event listeners to avoid conflicts
+            segButton.removeEventListener('touchstart', handleSegButtonTouchStart);
+            segButton.removeEventListener('touchend', handleSegButtonTouchEnd);
+            segButton.removeEventListener('click', handleSegButtonClick);
+            
+            // Add new event listeners
+            segButton.addEventListener('touchstart', handleSegButtonTouchStart, { passive: false });
+            segButton.addEventListener('touchend', handleSegButtonTouchEnd, { passive: false });
+            
+            // Prevent click events on mobile to avoid double triggering
+            segButton.addEventListener('click', handleSegButtonClick, { passive: false });
+            
+            // Remove the onclick attribute to prevent conflicts
+            segButton.removeAttribute('onclick');
+            segButton.removeAttribute('ontouchend');
+            
+            // // Start monitoring button state to prevent reversion
+            // startButtonStateMonitoring();
+            
+        } else {
+            console.warn('Segmentation button not found for mobile setup');
+        }
+    }
+}
+
+// Add a flag to prevent double triggering
+let isSegmentationButtonPressed = false;
+
+function handleSegButtonTouchStart(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.style.transform = 'scale(0.95)';
+    this.style.opacity = '0.8';
+}
+
+function handleSegButtonTouchEnd(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.style.transform = 'scale(1)';
+    this.style.opacity = '1';
+    
+    // Prevent double triggering
+    if (isSegmentationButtonPressed) return;
+    isSegmentationButtonPressed = true;
+    
+    // Call the toggle function with a slight delay
+    setTimeout(() => {
+        console.log('Mobile touch triggered segmentation toggle');
+        toggleFrameProcessing();
+        isSegmentationButtonPressed = false;
+    }, 100);
+}
+
+function handleSegButtonClick(e) {
+    if (isMobileDevice()) {
+        // On mobile, prevent click events to avoid double triggering
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    } else {
+        // On desktop, allow normal click behavior
+        if (isSegmentationButtonPressed) return;
+        isSegmentationButtonPressed = true;
+        
+        setTimeout(() => {
+            toggleFrameProcessing();
+            isSegmentationButtonPressed = false;
+        }, 50);
+    }
 }
 
 
@@ -522,6 +619,11 @@ function initializeAudioSystem() {
         // EQ: shave a touch of low-mud, add a little "air" on top.
         // Compressor: gently glues everything together so quiet/loud events feel cohesive.
         // Limiter: safety net so nothing ever clips, even with several instruments stacked.
+        // NOTE: threshold raised back up from -2 -> -1dB. A lower (more negative) threshold
+        // makes the limiter grab MORE often, which was flattening short/quiet transients
+        // (hi-hats especially) whenever a louder tonal note happened to land at the same time.
+        // The limiter still guarantees no clipping either way — this just gives normal-level
+        // material more headroom before it starts getting clamped.
         masterLimiter = new Tone.Limiter(-1).connect(masterGain);
         masterCompressor = new Tone.Compressor({
             threshold: -8,
@@ -564,7 +666,15 @@ function connectWithReverbSend(node, sendAmount, velocity = 1) {
     return null;
 }
 
-// Per-instrument output trim (0-1 multiplier applied on top of velocity, right before triggerAttack)
+// Per-instrument output trim (0-1 multiplier applied on top of velocity, right before
+// triggerAttack). This is pure LOUDNESS BALANCING between instruments — it does not touch
+// envelope shape/brightness (that's still driven by the raw, untrimmed velocity passed into
+// each factory). Strings were consistently overpowering the mix because their envelope
+// sustain (0.8) sits far above every other instrument's sustain level (piano ~0.2-0.4,
+// electric_piano ~0.35), so a "held" string note stays near full amplitude for its whole
+// duration while a piano note has already decayed — same velocity, very different perceived
+// loudness. Trimming here fixes that without having to flatten the sustain to the point
+// where it stops sounding like a bowed instrument.
 const INSTRUMENT_OUTPUT_TRIM = {
     piano: 1.0,
     electric_piano: 0.95,
@@ -576,7 +686,13 @@ const INSTRUMENT_OUTPUT_TRIM = {
     synth: 0.9
 };
 
-// Hard cap on simultaneous voices PER INSTRUMENT. This is a safety net independent of the shared-effects
+// Hard cap on simultaneous voices PER INSTRUMENT. This is a safety net independent of the
+// shared-effects fix below: even with cheap nodes, nothing stops a burst of note-ons (e.g.
+// several "string" class-instances triggering within the same frame) from spawning far more
+// simultaneous voices than the device can render in real time, which is what was producing
+// the glitching/noise after ~5 simultaneous strings. When the cap is hit we steal the OLDEST
+// voice of that instrument (fade it out immediately) to make room for the new one, exactly
+// like a real synth engine's voice allocator.
 const MAX_POLYPHONY_PER_INSTRUMENT = 6;
 
 function enforcePolyphonyLimit(instrument) {
@@ -597,7 +713,10 @@ function enforcePolyphonyLimit(instrument) {
 }
 
 function initializeInstrumentVoices() {
-    // The reverb "tank": pre-delay -> high-pass-> Freeverb itself
+    // The reverb "tank": pre-delay (keeps the dry attack clear before the space blooms
+    // in) -> high-pass (keeps low end out of the reverb so it doesn't turn muddy) ->
+    // Freeverb itself, run at 100% wet since the dry/wet balance is now handled per
+    // instrument via connectWithReverbSend() above, not by the effect's own mix.
     const reverbPredelay = new Tone.Delay(0.03);
     reverbPreFilter = new Tone.Filter(250, 'highpass').connect(reverbPredelay);
     reverbBus = new Tone.Freeverb({ roomSize: 0.6, dampening: 2500 });
@@ -606,8 +725,14 @@ function initializeInstrumentVoices() {
     reverbBus.connect(masterBusIn);
 
     // --- Shared FX buses for the instruments that use an LFO-based effect (Chorus/Tremolo) ---
-    // These used to be built FRESH inside every factory call only the (cheap) per-note Tone.Synth
-    // itself is created and disposed per note now.
+    // These used to be built FRESH inside every factory call — i.e. once per NOTE. A
+    // Tone.Chorus/Tremolo isn't just a filter; it owns its own LFO oscillator(s) that get
+    // .start()'ed. Spinning up 5-10+ of those per second (one per simultaneous string note)
+    // is exactly what was overloading the audio thread and producing noise/glitches/hangs
+    // once several strings played at once. Building ONE persistent chorus/tremolo per
+    // instrument here, and simply routing every note's synth INTO it, means polyphony no
+    // longer has any effect on how many LFOs/effect instances exist — only the (cheap)
+    // per-note Tone.Synth itself is created and disposed per note now.
     const pianoFilter = new Tone.Filter(2600, 'lowpass');
     connectWithReverbSend(pianoFilter, 0.22);
     const pianoChorus = new Tone.Chorus(4, 2.5, 0.25).connect(pianoFilter).start();
@@ -616,6 +741,9 @@ function initializeInstrumentVoices() {
     connectWithReverbSend(epFilter, 0.15);
     const epTremolo = new Tone.Tremolo(4, 0.3).connect(epFilter).start();
 
+    // Strings: filter brought down slightly (3200 -> 2800) and reverb send trimmed
+    // (0.32 -> 0.24) — on top of the INSTRUMENT_OUTPUT_TRIM above, this keeps a held chord
+    // of strings from washing out and dominating everything else in the mix.
     const stringsFilter = new Tone.Filter(2800, 'lowpass');
     connectWithReverbSend(stringsFilter, 0.24);
     const stringsChorus = new Tone.Chorus(3.2, 3.5, 0.4).connect(stringsFilter).start();
@@ -632,9 +760,12 @@ function initializeInstrumentVoices() {
     // Tone.PolySynth across every note of that instrument) means note-off always calls
     // triggerRelease() on the *exact* instance that was triggered — there is no shared
     // "which internal voice is this note?" bookkeeping for Tone to get wrong.
-
+    //
     // `velocity` (0-1) is passed into every factory so envelope shape itself — not just
-    // loudness — reacts to how "hard" the note was hit
+    // loudness — reacts to how "hard" the note was hit: harder hits get a bit more decay/
+    // sustain/release and (where it makes physical sense) a brighter filter sweep, softer
+    // hits stay short and mellow. This is what makes velocity actually audible as *feel*,
+    // not just as a volume knob.
     instrumentFactories = {
         piano: (velocity = 1) => {
             const release = 0.9 + velocity * 0.6;
@@ -663,7 +794,8 @@ function initializeInstrumentVoices() {
             return { synth, nodes: [synth], release, isSharedBus: true };
         },
         strings: (velocity = 1) => {
-            // Bow feel
+            // Bow feel: a harder attack (higher velocity) starts a touch faster, like more
+            // bow pressure catching the string quicker, and holds fuller/longer.
             const release = 1.3 + velocity * 0.5;
             const synth = new Tone.Synth({
                 oscillator: { type: 'fatsawtooth', count: 3, spread: 30 },
@@ -679,6 +811,7 @@ function initializeInstrumentVoices() {
         bass: (velocity = 1) => {
             // MonoSynth's filterEnvelope gives the punchy "pluck then settle" character
             // real basses have — a plain oscillator+lowpass (the old design) sounds flat.
+            // Kept almost fully DRY: reverb on a bass smears the low end and kills punch.
             const filter = new Tone.Filter(700, 'lowpass');
             const send = connectWithReverbSend(filter, 0.03, velocity);
             const synth = new Tone.MonoSynth({
@@ -726,6 +859,17 @@ function initializeInstrumentVoices() {
             return { synth, nodes: [synth, filter, dist, send].filter(Boolean), release: 0.4 };
         },
         acoustic_guitar: (velocity = 1) => {
+            // PluckSynth IS a Karplus-Strong comb filter fed by a noise burst — its own
+            // `dampening` parameter (the comb filter's internal lowpass) is already the
+            // real "string brightness" control. The previous attempt stacked an EXTRA
+            // lowpass(4500) on top, AND pulled attackNoise/dampening/resonance all well
+            // BELOW Tone's own defaults (attackNoise:1, dampening:4000, resonance:0.7) —
+            // darker, shorter, and extra-filtered all at once, hence "worse and quieter".
+            // This version stays close to (mostly above) those defaults, and fixes an
+            // inverted assumption: a HARDER pluck should sound BRIGHTER (more high-frequency
+            // energy from a harder string excitation), so dampening now correctly rises
+            // with velocity instead of falling. No extra lowpass — just a small body-warmth
+            // shelf and a mud-cleanup highpass.
             const bodyShelf = new Tone.Filter({ type: 'lowshelf', frequency: 180, gain: 3 });
             const highpass = new Tone.Filter(75, 'highpass');
             bodyShelf.connect(highpass);
@@ -776,6 +920,14 @@ function initializeInstrumentVoices() {
 
     // --- Drums ---
     // Drums get their OWN submix bus (drumsBus) instead of hitting masterBusIn directly.
+    // Reasoning: the master compressor/limiter react to the LOUDEST thing happening at any
+    // instant. A held piano/strings chord sitting near the compressor's threshold means a
+    // simultaneous hi-hat tick's tiny, short transient barely moves the needle and gets
+    // rendered almost inaudible under the gain reduction already being applied to the
+    // sustained tonal notes. A small fixed boost on the drum bus (+2.5dB-ish) compensates
+    // for that without having to touch the master dynamics at all.
+    // Drum voices stay as dedicated, reused instances (percussion is one-shot by nature —
+    // there's no "note-off" to track, so the per-note-instance approach above doesn't apply).
     drumsBus = new Tone.Gain(1.35).connect(masterBusIn);
 
     function connectDrumWithReverbSend(node, sendAmount) {
@@ -810,6 +962,10 @@ function initializeInstrumentVoices() {
                 noise: { type: 'white' },
                 envelope: { attack: 0.001, decay: 0.18, sustain: 0 }
             }).connect(snareFilter),
+            // Now that the triggerAttackRelease bug above is fixed, this actually produces
+            // real metallic content — the external filter just needs to trim rumble, not
+            // fight the synth's own internal highpass (driven by `resonance`/`octaves`),
+            // so it's set well below resonance now instead of stacked right on top of it.
             hihat: (() => {
                 const hihatFilter = new Tone.Filter(3500, 'highpass');
                 connectDrumWithReverbSend(hihatFilter, 0.08);
@@ -823,6 +979,12 @@ function initializeInstrumentVoices() {
                 node.volume.value = 2;
                 return node;
             })(),
+            // NEW — previously missing entirely. getDrumType() already mapped MIDI notes
+            // 49/57 to 'crash', but there was no drums.crash voice defined, so every "crash"
+            // event fell through to `drumVoices.generic` (see playDrumSound's fallback) —
+            // which is exactly why crash and generic sounded identical and both quiet.
+            // A crash is much longer and more diffuse than a generic hit: long decay, wide
+            // highpass, more reverb send, louder overall.
             crash: (() => {
                 const node = new Tone.MetalSynth({
                     envelope: { attack: 0.001, decay: 1.4, release: 0.4 },
@@ -852,11 +1014,11 @@ function handleMusicEvents(musicData) {
 
         // Slight delay between events to avoid overwhelming
         const scheduleTime = Tone.now() + 0.02;
-        // // human feel
-        // const jitter = (Math.random() - 0.5) * 0.008;
+        // human feel
+        const jitter = (Math.random() - 0.5) * 0.008;
         // Schedule each music event
         musicData.events.forEach((event, index) => {
-            playMusicEvent(event, scheduleTime); // + jitter
+            playMusicEvent(event, scheduleTime + jitter);
         });
 
         // Update UI with music info
@@ -868,19 +1030,23 @@ function handleMusicEvents(musicData) {
 }
 
 function playMusicEvent(event, scheduleTime) {
-
     const type = event.event_type || event.type;
     const channel = event.channel !== undefined ? event.channel : 0;
 
     let instrument = event.instrument || currentInstrument;
 
+    if (channel === 9 || instrument === "drums") {
+        instrument = "drums";
+    }
+
     if (type === "note_off") {
         stopNote(event.note, channel);
         return;
     }
+
     if (!isMusicGenerationActive) return;
 
-    if (channel === 9 || instrument === "drums") {
+    if (instrument === "drums") {
         playDrumSound(event, scheduleTime);
     } else {
         playTonalInstrument(event, instrument, channel, scheduleTime);
@@ -889,7 +1055,10 @@ function playMusicEvent(event, scheduleTime) {
 
 function disposeVoiceSoon(voice) {
     // Give the release tail (or, for plucks, the natural decay) time to finish before
-    // tearing down the nodes, so we don't clip/click the tail off.
+    // tearing down the nodes, so we don't clip/click the tail off. Only ever disposes the
+    // per-note nodes (e.g. just the synth for piano/electric_piano/strings/pad, since their
+    // filter/chorus/send are shared, persistent buses created once in
+    // initializeInstrumentVoices and must never be disposed here).
     setTimeout(() => {
         try {
             voice.nodes.forEach(n => n.dispose && n.dispose());
@@ -899,26 +1068,37 @@ function disposeVoiceSoon(voice) {
 
 function playTonalInstrument(event, instrument, channel, scheduleTime) {
 
-    // Never have two voices fighting over the same pitch.
+    // If this exact note number is already sounding (e.g. a stray retrigger),
+    // cut it first so we never have two voices fighting over the same pitch.
     const voiceKey = `${channel ?? 0}-${event.note}`;
     stopNote(event.note, channel);
 
     // Use the sent instrument name, but fall back to piano if it's unknown/invalid.
     const factoryName = normalizeInstrumentName(instrument, 'piano');
 
-    // Voice-stealing safety net: caps how many notes of this instrument can ring at once
+    // Voice-stealing safety net: caps how many notes of this instrument can ring at once,
+    // regardless of how fast events arrive.
     enforcePolyphonyLimit(factoryName);
 
     const factory = instrumentFactories[factoryName] || instrumentFactories.piano;
 
     const noteName = Tone.Frequency(event.note, "midi").toNote();
 
-    // Velocity mapping: humans hear loudness LOGARITHMICALLY, but Tone's triggerAttack velocity
-    // multiplies gain LINEARLY.
+    // Velocity mapping: humans hear loudness LOGARITHMICALLY, but Tone's triggerAttack
+    // velocity multiplies gain LINEARLY. To compensate we need an exponent SMALLER than 1
+    // (e.g. 0.6) — that pulls mid/low velocities UP relative to linear, which is what makes
+    // soft-but-not-silent hits actually audible instead of disappearing.
+    // (The previous version used Math.pow(Math.pow(rawVelocity, 2), 1.8), i.e. rawVelocity^3.6
+    // — an exponent ABOVE 1, which does the exact opposite: it crushes anything that isn't
+    // very close to max velocity down toward silence. That's why only near-max-velocity notes,
+    // like electric guitar's more consistently "hot" events, were audible at all.)
     const rawVelocity = Math.min(1, Math.max(0, (event.velocity ?? 100) / 127));
     const velocity = Math.max(0.15, Math.pow(rawVelocity, 0.6));
 
-    // Envelope shape (decay/sustain/release/brightness) reacts to the RAW velocity curve above;
+    // Envelope shape (decay/sustain/release/brightness) reacts to the RAW velocity curve
+    // above; final output level additionally gets a per-instrument trim so instruments with
+    // structurally different envelopes (e.g. strings' long sustain) don't come out louder
+    // than everything else just because of how their envelope is shaped.
     const trim = INSTRUMENT_OUTPUT_TRIM[factoryName] ?? 1;
     const ampVelocity = Math.min(1, Math.max(0.01, velocity * trim));
 
@@ -945,7 +1125,9 @@ function playTonalInstrument(event, instrument, channel, scheduleTime) {
 }
 
 function playDrumSound(event, scheduleTime) {
-
+    // Same fix as playTonalInstrument: exponent must be < 1, not > 1 (see comment there).
+    // Also switched `||` to `??` — with `||`, a real velocity of 0 would be silently replaced
+    // by 100 (0 is falsy in JS), quietly discarding a legitimate (if unusual) value.
     const rawDrumVelocity = Math.min(1, Math.max(0, (event.velocity ?? 100) / 127));
     const velocity = Math.max(0.2, Math.pow(rawDrumVelocity, 0.6));
     const drumType = getDrumType(event.note);
@@ -957,13 +1139,26 @@ function playDrumSound(event, scheduleTime) {
 
     try {
         if (typeof Tone !== 'undefined' && voice instanceof Tone.MembraneSynth) {
-            const noteName = Tone.Frequency(48, "midi").toNote();
+            const noteName = Tone.Frequency(48, "midi").toNote(); // fixed low kick pitch
             voice.triggerAttackRelease(noteName, "8n", scheduleTime, velocity);
         } else if (typeof Tone !== 'undefined' && voice instanceof Tone.MetalSynth) {
+            // BUG FIX: MetalSynth extends Monophonic, so — unlike NoiseSynth — its
+            // triggerAttackRelease signature is (note, duration, time, velocity), NOT
+            // (duration, time, velocity). The old call `triggerAttackRelease("8n",
+            // scheduleTime, velocity)` was passing "8n" as the NOTE (which Tone.Frequency
+            // can't parse as a pitch, producing a near-zero/garbage frequency), scheduleTime
+            // as the DURATION, and velocity as the TIME. That's why hihat was silent (its
+            // oscillators had no valid pitch to run at) and crash — same broken call —
+            // degenerated into unpitched broadband noise indistinguishable from `generic`.
+            // A fixed base frequency is enough here: resonance/octaves (set per-voice above)
+            // already do the real tonal shaping via the built-in highpass sweep.
             voice.triggerAttackRelease(200, "8n", scheduleTime, velocity);
         } else {
             voice.triggerAttackRelease("16n", scheduleTime, velocity);
         }
+
+        // Drum hits are transient (no sustain/release we can query), so just keep
+        // "drums" visible in the status for a short window after each hit.
         const PERCUSSION_VISIBILITY_MS = 600;
         recentPercussion.set(`${drumType}-${Date.now()}`, Date.now() + PERCUSSION_VISIBILITY_MS);
     } catch (e) {
@@ -972,7 +1167,6 @@ function playDrumSound(event, scheduleTime) {
 }
 
 function stopNote(note, channel = 0) {
-
     const voiceKey = `${channel}-${note}`;
     const voiceData = activeNotes.get(voiceKey);
 
@@ -982,6 +1176,9 @@ function stopNote(note, channel = 0) {
 
     try {
         if (!voice.isPluck) {
+            // Monophonic Synth/MonoSynth instances need no note argument for release —
+            // each instance IS one note, so there's nothing ambiguous to match against
+            // (unlike the old shared-PolySynth design this replaces).
             voice.synth.triggerRelease(Tone.now());
         }
         // PluckSynth has no triggerRelease — it just rings out and gets disposed below.
@@ -992,7 +1189,10 @@ function stopNote(note, channel = 0) {
 }
 
 function hardStopAllAudio() {
-    // A "panic" stop
+    // A true "panic" stop: skips the release-tail fade entirely and silences everything
+    // immediately by disposing the live per-note nodes right away (shared FX buses are left
+    // intact — they're infrastructure, not per-note voices), then briefly dips and restores
+    // the master gain to guarantee no click/pop from cutting nodes off mid-waveform.
     activeNotes.forEach(({ voice }) => {
         try {
             voice.nodes.forEach(n => n.dispose && n.dispose());
@@ -1028,13 +1228,21 @@ function getDrumType(midiNote) {
 }
 
 function stopAllActiveNotes() {
-
+    // BUG FIX: this used to do `activeNotes.forEach((voiceData, note) => stopNote(note))`.
+    // Since playTonalInstrument switched to composite "channel-note" keys (to stop notes on
+    // different channels/instruments from stealing each other's same-pitch voice — see
+    // playTonalInstrument), `note` here was actually the whole key string (e.g. "3-60"), and
+    // stopNote() re-wrapped it as "0-3-60" — which never matches anything in the map. So this
+    // function silently did nothing; the manual "stop music" button wasn't actually releasing
+    // any still-ringing notes, it just cleared the bookkeeping. Iterate on the stored
+    // instrument/channel/note directly instead of trying to parse the key.
     activeNotes.forEach((voiceData, key) => {
         const sepIndex = key.indexOf('-');
         const channel = Number(key.slice(0, sepIndex));
         const note = Number(key.slice(sepIndex + 1));
         stopNote(note, channel);
     });
+
     activeNotes.clear();
     recentPercussion.clear();
 
@@ -1042,7 +1250,6 @@ function stopAllActiveNotes() {
 }
 
 function normalizeInstrumentName(instrument, fallback = 'piano') {
-
     const raw = String(instrument || '').trim().toLowerCase();
     if (!raw || raw === 'unknown' || raw === 'none' || raw === 'null') {
         return fallback;
@@ -1721,6 +1928,9 @@ function setupMainInterface() {
     
     // Setup ROI canvas
     setupRoiCanvas();
+    
+    // Setup mobile-specific button handling (with delay to ensure DOM is ready)
+    setTimeout(setupSegmentationButtonMobile, 100);
     
     // Start video capture
     startVideoCapture();
@@ -3157,3 +3367,6 @@ function handleMobileViewportHeight() {
         });
     }
 }
+
+// Call the mobile viewport fix on page load
+document.addEventListener('DOMContentLoaded', handleMobileViewportHeight);
