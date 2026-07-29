@@ -49,10 +49,26 @@ class MjpegServer(private val port: Int) {
 
     private fun handleClient(socket: Socket) {
         try {
+            val inputStream = socket.getInputStream()
+            val reader = inputStream.bufferedReader()
+            val requestLine = reader.readLine() ?: return
+            
             val outputStream = socket.getOutputStream()
+            
+            // Handle CORS Pre-flight
+            if (requestLine.startsWith("OPTIONS")) {
+                outputStream.write(("HTTP/1.1 204 No Content\r\n" +
+                        "Access-Control-Allow-Origin: *\r\n" +
+                        "Access-Control-Allow-Methods: GET, OPTIONS\r\n" +
+                        "Access-Control-Allow-Headers: *\r\n" +
+                        "\r\n").toByteArray())
+                outputStream.flush()
+                return
+            }
+
             val boundary = "frame"
             
-            // HTTP Header for MJPEG
+            // HTTP Header for MJPEG with CORS support
             outputStream.write(("HTTP/1.0 200 OK\r\n" +
                     "Server: RagbaarTelemetry\r\n" +
                     "Connection: close\r\n" +
@@ -60,6 +76,7 @@ class MjpegServer(private val port: Int) {
                     "Expires: 0\r\n" +
                     "Cache-Control: no-cache, private\r\n" +
                     "Pragma: no-cache\r\n" +
+                    "Access-Control-Allow-Origin: *\r\n" +
                     "Content-Type: multipart/x-mixed-replace; boundary=$boundary\r\n" +
                     "\r\n").toByteArray())
 
