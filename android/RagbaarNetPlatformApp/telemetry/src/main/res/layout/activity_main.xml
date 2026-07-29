@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1a1a1a"
+    android:padding="16dp">
+
+    <!-- Live Camera Background -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/viewFinder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <View
+        android:id="@+id/cameraOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#80000000"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="RagbaarTelemetry"
+        android:textColor="#00ff88"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <ImageButton
+        android:id="@+id/settingsButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@android:drawable/ic_menu_preferences"
+        android:contentDescription="@string/settings"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:tint="#00ff88" />
+
+    <!-- Top Controls Row -->
+    <LinearLayout
+        android:id="@+id/topControlsLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        app:layout_constraintTop_toBottomOf="@id/titleText">
+
+        <!-- Custom Pill Navigator -->
+        <FrameLayout
+            android:id="@+id/modeSwitchContainer"
+            android:layout_width="180dp"
+            android:layout_height="48dp"
+            android:background="@drawable/pill_background"
+            android:clipToPadding="false"
+            android:clipChildren="false">
+
+            <View
+                android:id="@+id/pillSelector"
+                android:layout_width="86dp"
+                android:layout_height="match_parent"
+                android:layout_margin="3dp"
+                android:background="@drawable/pill_selector" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/textAuto"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/mode_auto"
+                    android:textColor="#000000"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <TextView
+                    android:id="@+id/textManual"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/mode_manual"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/streamToggleButton"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginStart="12dp"
+            android:text="Stream: OFF"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            app:cornerRadius="24dp"
+            app:strokeColor="#555555"
+            app:icon="@android:drawable/ic_menu_camera"
+            app:iconSize="18dp"
+            app:iconTint="#FFFFFF" />
+    </LinearLayout>
+
+    <!-- Unified Sliders Container -->
+    <LinearLayout
+        android:id="@+id/slidersContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:orientation="vertical"
+        android:splitMotionEvents="true"
+        app:layout_constraintTop_toBottomOf="@id/topControlsLayout">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="36dp">
+            <TextView
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:text="Speed"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+            <SeekBar
+                android:id="@+id/speedSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="250"
+                android:progressDrawable="@drawable/slider_track"
+                android:thumb="@drawable/slider_thumb"
+                android:splitTrack="false" />
+            <TextView
+                android:id="@+id/speedValueText"
+                android:layout_width="65dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="0 km/h"
+                android:textColor="#00ff88"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="36dp">
+            <TextView
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:text="RPM"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+            <SeekBar
+                android:id="@+id/rpmSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="6000"
+                android:progressDrawable="@drawable/slider_track"
+                android:thumb="@drawable/slider_thumb"
+                android:splitTrack="false" />
+            <TextView
+                android:id="@+id/rpmValueText"
+                android:layout_width="65dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="null"
+                android:textColor="#888888"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:text="Accel"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp" />
+            <SeekBar
+                android:id="@+id/accelSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="200"
+                android:progress="100"
+                android:progressDrawable="@drawable/slider_track"
+                android:thumb="@drawable/slider_thumb"
+                android:splitTrack="false" />
+            <TextView
+                android:id="@+id/accelValueText"
+                android:layout_width="65dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:text="0.00"
+                android:textColor="#00ff88"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Status: Ready"
+        android:textColor="#888888"
+        android:textSize="12sp"
+        android:gravity="center"
+        android:layout_marginBottom="32dp"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
