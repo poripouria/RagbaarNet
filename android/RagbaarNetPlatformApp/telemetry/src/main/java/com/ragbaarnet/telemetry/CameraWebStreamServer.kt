@@ -17,14 +17,14 @@ import android.util.Size
 import androidx.core.app.ActivityCompat
 import android.view.Surface
 import java.io.BufferedReader
-import java.io.File
 import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStream
+import java.io.FileDescriptor
 import java.net.ServerSocket
 import java.net.Socket
-import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
+import android.os.ParcelFileDescriptor
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -217,7 +217,8 @@ class CameraWebStreamServer(
         private var captureSession: CameraCaptureSession? = null
         private var mediaRecorder: MediaRecorder? = null
         private var pumpThread: Thread? = null
-        private var outputFile: File? = null
+        private var readPipe: ParcelFileDescriptor? = null
+        private var writePipe: ParcelFileDescriptor? = null
 
         @Volatile
         private var running = false
@@ -314,23 +315,19 @@ class CameraWebStreamServer(
         fun getMimeType(): String = mimeType
 
         private fun prepareOutputFile() {
-            val cacheDir = context.cacheDir ?: context.filesDir
-            outputFile = File.createTempFile("ragbaarnet_telemetry_stream_", ".webm", cacheDir).apply {
-                if (exists()) {
-                    delete()
-                }
-                createNewFile()
-            }
+            val pipes = ParcelFileDescriptor.createPipe()
+            readPipe = pipes[0]
+            writePipe = pipes[1]
 
-            mediaRecorder = buildRecorder(outputFile!!)
-            startPumpThread(outputFile!!)
+            mediaRecorder = buildRecorder(writePipe!!.fileDescriptor)
+            startPumpThread(readPipe!!)
         }
 
-        private fun buildRecorder(outputFile: File): MediaRecorder {
+        private fun buildRecorder(outputFileDescriptor: FileDescriptor): MediaRecorder {
             val recorder = MediaRecorder()
             val portrait = context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
             val outputCandidates = listOf(
-                RecorderConfig("video/webm", MediaRecorder.OutputFormat.WEBM, MediaRecorder.VideoEncoder.VP8),
+                RecorderConfig("video/webm; codecs=\"vp8\"", MediaRecorder.OutputFormat.WEBM, MediaRecorder.VideoEncoder.VP8),
                 RecorderConfig("video/mp4", MediaRecorder.OutputFormat.MPEG_4, MediaRecorder.VideoEncoder.H264)
             )
 
@@ -346,7 +343,7 @@ class CameraWebStreamServer(
 
                     val targetSize = chooseVideoSize()
                     recorder.setVideoSize(targetSize.width, targetSize.height)
-                    recorder.setOutputFile(outputFile)
+                    recorder.setOutputFile(outputFileDescriptor)
                     recorder.setOrientationHint(if (portrait) 90 else 0)
                     recorder.prepare()
                     mimeType = candidate.mimeType
@@ -453,37 +450,22 @@ class CameraWebStreamServer(
             )
         }
 
-        private fun startPumpThread(recordingFile: File) {
+        private fun startPumpThread(readDescriptor: ParcelFileDescriptor) {
             pumpThread = Thread {
-                var position = 0L
-                while (running) {
-                    if (!recordingFile.exists()) {
-                        Thread.sleep(50)
-                        continue
-                    }
-
-                    val length = recordingFile.length()
-                    if (length <= position) {
-                        Thread.sleep(50)
-                        continue
-                    }
-
-                    RandomAccessFile(recordingFile, "r").use { raf ->
-                        raf.seek(position)
-                        val buffer = ByteArray(32 * 1024)
-                        while (running) {
-                            val read = raf.read(buffer)
-                            if (read <= 0) {
-                                break
-                            }
-
-                            position += read.toLong()
-                            chunkQueue.put(buffer.copyOf(read))
-
-                            if (raf.filePointer >= recordingFile.length()) {
-                                break
-                            }
+                ParcelFileDescriptor.AutoCloseInputStream(readDescriptor).use { input ->
+                    val buffer = ByteArray(32 * 1024)
+                    while (running) {
+                        val read = try {
+                            input.read(buffer)
+                        } catch (_: IOException) {
+                            break
                         }
+
+                        if (read < 0) {
+                            break
+                        }
+
+                        chunkQueue.put(buffer.copyOf(read))
                     }
                 }
             }.apply {
@@ -504,10 +486,16 @@ class CameraWebStreamServer(
 
         private fun releaseResources() {
             try {
-                outputFile?.delete()
+                writePipe?.close()
             } catch (_: Exception) {
             }
-            outputFile = null
+            writePipe = null
+
+            try {
+                readPipe?.close()
+            } catch (_: Exception) {
+            }
+            readPipe = null
 
             try {
                 mediaRecorder?.release()
