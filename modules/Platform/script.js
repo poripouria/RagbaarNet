@@ -5,7 +5,9 @@
 
 // Global variables
 let inputSource = null;
-let videoElement = null;
+let videoElement = null;                // Reference to the <video> tag
+let streamElement = null;               // Reference to the <img> tag for MJPEG streams
+let activeSource = null;                // Current active DOM element (videoElement or streamElement)
 let canvas = null;
 let ctx = null;
 let segmentationCanvas = null;
@@ -1123,10 +1125,15 @@ function updateMusicInfo(musicData) {
 */
 function captureAndSendFrame() {
     // Prevent concurrent frame processing
-    if (isProcessingFrame || !videoElement || !videoElement.videoWidth) {
+    if (isProcessingFrame || !activeSource) {
         return;
     }
-    
+
+    const srcW = getSourceWidth();
+    const srcH = getSourceHeight();
+
+    if (!srcW || !srcH) return;
+
     const now = Date.now();
     if (now - lastFrameSentTime < frameSendInterval) {
         return; // Rate limiting
@@ -1137,8 +1144,6 @@ function captureAndSendFrame() {
     isProcessingFrame = true; // Set processing flag
     
     try {
-        const srcW = videoElement.videoWidth;
-        const srcH = videoElement.videoHeight;
         const maxW = isMobileDevice() ? 640 : srcW;
         const scale = Math.min(1, maxW / Math.max(1, srcW));
         const targetW = Math.max(1, Math.round(srcW * scale));
@@ -1151,7 +1156,7 @@ function captureAndSendFrame() {
         
         // Draw current video frame to processing canvas
         processingCtx.imageSmoothingEnabled = false;
-        processingCtx.drawImage(videoElement, 0, 0, targetW, targetH);
+        processingCtx.drawImage(activeSource, 0, 0, targetW, targetH);
         
         // Convert to base64 with optimized quality for speed
         const jpegQuality = isMobileDevice() ? 0.6 : 0.7;
@@ -1370,19 +1375,18 @@ function toggleFrameProcessing() {
     updateSegmentationButtonState();
     
     // Show/hide elements based on segmentation display state
-    const videoElement = document.getElementById('videoElement');
     const roiCanvas = document.getElementById('roiCanvas');
     const segCanvas = document.getElementById('segmentationCanvas');
     
     if (segmentationDisplayEnabled) {
-        // Show segmentation overlay with ROI (hide video but keep ROI visible)
-        if (videoElement) {
+        // Show segmentation overlay with ROI (hide source but keep ROI visible)
+        if (activeSource) {
             // IMPORTANT: Using display:none can freeze frame updates in some browsers.
-            // Keep the video in the render tree and hide it visually instead.
-            videoElement.style.display = 'block';
-            videoElement.style.visibility = 'hidden';
-            videoElement.style.opacity = '0';
-            videoElement.style.pointerEvents = 'none';
+            // Keep the source in the render tree and hide it visually instead.
+            activeSource.style.display = 'block';
+            activeSource.style.visibility = 'hidden';
+            activeSource.style.opacity = '0';
+            activeSource.style.pointerEvents = 'none';
         }
         if (roiCanvas) roiCanvas.style.display = 'block'; // Keep ROI visible
         if (segCanvas) {
@@ -1414,12 +1418,12 @@ function toggleFrameProcessing() {
             requestImmediateUpdate();
         }
     } else {
-        // Show original video with ROI (hide segmentation display, but processing continues)
-        if (videoElement) {
-            videoElement.style.display = 'block';
-            videoElement.style.visibility = 'visible';
-            videoElement.style.opacity = '1';
-            videoElement.style.pointerEvents = '';
+        // Show original source with ROI (hide segmentation display, but processing continues)
+        if (activeSource) {
+            activeSource.style.display = 'block';
+            activeSource.style.visibility = 'visible';
+            activeSource.style.opacity = '1';
+            activeSource.style.pointerEvents = '';
         }
         if (roiCanvas) roiCanvas.style.display = 'block';
         if (segCanvas) segCanvas.style.display = 'none';
@@ -1566,13 +1570,20 @@ function handleVideoFile(event) {
         // Then set the video source after interface is ready
         setTimeout(() => {
             videoElement = document.getElementById('videoElement');
-            
+            streamElement = document.getElementById('streamElement');
+
             // Clear any existing camera stream
             if (videoElement.srcObject) {
                 videoElement.srcObject.getTracks().forEach(track => track.stop());
                 videoElement.srcObject = null;
             }
-            
+
+            // Switch to video mode
+            activeSource = videoElement;
+            videoElement.style.display = 'block';
+            streamElement.style.display = 'none';
+            streamElement.src = '';
+
             videoElement.src = url;
             videoElement.load(); // Force video to load
             
@@ -1618,26 +1629,54 @@ function setupMainInterface() {
 
 
 /**
+ * Gets the current active source width (videoWidth for video, naturalWidth for images)
+ */
+function getSourceWidth() {
+    if (!activeSource) return 0;
+    return activeSource.tagName === 'VIDEO' ? activeSource.videoWidth : activeSource.naturalWidth;
+}
+
+/**
+ * Gets the current active source height (videoHeight for video, naturalHeight for images)
+ */
+function getSourceHeight() {
+    if (!activeSource) return 0;
+    return activeSource.tagName === 'VIDEO' ? activeSource.videoHeight : activeSource.naturalHeight;
+}
+
+/**
  * Video Display Setup
  */
 function setupVideoDisplay() {
     videoElement = document.getElementById('videoElement');
-    
+    streamElement = document.getElementById('streamElement');
+
+    // Set crossOrigin to allow canvas capture of remote sources without security errors
+    videoElement.crossOrigin = "anonymous";
+    streamElement.crossOrigin = "anonymous";
+
+    activeSource = videoElement; // Default to video
+
     // Mobile-specific video settings
     videoElement.setAttribute('playsinline', 'true');
     videoElement.setAttribute('webkit-playsinline', 'true');
     
-    // Handle video load
-    videoElement.addEventListener('loadedmetadata', function() {
-        updateStatus('Video loaded successfully');
-        console.log('Video dimensions:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+    // Shared load handler
+    const onSourceLoaded = function() {
+        updateStatus('Source loaded successfully');
+        console.log('Source dimensions:', getSourceWidth(), 'x', getSourceHeight());
         
-        // Reinitialize ROI points based on actual video dimensions
+        // Reinitialize ROI points based on actual dimensions
         initializeRoiPoints();
-        
         updateVideoFeed();
-    });
+    };
+
+    // Handle video load
+    videoElement.addEventListener('loadedmetadata', onSourceLoaded);
     
+    // Handle MJPEG image load
+    streamElement.addEventListener('load', onSourceLoaded);
+
     videoElement.addEventListener('loadeddata', function() {
         console.log('Video data loaded');
         drawRoi();
@@ -1652,17 +1691,18 @@ function setupVideoDisplay() {
     
     videoElement.addEventListener('error', function(e) {
         console.error('Video error details:', e);
-        updateStatus('Error loading video source');
+        if (inputSource !== 'network_stream') updateStatus('Error loading video source');
+    });
+
+    streamElement.addEventListener('error', function(e) {
+        console.error('Stream error details:', e);
+        updateStatus('Error connecting to MJPEG stream');
     });
     
     // Add mobile debugging
     videoElement.addEventListener('loadstart', function() {
         console.log('Video load started');
         updateStatus('Starting video...');
-    });
-    
-    videoElement.addEventListener('progress', function() {
-        console.log('Video loading progress');
     });
 }
 
@@ -1729,16 +1769,16 @@ function initializeControlPoints() {
 }
 
 function initializeRoiPoints() {
-    // Get video dimensions, fallback to canvas dimensions if video not loaded yet
-    const videoWidth = videoElement.videoWidth || canvas.width || 640;
-    const videoHeight = videoElement.videoHeight || canvas.height || 480;
+    // Get source dimensions, fallback to canvas dimensions if not loaded yet
+    const sourceWidth = getSourceWidth() || canvas.width || 640;
+    const sourceHeight = getSourceHeight() || canvas.height || 480;
     
     // Calculate ROI points as percentages of video dimensions
     // Create a rectangle that's 60% of the video size, centered
-    const roiWidth = videoWidth * 0.6;
-    const roiHeight = videoHeight * 0.6;
-    const offsetX = (videoWidth - roiWidth) / 2;
-    const offsetY = (videoHeight - roiHeight) / 2;
+    const roiWidth = sourceWidth * 0.6;
+    const roiHeight = sourceHeight * 0.6;
+    const offsetX = (sourceWidth - roiWidth) / 2;
+    const offsetY = (sourceHeight - roiHeight) / 2;
     
     roiPoints = [
         [offsetX, offsetY], // Top-left
@@ -1761,148 +1801,63 @@ function startVideoCapture() {
         videoElement.srcObject.getTracks().forEach(track => track.stop());
         videoElement.srcObject = null;
     }
-    if (videoElement.src) {
-        videoElement.src = '';
-    }
-    
-    if (inputSource === 'phone_camera') {
-        // Enhanced mobile camera constraints
-        const constraints = {
-            video: {
-                facingMode: 'environment', // Use back camera on mobile
-                width: { ideal: 1280, max: 1920 },
-                height: { ideal: 720, max: 1080 },
-                frameRate: { ideal: 30, max: 60 }
-            }
-        };
+    videoElement.src = '';
+    streamElement.src = '';
+
+    if (inputSource === 'network_stream') {
+        // Switch to MJPEG stream mode (IMG tag)
+        activeSource = streamElement;
+        videoElement.style.display = 'none';
+        streamElement.style.display = 'block';
         
-        navigator.mediaDevices.getUserMedia(constraints)
-            .then(stream => {
-                videoElement.srcObject = stream;
-                // Ensure playback starts (some browsers require an explicit play() call)
-                const playPromise = videoElement.play();
-                if (playPromise && typeof playPromise.then === 'function') {
-                    playPromise.then(() => {
-                        updateStatus('Connected - Receiving camera feed');
-                        console.log('Camera stream started and playing');
-                    }).catch(err => {
-                        // Playback may be blocked by autoplay policies; still keep stream attached
-                        console.warn('Camera stream attached but playback blocked:', err);
-                        updateStatus('Connected - Camera attached (tap play to start)');
-                    });
-                } else {
-                    updateStatus('Connected - Receiving camera feed');
-                    console.log('Camera stream started (play() not required)');
+        const url = document.getElementById('streamUrl').value;
+        streamElement.src = url;
+        updateStatus('Connecting to MJPEG stream...');
+        console.log('🔌 Switching to MJPEG real-time stream:', url);
+    } else {
+        // Standard Video mode (VIDEO tag)
+        activeSource = videoElement;
+        videoElement.style.display = 'block';
+        streamElement.style.display = 'none';
+
+        if (inputSource === 'phone_camera') {
+            // Enhanced mobile camera constraints
+            const constraints = {
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1280, max: 1920 },
+                    height: { ideal: 720, max: 1080 },
+                    frameRate: { ideal: 30, max: 60 }
                 }
-            })
-            .catch(err => {
-                console.error('Camera error details:', err);
-                updateStatus(`Error: Could not access camera - ${err.message}`);
-                
-                // Fallback: try with basic constraints
-                navigator.mediaDevices.getUserMedia({ video: true })
+            };
+
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then(stream => {
+                    videoElement.srcObject = stream;
+                    const playPromise = videoElement.play();
+                    if (playPromise && typeof playPromise.then === 'function') {
+                        playPromise.catch(err => {
+                            console.warn('Camera playback blocked:', err);
+                        });
+                    }
+                })
+                .catch(err => {
+                    console.error('Camera error:', err);
+                    updateStatus(`Error: Camera access failed`);
+                });
+        } else if (inputSource === 'screen_record') {
+            if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
+                navigator.mediaDevices.getDisplayMedia({ video: true })
                     .then(stream => {
                         videoElement.srcObject = stream;
-                        const playPromise = videoElement.play();
-                        if (playPromise && typeof playPromise.then === 'function') {
-                            playPromise.then(() => {
-                                updateStatus('Connected - Using fallback camera settings');
-                            }).catch(err => {
-                                console.warn('Fallback camera attached but playback blocked:', err);
-                                updateStatus('Connected - Camera attached (tap play to start)');
-                            });
-                        } else {
-                            updateStatus('Connected - Using fallback camera settings');
-                        }
+                        videoElement.play();
                     })
-                    .catch(fallbackErr => {
-                        console.error('Fallback camera error:', fallbackErr);
-                        updateStatus('Error: Camera not available on this device');
+                    .catch(err => {
+                        console.warn('Screen capture failed:', err);
                     });
-            });
-    } else if (inputSource === 'network_stream') {
-        const url = document.getElementById('streamUrl').value;
-        videoElement.src = url;
-        videoElement.load();
-        const playPromise = videoElement.play();
-        if (playPromise && typeof playPromise.then === 'function') {
-            playPromise.catch(err => {
-                console.warn('Network stream playback blocked or failed to start immediately:', err);
-            });
+            }
         }
-        updateStatus('Connecting to network stream...');
-    } else if (inputSource === 'screen_record') {
-        // For screen recording on desktop, prefer getDisplayMedia (screen capture)
-        if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
-            navigator.mediaDevices.getDisplayMedia({ video: true })
-                .then(stream => {
-                    // Some browsers provide a MediaStream with a single video track for the screen
-                    videoElement.srcObject = stream;
-                    const playPromise = videoElement.play();
-                    if (playPromise && typeof playPromise.then === 'function') {
-                        playPromise.then(() => {
-                            updateStatus('Connected - Screen capture started');
-                            console.log('Screen capture started and playing');
-                        }).catch(err => {
-                            console.warn('Screen capture attached but playback blocked:', err);
-                            updateStatus('Connected - Screen attached (tap play to start)');
-                        });
-                    } else {
-                        updateStatus('Connected - Screen capture started');
-                    }
-                })
-                .catch(err => {
-                    console.warn('Screen capture failed, falling back to camera:', err);
-                    updateStatus('Screen capture denied or unavailable - falling back to camera');
-
-                    // Fallback to camera if screen capture is denied or unsupported at runtime
-                    navigator.mediaDevices.getUserMedia({ video: true })
-                        .then(camStream => {
-                            videoElement.srcObject = camStream;
-                            const playPromise = videoElement.play();
-                            if (playPromise && typeof playPromise.then === 'function') {
-                                playPromise.then(() => {
-                                    updateStatus('Connected - Using camera as fallback');
-                                }).catch(playErr => {
-                                    console.warn('Fallback camera attached but playback blocked:', playErr);
-                                    updateStatus('Connected - Camera attached (tap play to start)');
-                                });
-                            } else {
-                                updateStatus('Connected - Using camera as fallback');
-                            }
-                        })
-                        .catch(camErr => {
-                            console.error('Fallback camera error:', camErr);
-                            updateStatus('Error: Could not access screen or camera');
-                        });
-                });
-        } else {
-            // getDisplayMedia not supported; use camera as fallback
-            console.warn('getDisplayMedia not supported in this browser - using camera fallback');
-            updateStatus('Screen capture not supported - using camera fallback');
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(stream => {
-                    videoElement.srcObject = stream;
-                    const playPromise = videoElement.play();
-                    if (playPromise && typeof playPromise.then === 'function') {
-                        playPromise.then(() => {
-                            updateStatus('Connected - Using camera as fallback');
-                        }).catch(err => {
-                            console.warn('Fallback camera attached but playback blocked:', err);
-                            updateStatus('Connected - Camera attached (tap play to start)');
-                        });
-                    } else {
-                        updateStatus('Connected - Using camera as fallback');
-                    }
-                })
-                .catch(err => {
-                    console.error('Fallback camera error:', err);
-                    updateStatus('Error: Could not access camera');
-                });
-        }
-    } else if (inputSource === 'video_file') {
-        // Video file source is handled in handleVideoFile function
-        updateStatus('Loading video file...');
+        // video_file is handled by its own change listener
     }
 }
 
@@ -1925,17 +1880,17 @@ function updateVideoFeed() {
  * ROI Drawing Functions
  */
 function drawRoi() {
-    if (!canvas || !ctx) return;
+    if (!canvas || !ctx || !activeSource) return;
     
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Calculate scaling factors
-    const videoRect = videoElement.getBoundingClientRect();
-    const containerRect = canvas.getBoundingClientRect();
-    
-    if (videoElement.videoWidth && videoElement.videoHeight) {
-        const videoAspect = videoElement.videoWidth / videoElement.videoHeight;
+    const srcW = getSourceWidth();
+    const srcH = getSourceHeight();
+
+    if (srcW && srcH) {
+        const videoAspect = srcW / srcH;
         const containerAspect = canvas.width / canvas.height;
         
         let displayWidth, displayHeight;
@@ -1948,8 +1903,8 @@ function drawRoi() {
             displayWidth = canvas.height * videoAspect;
         }
         
-        scale.x = displayWidth / videoElement.videoWidth;
-        scale.y = displayHeight / videoElement.videoHeight;
+        scale.x = displayWidth / srcW;
+        scale.y = displayHeight / srcH;
         offset.x = (canvas.width - displayWidth) / 2;
         offset.y = (canvas.height - displayHeight) / 2;
     }
@@ -2096,8 +2051,8 @@ function onCanvasMove(event) {
         const frameY = (mouseY - offset.y) / scale.y;
         
         // Clamp to frame boundaries
-        const maxX = videoElement.videoWidth || 640;
-        const maxY = videoElement.videoHeight || 480;
+        const maxX = getSourceWidth() || 640;
+        const maxY = getSourceHeight() || 480;
         
         controlPoints[draggingControl][0] = Math.max(0, Math.min(frameX, maxX));
         controlPoints[draggingControl][1] = Math.max(0, Math.min(frameY, maxY));
@@ -2115,8 +2070,8 @@ function onCanvasMove(event) {
         const frameY = (mouseY - offset.y) / scale.y;
         
         // Clamp to frame boundaries
-        const maxX = videoElement.videoWidth || 640;
-        const maxY = videoElement.videoHeight || 480;
+        const maxX = getSourceWidth() || 640;
+        const maxY = getSourceHeight() || 480;
         
         roiPoints[draggingPoint][0] = Math.max(0, Math.min(frameX, maxX));
         roiPoints[draggingPoint][1] = Math.max(0, Math.min(frameY, maxY));
@@ -2282,8 +2237,8 @@ function onCanvasTouchMove(event) {
         const frameY = (touchY - offset.y) / scale.y;
         
         // Clamp to frame boundaries
-        const maxX = videoElement.videoWidth || 640;
-        const maxY = videoElement.videoHeight || 480;
+        const maxX = getSourceWidth() || 640;
+        const maxY = getSourceHeight() || 480;
         
         controlPoints[draggingControl][0] = Math.max(0, Math.min(frameX, maxX));
         controlPoints[draggingControl][1] = Math.max(0, Math.min(frameY, maxY));
@@ -2301,8 +2256,8 @@ function onCanvasTouchMove(event) {
         const frameY = (touchY - offset.y) / scale.y;
         
         // Clamp to frame boundaries
-        const maxX = videoElement.videoWidth || 640;
-        const maxY = videoElement.videoHeight || 480;
+        const maxX = getSourceWidth() || 640;
+        const maxY = getSourceHeight() || 480;
         
         roiPoints[draggingPoint][0] = Math.max(0, Math.min(frameX, maxX));
         roiPoints[draggingPoint][1] = Math.max(0, Math.min(frameY, maxY));
@@ -2385,12 +2340,15 @@ function updateStatus(message) {
  * Menu Button Functions
  */
 function changeInputSource() {
-    // Stop current video
+    // Stop current video/stream
     if (videoElement) {
         if (videoElement.srcObject) {
             videoElement.srcObject.getTracks().forEach(track => track.stop());
         }
         videoElement.src = '';
+    }
+    if (streamElement) {
+        streamElement.src = '';
     }
     
     // Hide main interface
@@ -2927,24 +2885,28 @@ function togglePause() {
         pauseBtn.textContent = isPaused ? '▶️ Play' : '⏸️ Pause';
     }
     
-    if (videoElement) {
+    if (activeSource && activeSource.tagName === 'VIDEO') {
         if (isPaused) {
-            videoElement.pause();
+            activeSource.pause();
         } else {
-            videoElement.play();
+            activeSource.play();
         }
     }
+    // Note: MJPEG streams (IMG) cannot be paused via DOM API, they just continue in background
 }
 
 function takeScreenshot() {
-    if (videoElement && videoElement.videoWidth && videoElement.videoHeight) {
+    const srcW = getSourceWidth();
+    const srcH = getSourceHeight();
+
+    if (activeSource && srcW && srcH) {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
-        canvas.width = videoElement.videoWidth;
-        canvas.height = videoElement.videoHeight;
+        canvas.width = srcW;
+        canvas.height = srcH;
         
-        ctx.drawImage(videoElement, 0, 0);
+        ctx.drawImage(activeSource, 0, 0);
         
         // Convert to blob and download
         canvas.toBlob(function(blob) {
