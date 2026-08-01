@@ -1678,10 +1678,6 @@ function setupRoiCanvas() {
     segmentationCanvas = document.getElementById('segmentationCanvas');
     segmentationCtx = segmentationCanvas.getContext('2d');
     
-    // Setup segmentation canvas
-    segmentationCanvas = document.getElementById('segmentationCanvas');
-    segmentationCtx = segmentationCanvas.getContext('2d');
-    
     // Set canvas size to match container
     const container = document.getElementById('videoContainer');
     canvas.width = container.offsetWidth;
