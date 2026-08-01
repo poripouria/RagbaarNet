@@ -129,6 +129,7 @@ class CameraWebStreamServer(
                     append("Cache-Control: no-store, no-cache, must-revalidate, pre-check=0, post-check=0, max-age=0\r\n")
                     append("Pragma: no-cache\r\n")
                     append("Connection: close\r\n")
+                    append("Access-Control-Allow-Origin: *\r\n")
                     append("\r\n")
                 }
                 output.write(headers.toByteArray(StandardCharsets.US_ASCII))
@@ -182,7 +183,7 @@ class CameraWebStreamServer(
     private fun respondText(socket: Socket, code: Int, status: String, body: String) {
         try {
             val payload = body.toByteArray(StandardCharsets.UTF_8)
-            val response = "HTTP/1.1 $code $status\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n"
+            val response = "HTTP/1.1 $code $status\r\nContent-Length: ${payload.size}\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n"
             socket.getOutputStream().apply {
                 write(response.toByteArray(StandardCharsets.US_ASCII))
                 write(payload)
