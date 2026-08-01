@@ -3,8 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1a1a1a"
-    android:padding="16dp">
+    android:background="#1a1a1a">
 
     <!-- Live Camera Background -->
     <androidx.camera.view.PreviewView
@@ -32,6 +31,8 @@
         android:textColor="#00ff88"
         android:textSize="22sp"
         android:textStyle="bold"
+        android:layout_marginTop="24dp"
+        android:layout_marginStart="16dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
@@ -42,6 +43,8 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:src="@android:drawable/ic_menu_preferences"
         android:contentDescription="@string/settings"
+        android:layout_marginTop="24dp"
+        android:layout_marginEnd="16dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:tint="#00ff88" />
@@ -52,6 +55,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
         android:orientation="horizontal"
         android:gravity="center"
         app:layout_constraintTop_toBottomOf="@id/titleText">
@@ -129,6 +134,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="32dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
         android:orientation="vertical"
         android:splitMotionEvents="true"
         app:layout_constraintTop_toBottomOf="@id/topControlsLayout">
@@ -237,7 +244,9 @@
         android:textColor="#888888"
         android:textSize="12sp"
         android:gravity="center"
-        android:layout_marginBottom="32dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="48dp"
         app:layout_constraintBottom_toBottomOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

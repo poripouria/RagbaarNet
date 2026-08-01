@@ -6,9 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.ImageFormat
-import android.graphics.Rect
-import android.graphics.YuvImage
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -26,21 +23,18 @@ import android.widget.ImageButton
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
+import android.view.ViewGroup.MarginLayoutParams
 import com.google.android.material.button.MaterialButton
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.net.Inet4Address
 import java.net.NetworkInterface
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener {
 
@@ -51,7 +45,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
     private lateinit var rpmValueText: TextView
     private lateinit var accelValueText: TextView
     private lateinit var statusText: TextView
-    private lateinit var viewFinder: PreviewView
     private lateinit var cameraOverlay: View
     private lateinit var streamToggleButton: MaterialButton
     
@@ -62,9 +55,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
     private var isAutoMode = true
     private var isStreaming = false
     private val handler = Handler(Looper.getMainLooper())
-    private var cameraExecutor: ExecutorService? = null
     private var webSocketManager: WebSocketManager? = null
-    private var cameraProvider: ProcessCameraProvider? = null
+    private var cameraWebStreamServer: CameraWebStreamServer? = null
 
     // Sensors
     private lateinit var sensorManager: SensorManager
@@ -83,6 +75,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -93,7 +86,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
         rpmValueText = findViewById(R.id.rpmValueText)
         accelValueText = findViewById(R.id.accelValueText)
         statusText = findViewById(R.id.statusText)
-        viewFinder = findViewById(R.id.viewFinder)
         cameraOverlay = findViewById(R.id.cameraOverlay)
         streamToggleButton = findViewById(R.id.streamToggleButton)
         
@@ -101,7 +93,26 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
         textAuto = findViewById(R.id.textAuto)
         textManual = findViewById(R.id.textManual)
 
-        findViewById<ImageButton>(R.id.settingsButton).setOnClickListener {
+        val titleText = findViewById<TextView>(R.id.titleText)
+        val settingsButton = findViewById<View>(R.id.settingsButton)
+
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { _, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            
+            titleText.updateLayoutParams<MarginLayoutParams> {
+                topMargin = systemBars.top + (8 * resources.displayMetrics.density).toInt()
+            }
+            settingsButton.updateLayoutParams<MarginLayoutParams> {
+                topMargin = systemBars.top + (8 * resources.displayMetrics.density).toInt()
+            }
+            statusText.updateLayoutParams<MarginLayoutParams> {
+                bottomMargin = systemBars.bottom + (32 * resources.displayMetrics.density).toInt()
+            }
+            
+            insets
+        }
+
+        settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
@@ -168,13 +179,35 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             streamToggleButton.setBackgroundColor(Color.parseColor("#00ff88"))
             streamToggleButton.setStrokeColorResource(android.R.color.transparent)
             
-            viewFinder.visibility = View.VISIBLE
             cameraOverlay.visibility = View.VISIBLE
             
-            cameraExecutor = Executors.newSingleThreadExecutor()
-            startCamera()
-            
-            Toast.makeText(this, "Camera stream over WebSocket active", Toast.LENGTH_SHORT).show()
+            try {
+                if (cameraWebStreamServer == null) {
+                    cameraWebStreamServer = CameraWebStreamServer(this) { message ->
+                        runOnUiThread {
+                            setStatusText(message)
+                            updateStatusDisplay()
+                        }
+                    }
+                    cameraWebStreamServer?.start()
+                }
+
+                updateStatusDisplay()
+                val streamUrl = cameraWebStreamServer?.getStreamUrl(getLocalIpAddress() ?: "127.0.0.1")
+                Toast.makeText(this, "Stream URL: $streamUrl", Toast.LENGTH_LONG).show()
+            } catch (startErr: Exception) {
+                isStreaming = false
+                streamToggleButton.text = "Stream: OFF"
+                streamToggleButton.setTextColor(Color.WHITE)
+                streamToggleButton.setBackgroundColor(Color.TRANSPARENT)
+                streamToggleButton.setStrokeColor(ContextCompat.getColorStateList(this, android.R.color.white))
+                cameraOverlay.visibility = View.GONE
+                cameraWebStreamServer?.stop()
+                cameraWebStreamServer = null
+                setStatusText("Stream failed to start: ${startErr.message ?: "unknown error"}")
+                updateStatusDisplay()
+                Toast.makeText(this, "Stream failed to start", Toast.LENGTH_SHORT).show()
+            }
         } else {
             isStreaming = false
             streamToggleButton.text = "Stream: OFF"
@@ -182,12 +215,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             streamToggleButton.setBackgroundColor(Color.TRANSPARENT)
             streamToggleButton.setStrokeColor(ContextCompat.getColorStateList(this, android.R.color.white))
             
-            viewFinder.visibility = View.GONE
             cameraOverlay.visibility = View.GONE
             
-            stopCamera()
-            cameraExecutor?.shutdown()
-            cameraExecutor = null
+            cameraWebStreamServer?.stop()
+            cameraWebStreamServer = null
+
+            updateStatusDisplay()
         }
     }
 
@@ -208,73 +241,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             ex.printStackTrace()
         }
         return null
-    }
-
-    private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
-        cameraProviderFuture.addListener({
-            cameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(viewFinder.surfaceProvider)
-            }
-
-            val imageAnalyzer = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .also {
-                    it.setAnalyzer(cameraExecutor!!) { imageProxy ->
-                        // CameraX pipeline: ImageProxy -> NV21 -> JPEG
-                        val yuvImage = YuvImage(
-                            yuvBytes(imageProxy),
-                            ImageFormat.NV21,
-                            imageProxy.width,
-                            imageProxy.height,
-                            null
-                        )
-                        val out = ByteArrayOutputStream()
-                        yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 70, out)
-                        
-                        // TRANSMIT BINARY JPEG via WebSocket
-                        webSocketManager?.sendFrame(out.toByteArray())
-                        
-                        imageProxy.close()
-                    }
-                }
-
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-            try {
-                cameraProvider?.unbindAll()
-                cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
-            } catch (exc: Exception) {
-                Log.e("MainActivity", "Use case binding failed", exc)
-            }
-
-        }, ContextCompat.getMainExecutor(this))
-    }
-
-    private fun stopCamera() {
-        cameraProvider?.unbindAll()
-    }
-
-    private fun yuvBytes(image: androidx.camera.core.ImageProxy): ByteArray {
-        val yBuffer = image.planes[0].buffer
-        val uBuffer = image.planes[1].buffer
-        val vBuffer = image.planes[2].buffer
-
-        val ySize = yBuffer.remaining()
-        val uSize = uBuffer.remaining()
-        val vSize = vBuffer.remaining()
-
-        val nv21 = ByteArray(ySize + uSize + vSize)
-
-        yBuffer.get(nv21, 0, ySize)
-        vBuffer.get(nv21, ySize, vSize)
-        uBuffer.get(nv21, ySize + vSize, uSize)
-
-        return nv21
     }
 
     private fun setupSeekBarListeners() {
@@ -412,15 +378,29 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
     }
 
     private fun updateStatusDisplay() {
-        val ipStr = getLocalIpAddress() ?: "Unknown"
+        val ipStr = getLocalIpAddress() ?: "127.0.0.1"
         val status = if (webSocketManager?.isConnected() == true) "Online" else "Connecting..."
-        statusText.text = "Status: $status | IP: $ipStr"
+        val streamUrl = if (isStreaming) {
+            cameraWebStreamServer?.getStreamUrl(ipStr)
+        } else {
+            null
+        }
+
+        statusText.text = if (streamUrl != null) {
+            "Status: $status | IP: $ipStr | Stream: $streamUrl"
+        } else {
+            "Status: $status | IP: $ipStr"
+        }
+    }
+
+    private fun setStatusText(message: String) {
+        statusText.text = "Status: $message"
     }
 
     override fun onDestroy() {
         super.onDestroy()
         webSocketManager?.disconnect()
-        cameraExecutor?.shutdown()
+        cameraWebStreamServer?.stop()
         handler.removeCallbacks(sendTelemetryRunnable)
         stopAutoSensors()
     }
