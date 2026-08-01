@@ -48,8 +48,8 @@ class CameraWebStreamServer(
     companion object {
         private const val DEFAULT_PORT = 8080
         private const val TAG = "CameraWebStream"
-        private const val STREAM_WIDTH = 640
-        private const val STREAM_HEIGHT = 480
+        private const val STREAM_WIDTH = 1280
+        private const val STREAM_HEIGHT = 720
     }
 
     fun start(previewSurface: Surface? = null) {
