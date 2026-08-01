@@ -17,6 +17,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageButton
@@ -32,6 +34,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import android.view.ViewGroup.MarginLayoutParams
 import com.google.android.material.button.MaterialButton
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -46,6 +52,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
     private lateinit var accelValueText: TextView
     private lateinit var statusText: TextView
     private lateinit var cameraOverlay: View
+    private lateinit var viewFinder: SurfaceView
     private lateinit var streamToggleButton: MaterialButton
     
     private lateinit var pillSelector: View
@@ -55,8 +62,12 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
     private var isAutoMode = true
     private var isStreaming = false
     private val handler = Handler(Looper.getMainLooper())
-    private var webSocketManager: WebSocketManager? = null
+    private val telemetryHttpClient = OkHttpClient()
     private var cameraWebStreamServer: CameraWebStreamServer? = null
+    @Volatile
+    private var telemetryOnline = false
+    @Volatile
+    private var telemetryRequestInFlight = false
 
     // Sensors
     private lateinit var sensorManager: SensorManager
@@ -87,6 +98,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
         accelValueText = findViewById(R.id.accelValueText)
         statusText = findViewById(R.id.statusText)
         cameraOverlay = findViewById(R.id.cameraOverlay)
+        viewFinder = findViewById(R.id.viewFinder)
         streamToggleButton = findViewById(R.id.streamToggleButton)
         
         pillSelector = findViewById(R.id.pillSelector)
@@ -139,31 +151,13 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
 
         updateUiMode()
         checkPermissions()
-        initWebSocket()
+        initTelemetryTransport()
         handler.post(sendTelemetryRunnable)
     }
 
-    private fun initWebSocket() {
-        val prefs = getSharedPreferences("TelemetryPrefs", MODE_PRIVATE)
-        val ip = prefs.getString("server_ip", "192.168.1.100")
-        val port = prefs.getString("server_port", "5500")
-        // Note: The platform server will need to handle /ws endpoint or similar
-        val url = "ws://$ip:$port/telemetry" 
-
-        webSocketManager = WebSocketManager(url).apply {
-            listener = object : WebSocketManager.ConnectionListener {
-                override fun onConnected() {
-                    runOnUiThread { updateStatusDisplay() }
-                }
-                override fun onDisconnected() {
-                    runOnUiThread { updateStatusDisplay() }
-                }
-                override fun onError(error: String) {
-                    runOnUiThread { updateStatusDisplay() }
-                }
-            }
-            connect()
-        }
+    private fun initTelemetryTransport() {
+        telemetryOnline = false
+        updateStatusDisplay()
     }
 
     private fun toggleStreaming(enable: Boolean) {
@@ -180,33 +174,50 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             streamToggleButton.setStrokeColorResource(android.R.color.transparent)
             
             cameraOverlay.visibility = View.VISIBLE
+            viewFinder.visibility = View.VISIBLE
             
-            try {
-                if (cameraWebStreamServer == null) {
-                    cameraWebStreamServer = CameraWebStreamServer(this) { message ->
-                        runOnUiThread {
-                            setStatusText(message)
-                            updateStatusDisplay()
+            val startServer = {
+                try {
+                    if (cameraWebStreamServer == null) {
+                        cameraWebStreamServer = CameraWebStreamServer(this) { message ->
+                            runOnUiThread {
+                                setStatusText(message)
+                                updateStatusDisplay()
+                            }
                         }
+                        cameraWebStreamServer?.start(viewFinder.holder.surface)
                     }
-                    cameraWebStreamServer?.start()
-                }
 
-                updateStatusDisplay()
-                val streamUrl = cameraWebStreamServer?.getStreamUrl(getLocalIpAddress() ?: "127.0.0.1")
-                Toast.makeText(this, "Stream URL: $streamUrl", Toast.LENGTH_LONG).show()
-            } catch (startErr: Exception) {
-                isStreaming = false
-                streamToggleButton.text = "Stream: OFF"
-                streamToggleButton.setTextColor(Color.WHITE)
-                streamToggleButton.setBackgroundColor(Color.TRANSPARENT)
-                streamToggleButton.setStrokeColor(ContextCompat.getColorStateList(this, android.R.color.white))
-                cameraOverlay.visibility = View.GONE
-                cameraWebStreamServer?.stop()
-                cameraWebStreamServer = null
-                setStatusText("Stream failed to start: ${startErr.message ?: "unknown error"}")
-                updateStatusDisplay()
-                Toast.makeText(this, "Stream failed to start", Toast.LENGTH_SHORT).show()
+                    updateStatusDisplay()
+                    val streamUrl = cameraWebStreamServer?.getStreamUrl(getLocalIpAddress() ?: "127.0.0.1")
+                    Toast.makeText(this, "Stream URL: $streamUrl", Toast.LENGTH_LONG).show()
+                } catch (startErr: Exception) {
+                    isStreaming = false
+                    streamToggleButton.text = "Stream: OFF"
+                    streamToggleButton.setTextColor(Color.WHITE)
+                    streamToggleButton.setBackgroundColor(Color.TRANSPARENT)
+                    streamToggleButton.setStrokeColor(ContextCompat.getColorStateList(this, android.R.color.white))
+                    cameraOverlay.visibility = View.GONE
+                    viewFinder.visibility = View.GONE
+                    cameraWebStreamServer?.stop()
+                    cameraWebStreamServer = null
+                    setStatusText("Stream failed to start: ${startErr.message ?: "unknown error"}")
+                    updateStatusDisplay()
+                    Toast.makeText(this, "Stream failed to start", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            if (viewFinder.holder.surface.isValid) {
+                startServer()
+            } else {
+                viewFinder.holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                        viewFinder.holder.removeCallback(this)
+                        if (isStreaming) startServer()
+                    }
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {}
+                })
             }
         } else {
             isStreaming = false
@@ -216,6 +227,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             streamToggleButton.setStrokeColor(ContextCompat.getColorStateList(this, android.R.color.white))
             
             cameraOverlay.visibility = View.GONE
+            viewFinder.visibility = View.GONE
             
             cameraWebStreamServer?.stop()
             cameraWebStreamServer = null
@@ -373,13 +385,49 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             put("type", "telemetry") // Discriminate from binary frames on receiver if needed
         }
 
-        // TRANSMIT JSON TELEMETRY via WebSocket
-        webSocketManager?.sendTelemetry(json.toString())
+        sendTelemetryHttp(json.toString())
+    }
+
+    private fun sendTelemetryHttp(payload: String) {
+        if (telemetryRequestInFlight) {
+            return
+        }
+
+        telemetryRequestInFlight = true
+
+        val endpoint = telemetryEndpoint()
+        val body = payload.toRequestBody("application/json; charset=utf-8".toMediaType())
+        val request = Request.Builder()
+            .url(endpoint)
+            .post(body)
+            .build()
+
+        telemetryHttpClient.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                telemetryRequestInFlight = false
+                telemetryOnline = false
+                runOnUiThread { updateStatusDisplay() }
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                telemetryRequestInFlight = false
+                telemetryOnline = response.isSuccessful
+                response.close()
+                runOnUiThread { updateStatusDisplay() }
+            }
+        })
+    }
+
+    private fun telemetryEndpoint(): String {
+        val prefs = getSharedPreferences("TelemetryPrefs", MODE_PRIVATE)
+        val ip = prefs.getString("server_ip", "192.168.1.100")?.trim().orEmpty()
+        val port = prefs.getString("server_port", "5500")?.trim().orEmpty()
+        return "http://$ip:$port/telemetry"
     }
 
     private fun updateStatusDisplay() {
         val ipStr = getLocalIpAddress() ?: "127.0.0.1"
-        val status = if (webSocketManager?.isConnected() == true) "Online" else "Connecting..."
+        val status = if (telemetryOnline) "Online" else "Connecting..."
         val streamUrl = if (isStreaming) {
             cameraWebStreamServer?.getStreamUrl(ipStr)
         } else {
@@ -399,7 +447,6 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
 
     override fun onDestroy() {
         super.onDestroy()
-        webSocketManager?.disconnect()
         cameraWebStreamServer?.stop()
         handler.removeCallbacks(sendTelemetryRunnable)
         stopAutoSensors()
