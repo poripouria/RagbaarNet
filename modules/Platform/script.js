@@ -1823,6 +1823,13 @@ function startVideoCapture() {
     } else if (inputSource === 'network_stream') {
         const url = document.getElementById('streamUrl').value;
         videoElement.src = url;
+        videoElement.load();
+        const playPromise = videoElement.play();
+        if (playPromise && typeof playPromise.then === 'function') {
+            playPromise.catch(err => {
+                console.warn('Network stream playback blocked or failed to start immediately:', err);
+            });
+        }
         updateStatus('Connecting to network stream...');
     } else if (inputSource === 'screen_record') {
         // For screen recording on desktop, prefer getDisplayMedia (screen capture)

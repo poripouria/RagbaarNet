@@ -15,6 +15,7 @@ import android.os.HandlerThread
 import android.util.Log
 import android.util.Size
 import androidx.core.app.ActivityCompat
+import android.view.Surface
 import java.io.BufferedReader
 import java.io.File
 import java.io.IOException
@@ -37,6 +38,7 @@ class CameraWebStreamServer(
     private val sessionLock = Any()
     private var serverSocket: ServerSocket? = null
     private var acceptThread: Thread? = null
+    private var previewSurface: Surface? = null
     @Volatile
     private var running = false
 
@@ -48,12 +50,19 @@ class CameraWebStreamServer(
         private const val VIDEO_FRAME_RATE = 30
     }
 
-    fun start() {
+    fun start(previewSurface: Surface? = null) {
         if (running) {
             return
         }
 
+        this.previewSurface = previewSurface
         running = true
+        
+        // Start camera session immediately
+        synchronized(sessionLock) {
+            activeSession = CameraStreamSession(context, cameraManager, previewSurface).also { it.start() }
+        }
+
         serverSocket = ServerSocket(port)
         acceptThread = Thread { acceptLoop() }.apply {
             name = "CameraWebStream-Accept"
@@ -136,7 +145,12 @@ class CameraWebStreamServer(
     }
 
     private fun streamVideo(socket: Socket) {
-        val session = startFreshSession()
+        val session = synchronized(sessionLock) { activeSession }
+        if (session == null) {
+            respondText(socket, 503, "Service Unavailable", "Camera session not initialized")
+            return
+        }
+        
         val output = socket.getOutputStream()
         val headers = buildString {
             append("HTTP/1.1 200 OK\r\n")
@@ -155,7 +169,6 @@ class CameraWebStreamServer(
         try {
             session.streamTo(output)
         } finally {
-            session.stop()
             try {
                 writeChunkTerminator(output)
             } catch (_: IOException) {
@@ -164,14 +177,6 @@ class CameraWebStreamServer(
                 socket.close()
             } catch (_: IOException) {
             }
-        }
-    }
-
-    private fun startFreshSession(): CameraStreamSession {
-        synchronized(sessionLock) {
-            activeSession?.stop()
-            activeSession = CameraStreamSession(context, cameraManager).also { it.start() }
-            return activeSession!!
         }
     }
 
@@ -202,6 +207,7 @@ class CameraWebStreamServer(
     private class CameraStreamSession(
         private val context: Context,
         private val cameraManager: CameraManager,
+        private val previewSurface: Surface? = null
     ) {
         private val chunkQueue = LinkedBlockingQueue<ByteArray>(CHUNK_CAPACITY)
         private val readyLatch = CountDownLatch(1)
@@ -414,10 +420,17 @@ class CameraWebStreamServer(
             val recorderSurface = mediaRecorder?.surface ?: throw IOException("Recorder surface unavailable")
             val requestBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
             requestBuilder.addTarget(recorderSurface)
+            
+            val surfaces = mutableListOf(recorderSurface)
+            previewSurface?.let {
+                requestBuilder.addTarget(it)
+                surfaces.add(it)
+            }
+            
             requestBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
 
             device.createCaptureSession(
-                listOf(recorderSurface),
+                surfaces,
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
                         captureSession = session

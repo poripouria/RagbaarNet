@@ -6,7 +6,7 @@
     android:background="#1a1a1a">
 
     <!-- Live Camera Background -->
-    <androidx.camera.view.PreviewView
+    <SurfaceView
         android:id="@+id/viewFinder"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

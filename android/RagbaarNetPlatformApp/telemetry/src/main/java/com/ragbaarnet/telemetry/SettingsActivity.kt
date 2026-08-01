@@ -8,9 +8,6 @@ import com.google.android.material.textfield.TextInputEditText
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
-import java.io.IOException
 
 class SettingsActivity : AppCompatActivity() {
 
@@ -55,22 +52,25 @@ class SettingsActivity : AppCompatActivity() {
     private fun testConnection() {
         val ip = ipInput.text.toString().trim()
         val port = portInput.text.toString().trim()
-        val url = "ws://$ip:$port/telemetry"
+        val url = "http://$ip:$port/telemetry"
 
         val request = Request.Builder().url(url).build()
-        var testWebSocket: WebSocket? = null
-        
-        testWebSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
                 runOnUiThread {
-                    Toast.makeText(this@SettingsActivity, "WebSocket Connected!", Toast.LENGTH_SHORT).show()
-                    webSocket.close(1000, "Test done")
+                    Toast.makeText(this@SettingsActivity, "Connection failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
 
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                val success = response.isSuccessful
+                response.close()
                 runOnUiThread {
-                    Toast.makeText(this@SettingsActivity, "Connection failed: ${t.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this@SettingsActivity,
+                        if (success) "Connection successful" else "Connection failed: HTTP ${response.code}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         })
