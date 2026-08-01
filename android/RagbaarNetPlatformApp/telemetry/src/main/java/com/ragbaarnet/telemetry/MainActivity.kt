@@ -17,8 +17,10 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.graphics.Matrix
+import android.graphics.SurfaceTexture
+import android.view.Surface
+import android.view.TextureView
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageButton
@@ -52,7 +54,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
     private lateinit var accelValueText: TextView
     private lateinit var statusText: TextView
     private lateinit var cameraOverlay: View
-    private lateinit var viewFinder: SurfaceView
+    private lateinit var viewFinder: TextureView
     private lateinit var streamToggleButton: MaterialButton
     
     private lateinit var pillSelector: View
@@ -100,6 +102,20 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
         cameraOverlay = findViewById(R.id.cameraOverlay)
         viewFinder = findViewById(R.id.viewFinder)
         streamToggleButton = findViewById(R.id.streamToggleButton)
+        
+        viewFinder.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                configureTransform(width, height)
+                if (isStreaming) {
+                    startStreamingWithSurface(Surface(surface))
+                }
+            }
+            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+                configureTransform(width, height)
+            }
+            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
+            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+        }
         
         pillSelector = findViewById(R.id.pillSelector)
         textAuto = findViewById(R.id.textAuto)
@@ -176,48 +192,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             cameraOverlay.visibility = View.VISIBLE
             viewFinder.visibility = View.VISIBLE
             
-            val startServer = {
-                try {
-                    if (cameraWebStreamServer == null) {
-                        cameraWebStreamServer = CameraWebStreamServer(this) { message ->
-                            runOnUiThread {
-                                setStatusText(message)
-                                updateStatusDisplay()
-                            }
-                        }
-                        cameraWebStreamServer?.start(viewFinder.holder.surface)
-                    }
-
-                    updateStatusDisplay()
-                    val streamUrl = cameraWebStreamServer?.getStreamUrl(getLocalIpAddress() ?: "127.0.0.1")
-                    Toast.makeText(this, "Stream URL: $streamUrl", Toast.LENGTH_LONG).show()
-                } catch (startErr: Exception) {
-                    isStreaming = false
-                    streamToggleButton.text = "Stream: OFF"
-                    streamToggleButton.setTextColor(Color.WHITE)
-                    streamToggleButton.setBackgroundColor(Color.TRANSPARENT)
-                    streamToggleButton.setStrokeColor(ContextCompat.getColorStateList(this, android.R.color.white))
-                    cameraOverlay.visibility = View.GONE
-                    viewFinder.visibility = View.GONE
-                    cameraWebStreamServer?.stop()
-                    cameraWebStreamServer = null
-                    setStatusText("Stream failed to start: ${startErr.message ?: "unknown error"}")
-                    updateStatusDisplay()
-                    Toast.makeText(this, "Stream failed to start", Toast.LENGTH_SHORT).show()
-                }
-            }
-
-            if (viewFinder.holder.surface.isValid) {
-                startServer()
-            } else {
-                viewFinder.holder.addCallback(object : SurfaceHolder.Callback {
-                    override fun surfaceCreated(holder: SurfaceHolder) {
-                        viewFinder.holder.removeCallback(this)
-                        if (isStreaming) startServer()
-                    }
-                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-                    override fun surfaceDestroyed(holder: SurfaceHolder) {}
-                })
+            if (viewFinder.isAvailable) {
+                startStreamingWithSurface(Surface(viewFinder.surfaceTexture))
             }
         } else {
             isStreaming = false
@@ -234,6 +210,83 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
 
             updateStatusDisplay()
         }
+    }
+
+    private fun startStreamingWithSurface(surface: Surface) {
+        try {
+            if (cameraWebStreamServer == null) {
+                cameraWebStreamServer = CameraWebStreamServer(this) { message ->
+                    runOnUiThread {
+                        setStatusText(message)
+                        updateStatusDisplay()
+                    }
+                }
+                cameraWebStreamServer?.start(surface)
+            }
+
+            updateStatusDisplay()
+            val streamUrl = cameraWebStreamServer?.getStreamUrl(getLocalIpAddress() ?: "127.0.0.1")
+            Toast.makeText(this, "Stream URL: $streamUrl", Toast.LENGTH_LONG).show()
+        } catch (startErr: Exception) {
+            isStreaming = false
+            streamToggleButton.text = "Stream: OFF"
+            streamToggleButton.setTextColor(Color.WHITE)
+            streamToggleButton.setBackgroundColor(Color.TRANSPARENT)
+            streamToggleButton.setStrokeColor(ContextCompat.getColorStateList(this, android.R.color.white))
+            cameraOverlay.visibility = View.GONE
+            viewFinder.visibility = View.GONE
+            cameraWebStreamServer?.stop()
+            cameraWebStreamServer = null
+            setStatusText("Stream failed to start: ${startErr.message ?: "unknown error"}")
+            updateStatusDisplay()
+            Toast.makeText(this, "Stream failed to start", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun configureTransform(viewWidth: Int, viewHeight: Int) {
+        val rotation = windowManager.defaultDisplay.rotation
+        val matrix = Matrix()
+        val viewRect = android.graphics.RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
+        
+        // Use a standard camera aspect ratio (e.g., 16:9 for the 1280x720 picked by server)
+        // Note: In a real app, you'd get this from the camera characteristics
+        val bufferWidth = 1280f
+        val bufferHeight = 720f
+        
+        val bufferRect = android.graphics.RectF(0f, 0f, bufferHeight, bufferWidth)
+        val centerX = viewRect.centerX()
+        val centerY = viewRect.centerY()
+
+        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+            val scale = Math.max(
+                viewHeight.toFloat() / bufferHeight,
+                viewWidth.toFloat() / bufferWidth
+            )
+            matrix.postScale(scale, scale, centerX, centerY)
+            matrix.postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
+        } else if (Surface.ROTATION_180 == rotation) {
+            matrix.postRotate(180f, centerX, centerY)
+        }
+        
+        // Simple Center Crop for Portrait
+        if (rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_180) {
+            val previewAspect = bufferHeight / bufferWidth // 720/1280
+            val viewAspect = viewWidth.toFloat() / viewHeight.toFloat()
+            
+            var scaleX = 1f
+            var scaleY = 1f
+            
+            if (viewAspect > previewAspect) {
+                scaleY = viewAspect / previewAspect
+            } else {
+                scaleX = previewAspect / viewAspect
+            }
+            matrix.postScale(scaleX, scaleY, centerX, centerY)
+        }
+
+        viewFinder.setTransform(matrix)
     }
 
     private fun getLocalIpAddress(): String? {
