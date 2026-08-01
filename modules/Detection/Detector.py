@@ -409,6 +409,12 @@ class ROIEventsDetector(BaseDetector):
         logger.info(f"Detected {len(events)} scene events")
         return events
 
+class SceneCaptioningDetector(BaseDetector):
+
+    def __init__(self):
+        super().__init__()
+
+        self.model = None
 
 class Detector:
     """
