@@ -14,8 +14,16 @@ __pycache__/
 **/build/
 **/.cxx/
 **/.externalNativeBuild/
+captures/
 *.apk
 *.aab
+*.jks
+*.keystore
+google-services.json
+*.hprof
+
+# Agent/Research artifacts
+.artifacts/
 
 # Local/offline SegFormer weights (keep local; too large for GitHub)
 modules/Segmentation/Pre-trained Models/*
