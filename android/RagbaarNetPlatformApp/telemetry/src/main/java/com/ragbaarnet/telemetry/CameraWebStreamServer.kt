@@ -30,6 +30,8 @@ import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
+enum class CameraMode { WIDE, STANDARD }
+
 class CameraWebStreamServer(
     private val context: Context,
     private val port: Int = DEFAULT_PORT,
@@ -52,12 +54,12 @@ class CameraWebStreamServer(
         private const val STREAM_HEIGHT = 720
     }
 
-    fun start(previewSurface: Surface? = null) {
+    fun start(previewSurface: Surface? = null, initialZoom: Float = 1.0f) {
         if (running) return
         running = true
         
         synchronized(sessionLock) {
-            activeSession = CameraStreamSession(context, cameraManager, previewSurface) { jpeg ->
+            activeSession = CameraStreamSession(context, cameraManager, previewSurface, initialZoom) { jpeg ->
                 broadcastFrame(jpeg)
             }.also { it.start() }
         }
@@ -94,6 +96,65 @@ class CameraWebStreamServer(
     fun getStreamUrl(host: String): String = "http://$host:$port${getStreamPath()}"
 
     private var activeSession: CameraStreamSession? = null
+
+    fun setZoomRatio(ratio: Float) {
+        synchronized(sessionLock) {
+            val targetMode = if (ratio < 1.0f) CameraMode.WIDE else CameraMode.STANDARD
+            val targetId = findCameraIdForMode(targetMode)
+            
+            val session = activeSession
+            if (session != null && session.getCameraId() != targetId) {
+                Log.d(TAG, "Switching camera to $targetId for ratio $ratio")
+                val surface = session.getPreviewSurface()
+                session.stop()
+                activeSession = CameraStreamSession(context, cameraManager, surface, ratio) { jpeg ->
+                    broadcastFrame(jpeg)
+                }.also { 
+                    it.start() 
+                    it.setZoomRatio(ratio) // Ensure ratio is applied after start
+                }
+            } else {
+                activeSession?.setZoomRatio(ratio)
+            }
+        }
+    }
+
+    fun getMinZoomRatio(): Float {
+        synchronized(sessionLock) {
+            return activeSession?.getMinZoomRatio() ?: 0.5f
+        }
+    }
+    
+    private fun findCameraIdForMode(mode: CameraMode): String {
+        val ids = cameraManager.cameraIdList
+        var bestId: String? = null
+        
+        if (mode == CameraMode.STANDARD) {
+            // Prefer ID "0" or first back camera
+            for (id in ids) {
+                val chars = cameraManager.getCameraCharacteristics(id)
+                if (chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) {
+                    if (id == "0") return id
+                    if (bestId == null) bestId = id
+                }
+            }
+        } else {
+            // Wide mode: Look for shortest focal length among back cameras
+            var minFocal = Float.MAX_VALUE
+            for (id in ids) {
+                val chars = cameraManager.getCameraCharacteristics(id)
+                if (chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) {
+                    val focalLengths = chars.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                    val minFocalForThis = focalLengths?.minOrNull() ?: Float.MAX_VALUE
+                    if (minFocalForThis < minFocal) {
+                        minFocal = minFocalForThis
+                        bestId = id
+                    }
+                }
+            }
+        }
+        return bestId ?: ids.firstOrNull() ?: "0"
+    }
 
     private fun acceptLoop() {
         while (running) {
@@ -196,6 +257,7 @@ class CameraWebStreamServer(
         private val context: Context,
         private val cameraManager: CameraManager,
         private val previewSurface: Surface? = null,
+        private var initialZoom: Float = 1.0f,
         private val onFrame: (ByteArray) -> Unit
     ) {
         private val readyLatch = CountDownLatch(1)
@@ -204,6 +266,8 @@ class CameraWebStreamServer(
         private var cameraDevice: CameraDevice? = null
         private var captureSession: CameraCaptureSession? = null
         private var imageReader: ImageReader? = null
+        private var currentZoomRatio = 1.0f
+        private var currentCameraId: String? = null
         
         @Volatile
         private var running = false
@@ -219,14 +283,68 @@ class CameraWebStreamServer(
 
         fun stop() {
             running = false
+            try { captureSession?.stopRepeating() } catch (_: Exception) {}
             try { captureSession?.close() } catch (_: Exception) {}
             try { cameraDevice?.close() } catch (_: Exception) {}
             try { imageReader?.close() } catch (_: Exception) {}
             cameraThread.quitSafely()
         }
 
+        fun getCameraId(): String? = currentCameraId
+        fun getPreviewSurface(): Surface? = previewSurface
+
+        fun setZoomRatio(ratio: Float) {
+            currentZoomRatio = ratio
+            applyZoom()
+        }
+
+        fun getMinZoomRatio(): Float {
+            val id = currentCameraId ?: return 1.0f
+            val characteristics = cameraManager.getCameraCharacteristics(id)
+            return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                characteristics.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)?.lower ?: 1.0f
+            } else {
+                1.0f
+            }
+        }
+
+        private fun applyZoom() {
+            val session = captureSession ?: return
+            val device = cameraDevice ?: return
+            val reader = imageReader ?: return
+            
+            try {
+                val request = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                    addTarget(reader.surface)
+                    previewSurface?.let { addTarget(it) }
+                    
+                    val minSupported = getMinZoomRatio()
+                    val actualRatio = if (currentZoomRatio < 1.0f) {
+                        // If we are on a wide camera, 1.0f might actually be its min.
+                        // But usually CONTROL_ZOOM_RATIO is relative to the "standard" of that sensor.
+                        // On multi-camera logical devices, it's global.
+                        Math.max(currentZoomRatio, minSupported)
+                    } else {
+                        currentZoomRatio
+                    }
+
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        set(CaptureRequest.CONTROL_ZOOM_RATIO, actualRatio)
+                    }
+                }
+                session.setRepeatingRequest(request.build(), null, cameraHandler)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to apply zoom", e)
+            }
+        }
+
         private fun openCamera() {
-            val cameraId = findBackCameraId()
+            val mode = if (initialZoom < 1.0f) CameraMode.WIDE else CameraMode.STANDARD
+            val cameraId = findCameraIdForMode(mode)
+            currentCameraId = cameraId
+            
+            Log.d(TAG, "Opening camera $cameraId for mode $mode")
+            
             if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
             cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
@@ -236,6 +354,34 @@ class CameraWebStreamServer(
                 override fun onDisconnected(device: CameraDevice) = device.close()
                 override fun onError(device: CameraDevice, error: Int) = device.close()
             }, cameraHandler)
+        }
+        
+        private fun findCameraIdForMode(mode: CameraMode): String {
+            val ids = cameraManager.cameraIdList
+            var bestId: String? = null
+            if (mode == CameraMode.STANDARD) {
+                for (id in ids) {
+                    val chars = cameraManager.getCameraCharacteristics(id)
+                    if (chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) {
+                        if (id == "0") return id
+                        if (bestId == null) bestId = id
+                    }
+                }
+            } else {
+                var minFocal = Float.MAX_VALUE
+                for (id in ids) {
+                    val chars = cameraManager.getCameraCharacteristics(id)
+                    if (chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) {
+                        val focalLengths = chars.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                        val minFocalForThis = focalLengths?.minOrNull() ?: Float.MAX_VALUE
+                        if (minFocalForThis < minFocal) {
+                            minFocal = minFocalForThis
+                            bestId = id
+                        }
+                    }
+                }
+            }
+            return bestId ?: ids.firstOrNull() ?: "0"
         }
 
         private fun startCaptureSession(device: CameraDevice) {
@@ -258,9 +404,15 @@ class CameraWebStreamServer(
             device.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
                     captureSession = session
+                    val minSupported = getMinZoomRatio()
+                    currentZoomRatio = if (initialZoom < 1.0f) minSupported else 1.0f
+
                     val request = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
                         addTarget(imageReader!!.surface)
                         previewSurface?.let { addTarget(it) }
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                            set(CaptureRequest.CONTROL_ZOOM_RATIO, currentZoomRatio)
+                        }
                     }
                     session.setRepeatingRequest(request.build(), null, cameraHandler)
                     readyLatch.countDown()
@@ -284,13 +436,6 @@ class CameraWebStreamServer(
             val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
             yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 70, out)
             return out.toByteArray()
-        }
-
-        private fun findBackCameraId(): String {
-            for (id in cameraManager.cameraIdList) {
-                if (cameraManager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK) return id
-            }
-            return cameraManager.cameraIdList.first()
         }
     }
 }

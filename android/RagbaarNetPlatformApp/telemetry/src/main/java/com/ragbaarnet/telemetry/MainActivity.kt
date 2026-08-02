@@ -19,6 +19,7 @@ import android.os.Looper
 import android.util.Log
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
+import android.view.ScaleGestureDetector
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
@@ -57,6 +58,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
     private lateinit var viewFinder: TextureView
     private lateinit var streamToggleButton: MaterialButton
     
+    private lateinit var scaleGestureDetector: ScaleGestureDetector
+
     private lateinit var pillSelector: View
     private lateinit var textAuto: TextView
     private lateinit var textManual: TextView
@@ -159,6 +162,8 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             toggleStreaming(!isStreaming)
         }
 
+        setupZoomGestures()
+        logCameraFocalLengths()
         setupSeekBarListeners()
 
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -193,7 +198,9 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             viewFinder.visibility = View.VISIBLE
             
             if (viewFinder.isAvailable) {
-                startStreamingWithSurface(Surface(viewFinder.surfaceTexture))
+                val prefs = getSharedPreferences("TelemetryPrefs", MODE_PRIVATE)
+                val initialZoom = prefs.getFloat("preferred_zoom", 0.5f)
+                startStreamingWithSurface(Surface(viewFinder.surfaceTexture), initialZoom)
             }
         } else {
             isStreaming = false
@@ -212,7 +219,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
         }
     }
 
-    private fun startStreamingWithSurface(surface: Surface) {
+    private fun startStreamingWithSurface(surface: Surface, initialZoom: Float = 1.0f) {
         try {
             if (cameraWebStreamServer == null) {
                 cameraWebStreamServer = CameraWebStreamServer(this) { message ->
@@ -221,7 +228,7 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
                         updateStatusDisplay()
                     }
                 }
-                cameraWebStreamServer?.start(surface)
+                cameraWebStreamServer?.start(surface, initialZoom)
             }
 
             updateStatusDisplay()
@@ -306,6 +313,59 @@ class MainActivity : AppCompatActivity(), SensorEventListener, LocationListener 
             ex.printStackTrace()
         }
         return null
+    }
+
+    private fun logCameraFocalLengths() {
+        val cm = getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+        try {
+            for (id in cm.cameraIdList) {
+                val chars = cm.getCameraCharacteristics(id)
+                val facing = chars.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+                val focalLengths = chars.get(android.hardware.camera2.CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                Log.d("CameraDebug", "Camera ID: $id, Facing: $facing, Focal Lengths: ${focalLengths?.joinToString()}")
+            }
+        } catch (e: Exception) {
+            Log.e("CameraDebug", "Error logging cameras", e)
+        }
+    }
+
+    private fun setupZoomGestures() {
+        scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            private var lastToggleTime = 0L
+            private val COOLDOWN = 500L
+
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastToggleTime < COOLDOWN) return false
+
+                val scaleFactor = detector.scaleFactor
+                if (scaleFactor > 1.05f) {
+                    // Pinch out -> Zoom in to 1.0x
+                    cameraWebStreamServer?.setZoomRatio(1.0f)
+                    lastToggleTime = currentTime
+                    return true
+                } else if (scaleFactor < 0.95f) {
+                    // Pinch in -> Zoom out to Wide (e.g. 0.5x)
+                    val minZoom = cameraWebStreamServer?.getMinZoomRatio() ?: 1.0f
+                    cameraWebStreamServer?.setZoomRatio(minZoom)
+                    lastToggleTime = currentTime
+                    return true
+                }
+                return false
+            }
+        })
+
+        cameraOverlay.setOnTouchListener { v, event ->
+            scaleGestureDetector.onTouchEvent(event)
+            if (event.pointerCount >= 2) {
+                true 
+            } else {
+                if (event.action == android.view.MotionEvent.ACTION_UP) {
+                    v.performClick()
+                }
+                false
+            }
+        }
     }
 
     private fun setupSeekBarListeners() {
