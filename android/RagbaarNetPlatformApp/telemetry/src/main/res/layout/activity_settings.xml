@@ -65,6 +65,40 @@
         app:backgroundTint="#00ff88"
         app:cornerRadius="8dp" />
 
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="Default Camera Zoom"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <RadioGroup
+        android:id="@+id/zoomRadioGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <RadioButton
+            android:id="@+id/radioWide"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Wide (0.5x)"
+            android:textColor="#FFFFFF"
+            android:buttonTint="#00ff88" />
+
+        <RadioButton
+            android:id="@+id/radioStandard"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="24dp"
+            android:text="Standard (1.0x)"
+            android:textColor="#FFFFFF"
+            android:buttonTint="#00ff88" />
+    </RadioGroup>
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/saveButton"
         android:layout_width="match_parent"
