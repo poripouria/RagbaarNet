@@ -6,7 +6,6 @@ This module contains functions to generate melodies using a trained PyTorch LSTM
 """
 
 import json
-from unicodedata import digit
 import numpy as np
 import torch
 import music21 as m21
