@@ -62,8 +62,6 @@ class MusicFrame:
     events: List[MusicEvent]
     frame_id: int = 0
     timestamp: float = 0.0
-    tempo: int = 120
-    key_signature: str = "C_major"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 class BaseMusician(ABC):
@@ -212,8 +210,6 @@ class RuleBasedMusician(BaseMusician):
         return MusicFrame(
             events=music_events,
             frame_id=frame_id,
-            tempo=self.tempo,
-            key_signature=self.key_signature,
             metadata={
                 "scene_events": scene_events,
             }
@@ -413,8 +409,6 @@ class LSTMMusician(BaseMusician):
         return MusicFrame(
             events=music_events,
             frame_id=frame_id,
-            tempo=self.tempo,
-            key_signature=self.key_signature,
             metadata={
                 "scene_events": scene_events,
             }
@@ -597,8 +591,6 @@ class LSTMOrchestralMusician(BaseMusician):
         return MusicFrame(
             events=music_events,
             frame_id=frame_id,
-            tempo=self.tempo,
-            key_signature=self.key_signature,
             metadata={
                 "scene_events": scene_events,
             }
@@ -659,8 +651,6 @@ class TestDrummerMusician(BaseMusician):
         return MusicFrame(
             events=music_events,
             frame_id=frame_id,
-            tempo=self.tempo,
-            key_signature=self.key_signature,
             metadata={
                 "scene_events": results,
             }

@@ -536,8 +536,8 @@ class Processor:
                                     'frame_counter': self.frame_counter,
                                     'music_frame': music_frame,
                                     'events_count': len(music_frame.events),
-                                    'tempo': music_frame.tempo,
-                                    'key_signature': music_frame.key_signature
+                                    'tempo': self.musician.tempo,
+                                    'key_signature': self.musician.key_signature,
                                 }
 
                                 # Add to music queue (remove old ones if full)
