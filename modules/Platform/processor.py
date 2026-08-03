@@ -941,6 +941,7 @@ class Processor:
         else:
             self.main_ui_connected = connected
 
+
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'video_processing_secret'
