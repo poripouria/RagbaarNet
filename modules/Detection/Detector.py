@@ -13,7 +13,6 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple, Dict, Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from Segmentation.Segmentor import SegmentationResult
 from utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="Detection.Detector")
@@ -209,7 +208,7 @@ class ROIEventsDetector(BaseDetector):
         self.max_missing_frames = 6     # Number of frames to keep an object in memory after it disappears
 
     def __call__(self,
-            input: SegmentationResult,
+            input: Any,
             frame_id: int = 0,
             roi: Dict[str, Any] = None
         ):
@@ -449,6 +448,6 @@ class Detector:
         else:
             logger.info(f"Detection strategy remains unchanged: {new_strategy}")
 
-    def __call__(self, input: SegmentationResult, frame_id: int = 0, roi: Dict[str, Any] = None):
+    def __call__(self, input: Any, frame_id: int = 0, roi: Dict[str, Any] = None):
 
         return self.detector(input=input, frame_id=frame_id, roi=roi)
