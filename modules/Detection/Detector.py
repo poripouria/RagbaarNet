@@ -407,12 +407,108 @@ class ROIEventsDetector(BaseDetector):
         logger.info(f"Detected {len(events)} scene events")
         return events
 
+class KeyEventsDetector(BaseDetector):
+    """
+    Scene Event Detector for discrete, non-spatial observations - keyboard presses,
+    mouse activity, or any other 'something happened' stream with no ROI/mask.
+
+    Mirrors what ROIEventsDetector does for video (turn raw per-tick observations
+    into onset/release-style scene events with continuity state), but for inputs
+    that have no bounding boxes or segmentation map. This is the funnel the Typing
+    channel (VSCode extension / plain keyboard app) routes through, so the same
+    Detector concept - not a separate ad-hoc rule set - decides event semantics.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        # state: keeps track of which keys/controls are currently "active"
+        self.state = {
+            "held": {}   # key -> {"since": frame_id, "class_name": str}
+        }
+
+    def __call__(self, input: Any, frame_id: int = 0):
+        """
+        Args:
+            input: a single raw observation dict, e.g.
+                {"kind": "onset", "key": "a", "class_name": "typing_letter", "intensity": 1.0}
+                {"kind": "release", "key": "a"}
+                {"kind": "continuous", "class_name": "scroll", "intensity": 0.4, "key": None}
+        """
+        self.frame_counter = frame_id
+        return self.detect_scene_events(input)
+
+    def detect_scene_events(self, observation: dict = None):
+        events = []
+        if not observation:
+            return events
+
+        kind = observation.get("kind")
+        key = observation.get("key")
+        class_name = observation.get("class_name", "unknown")
+        intensity = observation.get("intensity", 1.0)
+
+        if kind == "onset":
+            if key is not None:
+                self.state["held"][key] = {"since": self.frame_counter, "class_name": class_name}
+            events.append({
+                "type": "KEY_ONSET",
+                "object_id": key,
+                "class": class_name,
+                "edges": [],
+                "area": None,
+                "area/ROI": None,
+                "intensity": intensity,
+            })
+
+        elif kind == "release":
+            if key is not None:
+                self.state["held"].pop(key, None)
+            events.append({
+                "type": "KEY_RELEASE",
+                "object_id": key,
+                "class": class_name,
+                "edges": [],
+                "area": None,
+                "area/ROI": None,
+                "intensity": intensity,
+            })
+
+        elif kind == "continuous":
+            events.append({
+                "type": "CONTINUOUS",
+                "object_id": key,
+                "class": class_name,
+                "edges": [],
+                "area": None,
+                "area/ROI": None,
+                "intensity": intensity,
+            })
+
+        return events
+
+
 class SceneCaptioningDetector(BaseDetector):
+    """Placeholder strategy for a future captioning-driven channel.
+
+    NOTE: not implemented yet - detect_scene_events currently returns an empty
+    list every call so selecting this strategy doesn't crash, it just produces
+    no music until the real captioning logic is written.
+    """
 
     def __init__(self):
         super().__init__()
 
         self.model = None
+
+    def __call__(self, input: Any, frame_id: int = 0):
+        self.frame_counter = frame_id
+        return self.detect_scene_events(input)
+
+    def detect_scene_events(self, *args, **kwargs):
+        logger.warning("⚠️ SceneCaptioningDetector.detect_scene_events is not implemented yet.")
+        return []
+
 
 class Detector:
     """
@@ -431,6 +527,8 @@ class Detector:
 
         if strategy == "roi-events":
             return ROIEventsDetector()
+        elif strategy == "key-events":
+            return KeyEventsDetector()
         elif strategy == "scene-captioning":
             return SceneCaptioningDetector()
         else:

@@ -30,8 +30,8 @@ CORS(app)  # Enable CORS for all routes
 socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
 
 # Paths for serving the existing web UI (so mobile devices can load it from the laptop)
-PLATFORM_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(PLATFORM_DIR, '..', '..'))
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+PLATFORM_DIR = os.path.join(PROJECT_ROOT, 'modules', 'Platform')
 ASSETS_DIR = os.path.join(PROJECT_ROOT, 'assets')
 
 # Additional CORS headers for all routes
@@ -155,6 +155,46 @@ def process_frame():
     except Exception as e:
         logger.exception("❌ Error processing frame: %s", e)
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/input_event', methods=['POST'])
+def input_event():
+    """Generic ingress for event-based channels (currently: TypingPipeline).
+
+    Body: {"source": "typing", "payload": {...}, "timestamp": 172...}
+    Silently ignored (with a server-side warning) if the active channel isn't
+    an event-based one - Processor picks exactly one channel at startup.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        source_name = data.get('source')
+        payload = data.get('payload')
+
+        if not source_name or payload is None:
+            return jsonify({'error': "'source' and 'payload' are required"}), 400
+
+        processor.add_event(source_name, payload, timestamp=data.get('timestamp'))
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.exception("❌ Error handling input event: %s", e)
+        return jsonify({'error': str(e)}), 500
+
+
+@socketio.on('input_event')
+def handle_input_event(data):
+    """Socket.IO twin of /api/input_event, for low-latency streaming sources
+    (e.g. the VSCode extension)."""
+    try:
+        data = data or {}
+        source_name = data.get('source')
+        payload = data.get('payload')
+        if not source_name or payload is None:
+            emit('input_event_ack', {'success': False, 'error': "'source' and 'payload' are required"})
+            return
+        processor.add_event(source_name, payload, timestamp=data.get('timestamp'))
+    except Exception as e:
+        emit('input_event_ack', {'success': False, 'error': str(e)})
+        logger.error("❌ Error handling input_event (socket): %s", e)
+
 
 @app.route('/api/get_display', methods=['GET'])
 def get_display():
@@ -379,7 +419,7 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     """Run the processor server"""
 
     logger.info("🚀 Starting Video Processor Server on %s:%s", host, port)
-    logger.info("🎥 Active frame pipeline: %s", processor.get_current_state().get('active_pipeline'))
+    logger.info("🎥 Active channel: %s", processor.get_current_state().get('active_channel'))
     logger.info("🌐 Web interface available at:")
     logger.info("   - UI:     http://%s:%s/ui/", host, port)
     logger.info("📡 API endpoints:")
@@ -409,14 +449,14 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=5000, help='Port to bind to')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--interval', type=int, default=2,
-                         help='Processing interval in frames (only used by pipelines that expose it, e.g. SegmentationPipeline)')
+                         help='Processing interval in frames (only used by the segmentation channel)')
 
     args = parser.parse_args()
 
-    # Update processing interval if specified and the active pipeline supports it.
-    if args.interval != 2:
-        processor.processing_interval = args.interval
-        logger.info("🔄 Updated processing interval to %s frames", args.interval)
+    # Update processing interval if specified and the active channel supports it.
+    if args.interval != 2 and hasattr(processor.channel, 'processing_interval'):
+        processor.channel.processing_interval = args.interval
+        logger.info("🔄 Updated '%s' channel interval to %s frames", processor.channel.name, args.interval)
 
     # Set debug mode based on argument
     if args.debug:
