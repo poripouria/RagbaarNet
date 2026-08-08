@@ -71,6 +71,9 @@ class BaseMusician(ABC):
     ensuring consistency and extensibility across different generation strategies.
     """
 
+    NOTE_ON_TYPES = frozenset({"ROI_TOUCH", "NOTE_ON"})
+    NOTE_OFF_TYPES = frozenset({"ROI_RELEASE", "NOTE_OFF"})
+
     def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
         """
         Initialize the base musician.
@@ -89,6 +92,20 @@ class BaseMusician(ABC):
 
     def __call__(self, results: List[Dict[str, Any]], frame_id: int = 0, state: Dict[str, Any] = None):
         return self.generate_music(results, frame_id, state)
+
+    @staticmethod
+    def _is_stale(state: Dict[str, Any], object_id: Any, max_missing_frames: int) -> bool:
+        """Whether a held note's underlying object should be auto-released.
+
+        Only meaningful for Detector states that track per-object 'missing_frames'
+        (e.g. ROIEventsDetector's state = {"objects": {...}, ...}). Detector
+        strategies without that concept - e.g. KeyEventsDetector, whose state is
+        {"held": {...}} and relies on an explicit NOTE_OFF instead of frames going
+        missing - simply never go stale here.
+        """
+        if not isinstance(state, dict) or "objects" not in state:
+            return False
+        return state["objects"].get(object_id, {}).get("missing_frames", 0) > max_missing_frames
 
     @abstractmethod
     def generate_music(self,
@@ -145,6 +162,8 @@ class RuleBasedMusician(BaseMusician):
             "traffic sign": (67, 70, 'strings', 4),
             "stop sign": (69, 80, 'strings', 4),
             # "road": (36, 50, 'drums', 9),
+
+            "typing": (60, 90, 'piano', 0),
         }
 
         return mapping.get(base_class, None)
@@ -172,7 +191,7 @@ class RuleBasedMusician(BaseMusician):
             note, velocity, instrument, channel = mapped
 
             event = None
-            if e["type"] == "ROI_TOUCH":
+            if e["type"] in self.NOTE_ON_TYPES:
                 event = "note_on"
                 self.active_notes[channel][e["object_id"]] = {
                     "voice_id": voice_id,
@@ -181,7 +200,7 @@ class RuleBasedMusician(BaseMusician):
                     "instrument": instrument,
                 }
                 voice_id += 1
-            elif e["type"] == "ROI_RELEASE":
+            elif e["type"] in self.NOTE_OFF_TYPES:
                 event = "note_off"
                 self.active_notes[channel].pop(e["object_id"], None)
             else:
@@ -192,17 +211,17 @@ class RuleBasedMusician(BaseMusician):
                     event_type=event,
                     note=note,
                     channel=channel,
-                    velocity=velocity if e["type"] == "ROI_TOUCH" else 0,
+                    velocity=velocity if e["type"] in self.NOTE_ON_TYPES else 0,
                     instrument=instrument,
                     timestamp=self.frame_counter,
                     metadata=e
                 )
             )
-            logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity if e['type'] == 'ROI_TOUCH' else 0}, 'instrument': '{instrument}'")
+            logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity if e['type'] in self.NOTE_ON_TYPES else 0}, 'instrument': '{instrument}'")
 
         for channel in self.active_notes:
             for object_id in list(self.active_notes[channel].keys()):
-                if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+                if self._is_stale(state, object_id, self.max_missing_frames):
                     event = "note_off"
                     self.active_notes[channel].pop(object_id, None)
                     logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
@@ -296,7 +315,8 @@ class LSTMMusician(BaseMusician):
         self.important_labels = [
             "car", "truck", "bus", "train", "plane",
             "bicycle", "motorcycle", "person",
-            "traffic light", "traffic sign", "stop sign"
+            "traffic light", "traffic sign", "stop sign",
+            "typing",   # covers typing_letter, typing_digit, typing_delete, ... (see TypingPipeline)
         ]
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
@@ -324,18 +344,24 @@ class LSTMMusician(BaseMusician):
             note = None
             velocity = 0
 
-            if e["type"] == "ROI_TOUCH":
+            if e["type"] in self.NOTE_ON_TYPES:
                 event = "note_on"
 
-                # Compute velocity based on the touching area size (larger area -> louder note)
+                # Compute velocity based on the touching area size (larger area -> louder note).
+                # Non-spatial events (e.g. a keyboard NOTE_ON) have no area - fall back to the
+                # event's 'intensity' (0-1, set by whichever channel produced it) instead of
+                # silently leaving velocity at 0.
                 area = e.get("area/ROI", None)
-                if area is not None: 
+                if area is not None:
                     # Scale area to velocity range (MinMax Scaler) Area:0.005-0.2, Velocity:16-128
                     scaled_area = (min(area, 0.2) - 0.005) / (0.2 - 0.005)
                     velocity = int(scaled_area * (127 - 17) + 17)
-                if area < 0.005:
-                    logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
-                    continue
+                    if area < 0.005:
+                        logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
+                        continue
+                else:
+                    intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
+                    velocity = int(intensity * (127 - 17) + 17)
 
                 # Generate new notes using the LSTM model
                 self._rt_generator = self.generator.generate_melody_RT(
@@ -356,7 +382,7 @@ class LSTMMusician(BaseMusician):
 
                 self._note_buffer.append(new_note)
 
-            elif e["type"] == "ROI_RELEASE":
+            elif e["type"] in self.NOTE_OFF_TYPES:
                 event = "note_off"
                 
                 # Find the related note for this object_id
@@ -365,7 +391,7 @@ class LSTMMusician(BaseMusician):
                     related_note = self.active_notes[0][e["object_id"]]["note"]
                     self.active_notes[0].pop(e["object_id"], None)
                 else:
-                    logger.warning("No previous note found to turn off on ROI_RELEASE event.")
+                    logger.warning("No previous note found to turn off on release event.")
                     continue
                 note = related_note
 
@@ -391,7 +417,7 @@ class LSTMMusician(BaseMusician):
             self.last_seed_notes = self._note_buffer[-16:]
 
         for object_id, note_info in list(self.active_notes[0].items()):
-            if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+            if self._is_stale(state, object_id, self.max_missing_frames):
                 music_events.append(
                     MusicEvent(
                         event_type="note_off",
@@ -480,6 +506,8 @@ class LSTMOrchestralMusician(BaseMusician):
             "traffic light": ('strings', 3),
             "traffic sign": ('strings', 3),
             "stop sign": ('strings', 3),
+
+            "typing": ('piano', 0),
         }
 
         return mapping.get(base_class, None)
@@ -509,16 +537,19 @@ class LSTMOrchestralMusician(BaseMusician):
             note = None
             velocity = 0
 
-            if e["type"] == "ROI_TOUCH":
+            if e["type"] in self.NOTE_ON_TYPES:
                 event = "note_on"
 
                 area = e.get("area/ROI", None)
-                if area is not None: 
+                if area is not None:
                     scaled_area = (min(area, 0.2) - 0.005) / (0.2 - 0.005)
                     velocity = int(scaled_area * (127 - 17) + 17)
-                if area < 0.005:
-                    logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
-                    continue
+                    if area < 0.005:
+                        logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
+                        continue
+                else:
+                    intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
+                    velocity = int(intensity * (127 - 17) + 17)
 
                 self._rt_generator = self.generator.generate_melody_RT(
                     seed=" ".join(self.last_seed_notes[instrument]),
@@ -538,7 +569,7 @@ class LSTMOrchestralMusician(BaseMusician):
 
                 self._note_buffer[instrument].append(new_note)
 
-            elif e["type"] == "ROI_RELEASE":
+            elif e["type"] in self.NOTE_OFF_TYPES:
                 event = "note_off"
 
                 related_note = None
@@ -546,7 +577,7 @@ class LSTMOrchestralMusician(BaseMusician):
                     related_note = self.active_notes[channel][e["object_id"]]["note"]
                     self.active_notes[channel].pop(e["object_id"], None)
                 else:
-                    logger.warning("No previous note found to turn off on ROI_RELEASE event.")
+                    logger.warning("No previous note found to turn off on release event.")
                     continue
                 note = related_note
 
@@ -573,7 +604,7 @@ class LSTMOrchestralMusician(BaseMusician):
 
         for channel in self.active_notes:
             for object_id, note_info in list(self.active_notes[channel].items()):
-                if state["objects"].get(object_id, {}).get("missing_frames", 0) > self.max_missing_frames:
+                if self._is_stale(state, object_id, self.max_missing_frames):
                     music_events.append(
                         MusicEvent(
                             event_type="note_off",

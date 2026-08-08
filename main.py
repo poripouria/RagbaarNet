@@ -94,6 +94,20 @@ def ui_static(filename: str):
 
     return send_from_directory(PLATFORM_DIR, filename)
 
+@app.route('/ui2')
+def ui2_redirect():
+    """Redirect /ui2 to /ui2/ so static assets resolve correctly."""
+    return redirect('/ui2/', code=302)
+
+@app.route('/ui2/')
+def ui2_index():
+    """Serve the code-editor mockup (UI2.html) that drives the 'typing' channel.
+
+    Self-contained (inline CSS/JS, no external script.js dependency) since it's
+    a small standalone demo, not part of the main video UI.
+    """
+    return send_from_directory(PLATFORM_DIR, 'UI2.html')
+
 @app.route('/assets/<path:filename>')
 def serve_assets(filename: str):
     """Serve shared project assets (icons, etc.) referenced by UI.html."""
@@ -181,8 +195,7 @@ def input_event():
 
 @socketio.on('input_event')
 def handle_input_event(data):
-    """Socket.IO twin of /api/input_event, for low-latency streaming sources
-    (e.g. the VSCode extension)."""
+    """Socket.IO twin of /api/input_event, for low-latency streaming sources (e.g. the VSCode extension)."""
     try:
         data = data or {}
         source_name = data.get('source')
@@ -448,8 +461,7 @@ if __name__ == '__main__':
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (use 0.0.0.0 for LAN/mobile access)')
     parser.add_argument('--port', type=int, default=5000, help='Port to bind to')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    parser.add_argument('--interval', type=int, default=2,
-                         help='Processing interval in frames (only used by the segmentation channel)')
+    parser.add_argument('--interval', type=int, default=2, help='Processing interval in frames (only used by the segmentation channel)')
 
     args = parser.parse_args()
 

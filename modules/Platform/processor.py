@@ -10,6 +10,8 @@ by different channels, each with its own detection strategy.
 
 import os
 import sys
+import cv2
+import numpy as np
 import time
 import threading
 import traceback
@@ -20,9 +22,6 @@ import colorsys
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 from queue import Queue, Empty
-
-import cv2
-import numpy as np
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from Detection.Detector import Detector
@@ -43,11 +42,6 @@ class BaseChannel(ABC):
 
     A Channel's to_observation() takes one raw queued item and returns:
         (detector_input, display_payload)
-    - detector_input: shaped exactly how `Detector(self.detector_strategy)`
-      expects its `input` argument. Return None to skip detection this tick
-      (e.g. a skipped frame for performance, or a below-threshold event).
-    - display_payload: dict for the UI (e.g. a segmentation overlay), or
-      None if this channel has nothing visual to show.
     """
 
     name: str = "base"
@@ -63,19 +57,21 @@ class BaseChannel(ABC):
 
 
 class SegmentationPipeline(BaseChannel):
-    """Video frames -> Segmentor -> colormap overlay -> (result, roi) for Detector('roi-events')."""
+    """
+    Video frames -> Segmentor -> colormap overlay -> (result, roi) for Detector('roi-events').
+    """
 
     name = "segmentation"
     expected_kind = "frame"
     detector_strategy = "roi-events"
 
     def __init__(self):
+        """
+        Initialize the segmentation channel, including loading the segmentation model.
+        """
         from modules.Models.Segmentation.Segmentor import Segmentor
 
         # How many queued frames to skip between actual segmentation runs.
-        # NOTE: this check lives HERE (per-channel), not around the queue.get()
-        # in Processor - the queue must always be drained every loop iteration,
-        # or skipped ticks never advance and the loop livelocks.
         self.processing_interval = int(os.environ.get('RAGBAARNET_SEGMENTATION_INTERVAL', '2'))
         self._tick = 0
 
@@ -124,28 +120,65 @@ class SegmentationPipeline(BaseChannel):
     # --- colormap helpers --------------------------------------------------
 
     def _create_consistent_color_map(self, class_labels=None):
+        """
+        Create a deterministic color map for segmentation labels.
+        """
+
         labels = []
         for label in (class_labels or []):
             label = str(label).strip().lower().replace("_", " ").replace("-", " ")
             labels.append(label)
 
         palette = {
-            "road": [128, 64, 128], "sidewalk": [244, 35, 232], "building": [70, 70, 70],
-            "wall": [102, 102, 156], "fence": [190, 153, 153], "pole": [153, 153, 153],
-            "traffic light": [250, 170, 30], "traffic sign": [220, 220, 0],
-            "vegetation": [107, 142, 35], "terrain": [152, 251, 152], "sky": [70, 130, 180],
-            "person": [220, 20, 60], "rider": [255, 0, 0], "car": [0, 0, 142],
-            "truck": [0, 0, 70], "bus": [0, 60, 100], "train": [0, 80, 100],
-            "motorcycle": [0, 0, 230], "bicycle": [119, 11, 32], "parking": [160, 160, 160],
-            "rail track": [230, 150, 140], "guard rail": [180, 165, 180],
-            "bridge": [150, 100, 100], "tunnel": [150, 120, 90], "caravan": [0, 0, 90],
-            "trailer": [0, 0, 110], "stop sign": [255, 0, 0], "fire hydrant": [178, 34, 34],
-            "bench": [160, 82, 45], "parking meter": [112, 128, 144], "bird": [135, 206, 235],
-            "dog": [139, 69, 19], "cat": [205, 133, 63], "horse": [160, 82, 45],
-            "sheep": [245, 245, 220], "cow": [110, 70, 30], "elephant": [105, 105, 105],
-            "bear": [92, 64, 51], "zebra": [240, 240, 240], "giraffe": [218, 165, 32],
-            "cone": [255, 140, 0], "traffic cone": [255, 140, 0], "barrier": [255, 215, 0],
-            "bollard": [255, 255, 255],
+            # Cityscapes Semantic Classes
+            "road":            [128,  64, 128],   # Viola Purple
+            "sidewalk":        [244,  35, 232],   # Bright Magenta
+            "building":        [ 70,  70,  70],   # Dark Gray
+            "wall":            [102, 102, 156],   # Slate Blue
+            "fence":           [190, 153, 153],   # Dusty Pink
+            "pole":            [153, 153, 153],   # Light Gray
+            "traffic light":   [250, 170,  30],   # Amber
+            "traffic sign":    [220, 220,   0],   # Lemon Yellow
+            "vegetation":      [107, 142,  35],   # Olive Green
+            "terrain":         [152, 251, 152],   # Pale Green
+            "sky":             [ 70, 130, 180],   # Steel Blue
+            "person":          [220,  20,  60],   # Crimson
+            "rider":           [255,   0,   0],   # Pure Red
+            "car":             [  0,   0, 142],   # Navy Blue
+            "truck":           [  0,   0,  70],   # Midnight Blue
+            "bus":             [  0,  60, 100],   # Deep Teal Blue
+            "train":           [  0,  80, 100],   # Dark Cyan
+            "motorcycle":      [  0,   0, 230],   # Royal Blue
+            "bicycle":         [119,  11,  32],   # Burgundy
+            # Extended Cityscapes Labels
+            "parking":         [160, 160, 160],   # Cool Gray
+            "rail track":      [230, 150, 140],   # Salmon Pink
+            "guard rail":      [180, 165, 180],   # Silver Lilac
+            "bridge":          [150, 100, 100],   # Warm Brown
+            "tunnel":          [150, 120,  90],   # Earth Brown
+            "caravan":         [  0,   0,  90],   # Dark Navy
+            "trailer":         [  0,   0, 110],   # Indigo Blue
+            # COCO Road Objects
+            "stop sign":       [255,   0,   0],   # Stop Sign Red
+            "fire hydrant":    [178,  34,  34],   # Firebrick
+            "bench":           [160,  82,  45],   # Saddle Brown
+            "parking meter":   [112, 128, 144],   # Slate Gray
+            # Animals (Road Relevant)
+            "bird":            [135, 206, 235],   # Sky Blue
+            "dog":             [139,  69,  19],   # Saddle Brown
+            "cat":             [205, 133,  63],   # Peru
+            "horse":           [160,  82,  45],   # Sienna
+            "sheep":           [245, 245, 220],   # Beige
+            "cow":             [110,  70,  30],   # Dark Brown
+            "elephant":        [105, 105, 105],   # Dim Gray
+            "bear":            [ 92,  64,  51],   # Coffee Brown
+            "zebra":           [240, 240, 240],   # Light Gray
+            "giraffe":         [218, 165,  32],   # Goldenrod
+            # Temporary Road Objects
+            "cone":            [255, 140,   0],   # Dark Orange
+            "traffic cone":    [255, 140,   0],   # Dark Orange
+            "barrier":         [255, 215,   0],   # Gold
+            "bollard":         [255, 255, 255],   # White
         }
 
         def hashed_color(label: str):
@@ -160,9 +193,20 @@ class SegmentationPipeline(BaseChannel):
         for class_id, label in enumerate(labels):
             color_map[class_id] = palette.get(label) or hashed_color(label)
         color_map[255] = [0, 0, 0]
+
+        if self.debug_mode and labels:
+            logger.debug(
+                "🎨 Generated deterministic color map for %d classes.",
+                len(labels)
+            )
+
         return color_map
 
     def _get_color_mapping_array(self, class_labels=None):
+        """
+        Return a cached lookup table for the current label set.
+        """
+
         key = tuple(str(label) for label in (class_labels or []))
         if key in self._color_mapping_cache:
             return self._color_mapping_cache[key]
@@ -177,9 +221,14 @@ class SegmentationPipeline(BaseChannel):
         return mapping
 
     def _derive_detected_classes(self, segmentation_map, class_labels=None):
+        """
+        Build a stable list of class names from a segmentation map and model labels.
+        """
+
         labels = list(class_labels or [])
         if not labels or segmentation_map is None:
             return []
+        
         try:
             unique_ids = np.unique(np.asarray(segmentation_map))
         except Exception:
@@ -189,9 +238,14 @@ class SegmentationPipeline(BaseChannel):
             class_id_int = int(class_id)
             if 0 <= class_id_int < len(labels) and labels[class_id_int]:
                 detected.append(labels[class_id_int])
+
         return sorted(set(detected))
 
     def _validate_segmentation_map(self, seg_map):
+        """
+        Normalize and validate segmentation map into a 2D uint8 index array.
+        """
+
         arr = np.asarray(seg_map)
         if arr.ndim == 3:
             arr = arr.squeeze(2) if arr.shape[2] == 1 else arr[..., 0]
@@ -201,14 +255,26 @@ class SegmentationPipeline(BaseChannel):
         return np.clip(arr, 0, 255).astype(np.uint8)
 
     def _create_segmentation_overlay(self, frame, result):
+        """
+        Create an optimized visualization overlay for the segmentation result.
+        """
+
         try:
             segmentation_map = getattr(result, 'segmentation_map', None)
             if segmentation_map is None:
+                if self.debug_mode:
+                    logger.debug("⚠️ No segmentation_map present in result; returning original frame")
                 return frame
+            
             try:
                 segmentation_map = self._validate_segmentation_map(segmentation_map)
             except Exception:
                 segmentation_map = np.clip(np.asarray(segmentation_map, dtype=np.int32), 0, 255).astype(np.uint8)
+
+            # Occasional debug info (not every frame)
+            if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+                unique_classes = np.unique(segmentation_map)
+                logger.debug("🔍 Classes: %s, Shape: %s", unique_classes, segmentation_map.shape)
 
             class_labels = list(getattr(result, 'class_labels', None) or [])
             if not class_labels and self.segmentor is not None:
@@ -226,6 +292,7 @@ class SegmentationPipeline(BaseChannel):
             blended = cv2.addWeighted(frame, 0.5, overlay, 0.5, 0)
             blended = cv2.cvtColor(blended, cv2.COLOR_RGB2BGR)
             return blended
+        
         except Exception as e:
             logger.exception("❌ Error creating segmentation overlay: %s", e)
             return frame
@@ -318,23 +385,9 @@ class SegmentationPipeline(BaseChannel):
             logger.exception("❌ Error in segmentation channel: %s", e)
             return None, None
 
-
 class TypingPipeline(BaseChannel):
-    """Keystrokes/scroll/mouse -> normalized observation -> Detector('key-events').
-
-    Feeds from add_event(), e.g. from the future VSCode extension or a plain
-    keyboard-listener script, via main.py's /api/input_event route.
-
-    Expected raw_payload shape (one call per event):
-        {"type": "keydown", "key": "a"}
-        {"type": "keyup", "key": "a"}
-        {"type": "scroll", "delta_y": 120}
-        {"type": "mouse_move", "dx": 3, "dy": -1, "speed": 240.0}
-
-    This channel only *normalizes* the payload - it never decides onset vs.
-    release vs. continuous semantics beyond the obvious 1:1 mapping; anything
-    stateful (e.g. "is this the 3rd rapid keypress in a row") belongs in
-    KeyEventsDetector (modules/Detection/Detector.py), not here.
+    """
+    Keystrokes -> normalized observation -> Detector('key-events') -> NOTE_ON/NOTE_OFF.
     """
 
     name = "typing"
@@ -374,28 +427,6 @@ class TypingPipeline(BaseChannel):
                 'key': key,
                 'class_name': self._KEY_CLASS_MAP.get(key, 'typing_other'),
                 'intensity': 1.0,
-            }, None
-
-        if kind == 'scroll':
-            delta = float(payload.get('delta_y', 0))
-            if delta == 0:
-                return None, None
-            return {
-                'kind': 'continuous',
-                'key': None,
-                'class_name': 'scroll',
-                'intensity': min(1.0, abs(delta) / 500.0),
-            }, None
-
-        if kind == 'mouse_move':
-            speed = float(payload.get('speed', 0.0))
-            if speed <= 0:
-                return None, None
-            return {
-                'kind': 'continuous',
-                'key': None,
-                'class_name': 'mouse_move',
-                'intensity': min(1.0, speed / 1000.0),
             }, None
 
         if self.debug_mode:
@@ -444,6 +475,10 @@ class Processor:
     """
 
     def __init__(self, socketio_instance=None):
+        """
+        Initialize the Processor, including selecting the active channel and starting the processing loop.
+        """
+
         self.socketio = socketio_instance
         self.frame_counter = 0
 
@@ -473,17 +508,19 @@ class Processor:
             self.musician = None
             self.music_enabled = False
 
-        # Pick exactly one channel for this run and the single Detector strategy
-        # that goes with it. All detection state (touch/release, held keys, ...)
-        # lives inside self.detector.detector.state.
+        # Pick exactly one channel for this run and the single Detector strategy that goes with it.
         self.channel = self._select_channel()
         self.detector = Detector(self.channel.detector_strategy)
 
+        # Start processing thread
         self.processing_thread = threading.Thread(target=self._processing_loop, daemon=True)
         self.processing_thread.start()
 
     def _select_channel(self) -> BaseChannel:
-        """Prompt once at startup for which input modality this run will use."""
+        """
+        Prompt once at startup for which input modality this run will use.
+        """
+
         print("CHOOSE A PROCESSING CHANNEL (this cannot be changed without restarting):")
         for key, cls in AVAILABLE_CHANNELS.items():
             print(f"  {key}. {cls.name}")
@@ -505,7 +542,10 @@ class Processor:
     # --- ingress ---------------------------------------------------------------
 
     def add_frame(self, frame, frame_id=None, timestamp=None, roi_points=None, roi_controls=None):
-        """Queue a video frame. Only consumed if the active channel expects 'frame'."""
+        """
+        Queue a video frame. Only consumed if the active channel expects 'frame'.
+        """
+        
         self._enqueue({
             'kind': 'frame',
             'frame': frame,
@@ -516,8 +556,10 @@ class Processor:
         })
 
     def add_event(self, source_name: str, raw_payload: dict, timestamp=None):
-        """Queue a generic event (keystroke, scroll, ...). Only consumed if the
-        active channel expects 'event'."""
+        """
+        Queue a generic event (keystroke, scroll, ...). Only consumed if the active channel expects 'event'.
+        """
+
         self._enqueue({
             'kind': 'event',
             'source_name': source_name,
@@ -545,10 +587,10 @@ class Processor:
     # --- processing loop ---------------------------------------------------------
 
     def _processing_loop(self):
-        """Single loop for the single active channel. Always drains the queue
-        every iteration - a channel that wants to skip work (e.g. every-Nth-frame)
-        does so INSIDE to_observation() by returning (None, None), never by the
-        queue being starved here."""
+        """
+        Main loop that continuously processes items from the input queue, applies the selected channel's
+        logic, and updates the display and music generation accordingly.
+        """
         logger.info("🚀 Processing loop started (channel: %s)", self.channel.name)
 
         while True:
@@ -606,6 +648,10 @@ class Processor:
     # --- shared musician plumbing -------------------------------------------------
 
     def _generate_and_broadcast_music(self, scene_events, frame_id, timestamp, state):
+        """
+        Generate music based on scene events and broadcast the update.
+        """
+
         if not (self.music_enabled and self.musician is not None):
             return
 
@@ -640,6 +686,10 @@ class Processor:
             logger.error("Traceback:\n%s", traceback.format_exc())
 
     def _broadcast_display_update(self):
+        """
+        Immediately broadcast the current display state to connected clients.
+        """
+
         try:
             if self.main_ui_connected and self.socketio:
                 display_data = self.get_synchronized_display(for_main_ui=True)
@@ -654,6 +704,10 @@ class Processor:
                 logger.warning("❌ Error broadcasting display update: %s", e)
 
     def _broadcast_music_update(self, music_data):
+        """
+        Broadcast music events to connected WebSocket clients.
+        """
+
         try:
             if self.main_ui_connected and self.socketio:
                 music_frame = music_data['music_frame']
@@ -695,6 +749,10 @@ class Processor:
     # --- state / display queries used by main.py's routes --------------------------
 
     def get_current_state(self):
+        """
+        Return a dictionary representing the current state of the processor.
+        """
+
         return {
             'frame_counter': self.frame_counter,
             'current_frame_available': self.current_frame is not None,
@@ -707,6 +765,10 @@ class Processor:
         }
 
     def get_synchronized_display(self, for_main_ui=True):
+        """
+        Get synchronized frame and segmentation data for display.
+        """
+
         display_data = {
             'original_frame': None,
             'segmentation_overlay': None,
@@ -753,13 +815,18 @@ class Processor:
     # --- music controls -------------------------------------------------------------
 
     def toggle_music_generation(self, enable: bool = None):
+        """Enable or disable music generation"""
+
         if hasattr(self, 'music_enabled'):
             self.music_enabled = (not self.music_enabled) if enable is None else enable
             logger.info(f"🎵 Music generation {'enabled' if self.music_enabled else 'disabled'}")
             return self.music_enabled
+        
         return False
 
     def set_music_tempo(self, tempo: int):
+        """Set music tempo (BPM)"""
+
         if hasattr(self, 'musician') and self.musician is not None:
             self.musician.set_tempo(tempo)
             logger.info(f"🎵 Music tempo set to {tempo} BPM")
@@ -767,6 +834,8 @@ class Processor:
         return False
 
     def set_music_key(self, key_signature: str):
+        """Set music key signature"""
+
         if hasattr(self, 'musician') and self.musician is not None:
             self.musician.key_signature = key_signature
             logger.info(f"🎵 Music key signature set to {key_signature}")
@@ -774,6 +843,8 @@ class Processor:
         return False
 
     def get_music_status(self):
+        """Get current music generation status"""
+
         if hasattr(self, 'musician') and self.musician is not None:
             return {
                 'enabled': getattr(self, 'music_enabled', False),
@@ -786,6 +857,8 @@ class Processor:
         return {'enabled': False, 'musician_available': False}
 
     def get_available_musicians(self):
+        """Get the list of musician types the UI can offer, plus the current selection"""
+
         try:
             musicians = Musician.list_available_musicians()
         except Exception as e:
@@ -801,6 +874,8 @@ class Processor:
         return {'musicians': musicians, 'current': current, 'instrument': instrument}
 
     def apply_music_settings(self, musician_type: str, tempo: int, instrument: str):
+        """Apply musician, tempo, and LSTM instrument settings together."""
+
         if not hasattr(self, 'musician') or self.musician is None:
             return {'success': False, 'error': 'Musician system not initialized'}
 
@@ -827,6 +902,8 @@ class Processor:
             return {'success': False, 'error': str(e)}
 
     def switch_musician(self, musician_type: str):
+        """Switch to a different music generation model (keeps current tempo/key)"""
+
         if not hasattr(self, 'musician') or self.musician is None:
             return {'success': False, 'error': 'Musician system not initialized'}
 
@@ -840,17 +917,23 @@ class Processor:
     # --- lifecycle / misc -------------------------------------------------------------
 
     def shutdown(self):
+        """Shutdown the processor"""
+
         logger.info("🛑 Shutting down Main processor...")
         self.input_queue.put(None)  # Shutdown signal
         if self.processing_thread.is_alive():
             self.processing_thread.join(timeout=2.0)
 
     def enable_debug_mode(self, enable=True):
+        """Enable or disable debug mode for verbose logging"""
+
         self.debug_mode = enable
         set_level(logger, "DEBUG" if enable else "INFO")
         logger.info("🐛 Debug mode %s", "enabled - verbose logging activated" if enable else "disabled - minimal logging activated")
 
     def set_main_ui_connected(self, connected=True):
+        """Mark main UI as connected/disconnected to prioritize it over status page"""
+
         if self.main_ui_connected != connected:
             self.main_ui_connected = connected
             logger.info("🎯 Main UI connected - prioritizing data for main interface" if connected else "📄 Main UI disconnected")

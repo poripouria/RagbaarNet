@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RagbaarNet — Typing Channel</title>
+<style>
+    :root {
+        --bg-primary: #1a1a1a;
+        --bg-editor: #1e1e1e;
+        --bg-gutter: #1a1a1a;
+        --bg-titlebar: #2d2d2d;
+        --accent: #00ff88;
+        --text-primary: #d4d4d4;
+        --text-muted: #6a6a6a;
+        --border-color: #3a3a3a;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-family: 'Segoe UI', Arial, sans-serif;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    /* --- title bar, mimicking a code editor window ------------------------ */
+    .titlebar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 16px;
+        background: var(--bg-titlebar);
+        border-bottom: 1px solid var(--border-color);
+        flex-shrink: 0;
+    }
+
+    .titlebar-left {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+
+    .traffic-lights { display: flex; gap: 7px; }
+    .traffic-lights span {
+        width: 11px; height: 11px; border-radius: 50%; display: inline-block;
+    }
+    .traffic-lights .red { background: #ff5f56; }
+    .traffic-lights .yellow { background: #ffbd2e; }
+    .traffic-lights .green { background: #27c93f; }
+
+    .titlebar-title {
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+
+    .titlebar-title strong { color: var(--text-primary); }
+
+    .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--text-muted);
+    }
+
+    .status-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: #ff5f56;
+        transition: background 0.2s ease;
+    }
+    .status-dot.connected { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+    /* --- editor area -------------------------------------------------------- */
+    .editor-wrapper {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+    }
+
+    .gutter {
+        width: 48px;
+        padding: 16px 0;
+        text-align: right;
+        background: var(--bg-gutter);
+        color: var(--text-muted);
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        user-select: none;
+        overflow: hidden;
+        flex-shrink: 0;
+    }
+
+    .gutter div { padding-right: 12px; }
+
+    #editor {
+        flex: 1;
+        background: var(--bg-editor);
+        color: var(--text-primary);
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        padding: 16px;
+        border: none;
+        outline: none;
+        resize: none;
+        tab-size: 4;
+        white-space: pre;
+    }
+
+    /* --- bottom status bar --------------------------------------------------- */
+    .statusbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 16px;
+        background: var(--bg-titlebar);
+        border-top: 1px solid var(--border-color);
+        font-size: 12px;
+        color: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .statusbar-group { display: flex; align-items: center; gap: 18px; }
+
+    .held-keys {
+        display: flex;
+        gap: 4px;
+        min-height: 20px;
+    }
+
+    .held-key {
+        background: rgba(0, 255, 136, 0.15);
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-family: 'Consolas', monospace;
+        font-size: 11px;
+    }
+
+    .note-count strong { color: var(--accent); }
+</style>
+</head>
+<body>
+
+    <div class="titlebar">
+        <div class="titlebar-left">
+            <div class="traffic-lights">
+                <span class="red"></span><span class="yellow"></span><span class="green"></span>
+            </div>
+            <div class="titlebar-title"><strong>RagbaarNet</strong> — Typing Channel (session.js)</div>
+        </div>
+        <div class="status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Connecting…</span>
+        </div>
+    </div>
+
+    <div class="editor-wrapper">
+        <div class="gutter" id="gutter"><div>1</div></div>
+        <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"
+            placeholder="// شروع کن به تایپ کردن — هر دکمه یک نتِ NOTE_ON/NOTE_OFF می‌فرسته به پروسسور
+function ragbaarNet(scene) {
+    return generateMusic(scene);
+}
+"></textarea>
+    </div>
+
+    <div class="statusbar">
+        <div class="statusbar-group">
+            <span>Last key: <strong id="lastKey">—</strong></span>
+            <span class="note-count">Notes sent: <strong id="noteCount">0</strong></span>
+        </div>
+        <div class="held-keys" id="heldKeys"></div>
+    </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+<script>
+    // --- Processor connection (same host-detection logic as the main UI) -----
+    function detectProcessorUrl() {
+        const host = window.location.hostname;
+        const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '';
+        const baseHost = isLocalhost ? '127.0.0.1' : host;
+        return `http://${baseHost}:5000`;
+    }
+
+    const processorUrl = detectProcessorUrl();
+    const socket = io(processorUrl, {
+        timeout: 10000,
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 2000,
+    });
+
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+
+    socket.on('connect', () => {
+        statusDot.classList.add('connected');
+        statusText.textContent = 'Connected — typing channel active';
+    });
+
+    socket.on('disconnect', () => {
+        statusDot.classList.remove('connected');
+        statusText.textContent = 'Disconnected';
+    });
+
+    socket.on('connect_error', () => {
+        statusText.textContent = 'Connection error — is main.py running?';
+    });
+
+    // Optional feedback loop: reflect notes Musician actually generated,
+    // so this page isn't just firing events blindly into the void.
+    let noteCount = 0;
+    const noteCountEl = document.getElementById('noteCount');
+    socket.on('music_update', (data) => {
+        noteCount += (data.events_count || 0);
+        noteCountEl.textContent = noteCount;
+    });
+
+    // --- Keystroke capture -----------------------------------------------------
+    const editor = document.getElementById('editor');
+    const lastKeyEl = document.getElementById('lastKey');
+    const heldKeysEl = document.getElementById('heldKeys');
+    const heldKeys = new Set();
+
+    function sendEvent(type, key) {
+        socket.emit('input_event', {
+            source: 'typing',
+            payload: { type, key },
+            timestamp: Date.now() / 1000,
+        });
+    }
+
+    function renderHeldKeys() {
+        heldKeysEl.innerHTML = Array.from(heldKeys)
+            .map(k => `<span class="held-key">${k === ' ' ? 'space' : k}</span>`)
+            .join('');
+    }
+
+    editor.addEventListener('keydown', (e) => {
+        // Ignore OS key-repeat: we only want one NOTE_ON per physical press.
+        // (Detector('key-events') also guards this server-side, this just
+        // avoids flooding the socket.)
+        if (e.repeat) return;
+
+        const key = e.key.toLowerCase();
+        heldKeys.add(key);
+        renderHeldKeys();
+        lastKeyEl.textContent = e.key === ' ' ? 'space' : e.key;
+
+        sendEvent('keydown', key);
+    });
+
+    editor.addEventListener('keyup', (e) => {
+        const key = e.key.toLowerCase();
+        heldKeys.delete(key);
+        renderHeldKeys();
+
+        sendEvent('keyup', key);
+    });
+
+    // If the editor loses focus mid-keypress (alt-tab, etc.), release
+    // everything so Musician doesn't hold a note forever.
+    editor.addEventListener('blur', () => {
+        heldKeys.forEach(key => sendEvent('keyup', key));
+        heldKeys.clear();
+        renderHeldKeys();
+    });
+
+    // --- Fake line-number gutter, synced to content + scroll -------------------
+    const gutter = document.getElementById('gutter');
+
+    function updateGutter() {
+        const lineCount = editor.value.split('\n').length;
+        let html = '';
+        for (let i = 1; i <= lineCount; i++) html += `<div>${i}</div>`;
+        gutter.innerHTML = html;
+    }
+
+    editor.addEventListener('input', updateGutter);
+    editor.addEventListener('scroll', () => {
+        gutter.scrollTop = editor.scrollTop;
+    });
+
+    updateGutter();
+    editor.focus();
+</script>
+
+</body>
+</html>

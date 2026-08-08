@@ -409,20 +409,23 @@ class ROIEventsDetector(BaseDetector):
 
 class KeyEventsDetector(BaseDetector):
     """
-    Scene Event Detector for discrete, non-spatial observations - keyboard presses,
-    mouse activity, or any other 'something happened' stream with no ROI/mask.
+    Scene Event Detector for discrete, non-spatial observations - currently
+    keyboard presses. Mirrors what ROIEventsDetector does for video (turn raw
+    per-tick observations into stateful scene events), but for inputs that have
+    no bounding boxes or segmentation map.
 
-    Mirrors what ROIEventsDetector does for video (turn raw per-tick observations
-    into onset/release-style scene events with continuity state), but for inputs
-    that have no bounding boxes or segmentation map. This is the funnel the Typing
-    channel (VSCode extension / plain keyboard app) routes through, so the same
-    Detector concept - not a separate ad-hoc rule set - decides event semantics.
+    Emits the same "type" values Musician already understands: NOTE_ON when a
+    key goes down, NOTE_OFF when it comes back up. This is deliberately the
+    simplest possible mapping - one key press is one note - so TypingPipeline
+    (modules/Platform/processor.py) never has to invent its own event
+    vocabulary; it just reports "this key went down/up" and Detector does the
+    (currently trivial) job of turning that into a scene event.
     """
 
     def __init__(self):
         super().__init__()
 
-        # state: keeps track of which keys/controls are currently "active"
+        # state: keeps track of which keys are currently held down
         self.state = {
             "held": {}   # key -> {"since": frame_id, "class_name": str}
         }
@@ -432,8 +435,7 @@ class KeyEventsDetector(BaseDetector):
         Args:
             input: a single raw observation dict, e.g.
                 {"kind": "onset", "key": "a", "class_name": "typing_letter", "intensity": 1.0}
-                {"kind": "release", "key": "a"}
-                {"kind": "continuous", "class_name": "scroll", "intensity": 0.4, "key": None}
+                {"kind": "release", "key": "a", "class_name": "typing_letter"}
         """
         self.frame_counter = frame_id
         return self.detect_scene_events(input)
@@ -449,10 +451,16 @@ class KeyEventsDetector(BaseDetector):
         intensity = observation.get("intensity", 1.0)
 
         if kind == "onset":
+            # Ignore key-repeat: if this key is already held, don't fire a
+            # second NOTE_ON without a NOTE_OFF in between.
+            if key is not None and key in self.state["held"]:
+                return events
+
             if key is not None:
                 self.state["held"][key] = {"since": self.frame_counter, "class_name": class_name}
+
             events.append({
-                "type": "KEY_ONSET",
+                "type": "NOTE_ON",
                 "object_id": key,
                 "class": class_name,
                 "edges": [],
@@ -464,19 +472,9 @@ class KeyEventsDetector(BaseDetector):
         elif kind == "release":
             if key is not None:
                 self.state["held"].pop(key, None)
-            events.append({
-                "type": "KEY_RELEASE",
-                "object_id": key,
-                "class": class_name,
-                "edges": [],
-                "area": None,
-                "area/ROI": None,
-                "intensity": intensity,
-            })
 
-        elif kind == "continuous":
             events.append({
-                "type": "CONTINUOUS",
+                "type": "NOTE_OFF",
                 "object_id": key,
                 "class": class_name,
                 "edges": [],
