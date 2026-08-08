@@ -294,12 +294,11 @@ def handle_update_request():
 def handle_connect():
     """Handle client connection"""
 
-    # Determine if this is status page or main UI based on referrer
+    # Determine if this is status page or main UI based on referrer.
     referrer = (request.headers.get('Referer', '') or '').lower()
 
-    # If the client came from /ui/, treat as Main UI; otherwise, treat as status page.
     # When Referer is missing (e.g., some WebViews), default to Main UI.
-    is_main_ui = (not referrer) or ('/ui/' in referrer) or (referrer.endswith('/ui'))
+    is_main_ui = (not referrer) or ('/ui/' in referrer) or ('/ui2/' in referrer) or referrer.endswith(('/ui', '/ui2'))
 
     if is_main_ui:
         processor.set_main_ui_connected(True)

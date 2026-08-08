@@ -145,9 +145,59 @@
     }
 
     .note-count strong { color: var(--accent); }
+
+    /* --- start-engine overlay (Web Audio needs a user gesture) --------------- */
+    .start-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(2px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 50;
+    }
+
+    .start-btn {
+        background: var(--accent);
+        color: #0a0a0a;
+        border: none;
+        border-radius: 10px;
+        padding: 14px 28px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(0, 255, 136, 0.3);
+    }
+    .start-btn:hover { filter: brightness(1.08); }
+
+    .volume-control {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .volume-control input[type="range"] {
+        width: 80px;
+        accent-color: var(--accent);
+    }
+
+    .stop-btn {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-muted);
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-size: 11px;
+        cursor: pointer;
+    }
+    .stop-btn:hover { border-color: #ff5f56; color: #ff5f56; }
 </style>
 </head>
 <body>
+
+    <div class="start-overlay" id="startOverlay">
+        <button class="start-btn" id="startBtn">🎵 Start Music Engine</button>
+    </div>
 
     <div class="titlebar">
         <div class="titlebar-left">
@@ -157,6 +207,12 @@
             <div class="titlebar-title"><strong>RagbaarNet</strong> — Typing Channel (session.js)</div>
         </div>
         <div class="status">
+            <div class="volume-control">
+                <span>🔊</span>
+                <input type="range" id="volumeSlider" min="0" max="100" value="40">
+                <span id="volumeLabel">40%</span>
+            </div>
+            <button class="stop-btn" id="stopBtn" title="Silence everything immediately">Stop all</button>
             <span class="status-dot" id="statusDot"></span>
             <span id="statusText">Connecting…</span>
         </div>
@@ -181,16 +237,31 @@ function ragbaarNet(scene) {
     </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+<!-- Same audio pipeline the main video UI uses (Tone.js mixing chain, per-instrument
+     voice factories, reverb sends, polyphony limiter, handleMusicEvents/playMusicEvent).
+     Served from modules/Platform/ via the existing /ui/<filename> static route, so this
+     is the SAME code running, not a parallel reimplementation. core.js must load first -
+     audio-engine.js reads its globals (currentTempo, currentVolume, etc.) at load time. -->
+<script src="/ui/core.js"></script>
+<script src="/ui/audio-engine.js"></script>
 <script>
-    // --- Processor connection (same host-detection logic as the main UI) -----
-    function detectProcessorUrl() {
-        const host = window.location.hostname;
-        const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '';
-        const baseHost = isLocalhost ? '127.0.0.1' : host;
-        return `http://${baseHost}:5000`;
+    // --- Shims for the two small pieces of UI.html/main.js that audio-engine.js's
+    // initializeAudioSystem() expects but that live outside core.js/audio-engine.js
+    // (main.js isn't loaded here - it also wires up ROI/video, which this page doesn't need).
+    function updateVolumeControls(vol) {
+        const label = document.getElementById('volumeLabel');
+        if (label) label.textContent = `${vol}%`;
     }
 
-    const processorUrl = detectProcessorUrl();
+    function handleVolumeSliderInput(e) {
+        currentVolume = clampVolumeValue(e.target.value);
+        if (masterGain) masterGain.gain.rampTo(currentVolume / 100, 0.05);
+        updateVolumeControls(currentVolume);
+    }
+
+    // --- Processor connection (same host-detection logic as the main UI) -----
+    const processorUrl = detectProcessorUrl(); // from core.js
     const socket = io(processorUrl, {
         timeout: 10000,
         reconnection: true,
@@ -199,29 +270,53 @@ function ragbaarNet(scene) {
     });
 
     const statusDot = document.getElementById('statusDot');
-    const statusText = document.getElementById('statusText');
+    const statusTextEl = document.getElementById('statusText');
 
     socket.on('connect', () => {
         statusDot.classList.add('connected');
-        statusText.textContent = 'Connected — typing channel active';
+        statusTextEl.textContent = 'Connected — typing channel active';
     });
 
     socket.on('disconnect', () => {
         statusDot.classList.remove('connected');
-        statusText.textContent = 'Disconnected';
+        statusTextEl.textContent = 'Disconnected';
     });
 
     socket.on('connect_error', () => {
-        statusText.textContent = 'Connection error — is main.py running?';
+        statusTextEl.textContent = 'Connection error — is main.py running?';
     });
 
-    // Optional feedback loop: reflect notes Musician actually generated,
-    // so this page isn't just firing events blindly into the void.
+    // The actual sound: hand every music_update straight to audio-engine.js's own
+    // handler. It schedules playMusicEvent() per event (note_on -> triggerAttack,
+    // note_off -> stopNote) and updates the shared status line via updateMusicInfo().
     let noteCount = 0;
     const noteCountEl = document.getElementById('noteCount');
     socket.on('music_update', (data) => {
         noteCount += (data.events_count || 0);
         noteCountEl.textContent = noteCount;
+        handleMusicEvents(data);
+    });
+
+    // --- Start-engine gesture (Web Audio requires a real user interaction) -----
+    const startOverlay = document.getElementById('startOverlay');
+    const startBtn = document.getElementById('startBtn');
+
+    startBtn.addEventListener('click', async () => {
+        try {
+            await Tone.start();
+            initializeAudioSystem();          // builds the mastering chain + instrument factories
+            isMusicGenerationActive = true;   // audio-engine.js checks this before playing tonal notes
+            startOverlay.style.display = 'none';
+            editor.focus();
+            console.log('🎵 Audio engine started');
+        } catch (err) {
+            console.error('❌ Failed to start audio engine:', err);
+            statusTextEl.textContent = 'Failed to start audio — see console';
+        }
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', () => {
+        if (typeof hardStopAllAudio === 'function') hardStopAllAudio();
     });
 
     // --- Keystroke capture -----------------------------------------------------
@@ -290,7 +385,6 @@ function ragbaarNet(scene) {
     });
 
     updateGutter();
-    editor.focus();
 </script>
 
 </body>
