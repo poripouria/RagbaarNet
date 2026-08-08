@@ -221,11 +221,12 @@
     <div class="editor-wrapper">
         <div class="gutter" id="gutter"><div>1</div></div>
         <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"
-            placeholder="// شروع کن به تایپ کردن — هر دکمه یک نتِ NOTE_ON/NOTE_OFF می‌فرسته به پروسسور
+            placeholder=
+"// Start typing and enjoy your performance! Each key press sends a NOTE_ON/NOTE_OFF to the processor.
 function ragbaarNet(scene) {
     return generateMusic(scene);
-}
-"></textarea>
+}"
+        ></textarea>
     </div>
 
     <div class="statusbar">
@@ -236,15 +237,15 @@ function ragbaarNet(scene) {
         <div class="held-keys" id="heldKeys"></div>
     </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://unpkg.com/tone@15.1.22/build/Tone.js"></script>
 <!-- Same audio pipeline the main video UI uses (Tone.js mixing chain, per-instrument
      voice factories, reverb sends, polyphony limiter, handleMusicEvents/playMusicEvent).
-     Served from modules/Platform/ via the existing /ui/<filename> static route, so this
-     is the SAME code running, not a parallel reimplementation. core.js must load first -
-     audio-engine.js reads its globals (currentTempo, currentVolume, etc.) at load time. -->
-<script src="/ui/core.js"></script>
-<script src="/ui/audio-engine.js"></script>
+     Served from modules/Platform/js/ via the existing /ui/<filename> static route, so
+     this is the SAME code running, not a parallel reimplementation. core.js must load
+     first - audio-engine.js reads its globals (currentTempo, currentVolume, etc.) at load time. -->
+<script src="/ui/js/core.js"></script>
+<script src="/ui/js/audio-engine.js"></script>
 <script>
     // --- Shims for the two small pieces of UI.html/main.js that audio-engine.js's
     // initializeAudioSystem() expects but that live outside core.js/audio-engine.js
