@@ -156,46 +156,6 @@ def process_frame():
         logger.exception("❌ Error processing frame: %s", e)
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/input_event', methods=['POST'])
-def input_event():
-    """Generic ingress for non-video input sources (keyboard/mouse, custom sensors, ...).
-
-    Body: {"source": "keyboard_mouse", "payload": {...}, "timestamp": 172...}
-    `source` must be registered in modules/Platform/input_sources.py. This is the
-    single integration point a plugin (e.g. a VSCode extension) needs to talk to -
-    no other part of the pipeline needs to know it exists.
-    """
-    try:
-        data = request.get_json(silent=True) or {}
-        source_name = data.get('source')
-        payload = data.get('payload')
-
-        if not source_name or payload is None:
-            return jsonify({'error': "'source' and 'payload' are required"}), 400
-
-        processor.add_event(source_name, payload, timestamp=data.get('timestamp'))
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.exception("❌ Error handling input event: %s", e)
-        return jsonify({'error': str(e)}), 500
-
-
-@socketio.on('input_event')
-def handle_input_event(data):
-    """Socket.IO twin of /api/input_event, for low-latency streaming sources."""
-    try:
-        data = data or {}
-        source_name = data.get('source')
-        payload = data.get('payload')
-        if not source_name or payload is None:
-            emit('input_event_ack', {'success': False, 'error': "'source' and 'payload' are required"})
-            return
-        processor.add_event(source_name, payload, timestamp=data.get('timestamp'))
-    except Exception as e:
-        emit('input_event_ack', {'success': False, 'error': str(e)})
-        logger.error("❌ Error handling input_event (socket): %s", e)
-
-
 @app.route('/api/get_display', methods=['GET'])
 def get_display():
     """Get synchronized display data - prioritized for main UI"""
@@ -421,17 +381,15 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     logger.info("🚀 Starting Video Processor Server on %s:%s", host, port)
     logger.info("🎥 Active frame pipeline: %s", processor.get_current_state().get('active_pipeline'))
     logger.info("🌐 Web interface available at:")
-    logger.info("   - Status: http://%s:%s/", host, port)
     logger.info("   - UI:     http://%s:%s/ui/", host, port)
     logger.info("📡 API endpoints:")
     logger.info("   - POST /api/process_frame - Send frame data")
-    logger.info("   - GET  /api/get_display  - Get synchronized display")
-    logger.info("   - GET  /api/status       - Get processor status")
-    logger.info("   - POST /api/debug/enable - Enable verbose debug logging")
+    logger.info("   - GET  /api/get_display   - Get synchronized display")
+    logger.info("   - GET  /api/status        - Get processor status")
+    logger.info("   - POST /api/debug/enable  - Enable verbose debug logging")
     logger.info("   - POST /api/debug/disable - Disable debug logging for performance")
     logger.info("   - POST http://%s:5500/telemetry - Receive Android telemetry (speed/accel/rpm)", host)
     logger.info("🚀 Performance Mode: Debug logging %s", "ON" if processor.debug_mode else "OFF")
-    logger.info("⚡ Optimizations: Reduced queues, vectorized color mapping, throttled updates")
 
     threading.Thread(target=run_telemetry_server, daemon=True).start()
 
@@ -456,9 +414,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Update processing interval if specified and the active pipeline supports it.
-    if args.interval != 2 and hasattr(processor.frame_pipeline, 'segmentation_interval'):
-        processor.frame_pipeline.segmentation_interval = args.interval
-        logger.info("🔄 Updated %s pipeline interval to %s frames", processor.frame_pipeline.name, args.interval)
+    if args.interval != 2:
+        processor.processing_interval = args.interval
+        logger.info("🔄 Updated processing interval to %s frames", args.interval)
 
     # Set debug mode based on argument
     if args.debug:

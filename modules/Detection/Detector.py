@@ -10,7 +10,7 @@ import sys
 import cv2
 import numpy as np
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from utils.logging_setup import setup_logging
@@ -170,6 +170,7 @@ class ROI:
             "area": erea
         }
 
+
 class BaseDetector(ABC):
     """
     Abstract base class for scene event detectors.
@@ -207,20 +208,18 @@ class ROIEventsDetector(BaseDetector):
         self.prev_roi_payload = None    # Tracks ROI coordinates and frame dimensions
         self.max_missing_frames = 6     # Number of frames to keep an object in memory after it disappears
 
-    def __call__(self,
-            input: Any,
-            frame_id: int = 0,
-            roi: Dict[str, Any] = None
-        ):
+    def __call__(self, input: Any, frame_id: int = 0):
 
-        if not hasattr(input, "segmentation_map"):
+        seg_result, roi = input
+
+        if not hasattr(seg_result, "segmentation_map"):
             raise ValueError("Input must be a SegmentationResult instance")
         
-        frame_height, frame_width = input.segmentation_map.shape[:2]
+        frame_height, frame_width = seg_result.segmentation_map.shape[:2]
         self._set_roi(roi, frame_size=(frame_width, frame_height))
         self.frame_counter = frame_id
 
-        detected = self.detect_scene_events(input.bounding_boxes, input.masks)
+        detected = self.detect_scene_events(seg_result.bounding_boxes, seg_result.masks)
 
         return detected
 
@@ -422,7 +421,7 @@ class Detector:
     the detection task to the initialized detector.
     """
 
-    def __init__(self, strategy: str = "roi-events"):
+    def __init__(self, strategy: str = None):
         
         self.strategy = strategy
         self.detector = self._create_detector(strategy)
@@ -432,6 +431,8 @@ class Detector:
 
         if strategy == "roi-events":
             return ROIEventsDetector()
+        elif strategy == "scene-captioning":
+            return SceneCaptioningDetector()
         else:
             raise ValueError(f"Unknown detection strategy: {strategy}")
 
@@ -448,6 +449,6 @@ class Detector:
         else:
             logger.info(f"Detection strategy remains unchanged: {new_strategy}")
 
-    def __call__(self, input: Any, frame_id: int = 0, roi: Dict[str, Any] = None):
+    def __call__(self, input: Any, frame_id: int = 0):
 
-        return self.detector(input=input, frame_id=frame_id, roi=roi)
+        return self.detector(input=input, frame_id=frame_id)
