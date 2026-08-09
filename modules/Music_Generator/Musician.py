@@ -476,6 +476,10 @@ class LSTMOrchestralMusician(BaseMusician):
                      "48", "_", "_", "50",
                      "50", "_", "52", "_",
                      "52", "_", "50", "_"],
+            "pad": ["60", "_", "60", "_",
+                    "60", "_", "_", "62",
+                    "62", "_", "64", "_",
+                    "64", "_", "62", "_"],
         }
         # Note buffer to store generated notes for each instrument
         self._note_buffer = {
