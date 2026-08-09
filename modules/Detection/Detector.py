@@ -409,17 +409,7 @@ class ROIEventsDetector(BaseDetector):
 
 class KeyEventsDetector(BaseDetector):
     """
-    Scene Event Detector for discrete, non-spatial observations - currently
-    keyboard presses. Mirrors what ROIEventsDetector does for video (turn raw
-    per-tick observations into stateful scene events), but for inputs that have
-    no bounding boxes or segmentation map.
-
-    Emits the same "type" values Musician already understands: NOTE_ON when a
-    key goes down, NOTE_OFF when it comes back up. This is deliberately the
-    simplest possible mapping - one key press is one note - so TypingPipeline
-    (modules/Platform/processor.py) never has to invent its own event
-    vocabulary; it just reports "this key went down/up" and Detector does the
-    (currently trivial) job of turning that into a scene event.
+    Scene Event Detector for discrete, non-spatial observations (e.g., key presses/releases).
     """
 
     def __init__(self):
@@ -427,16 +417,15 @@ class KeyEventsDetector(BaseDetector):
 
         # state: keeps track of which keys are currently held down
         self.state = {
-            "held": {}   # key -> {"since": frame_id, "class_name": str}
+            "held": {},   # key -> {"since": frame_id, "class_name": str}
         }
 
     def __call__(self, input: Any, frame_id: int = 0):
         """
         Args:
-            input: a single raw observation dict, e.g.
-                {"kind": "onset", "key": "a", "class_name": "typing_letter", "intensity": 1.0}
-                {"kind": "release", "key": "a", "class_name": "typing_letter"}
+            input: a single raw observation dict.
         """
+
         self.frame_counter = frame_id
         return self.detect_scene_events(input)
 
@@ -451,8 +440,7 @@ class KeyEventsDetector(BaseDetector):
         intensity = observation.get("intensity", 1.0)
 
         if kind == "onset":
-            # Ignore key-repeat: if this key is already held, don't fire a
-            # second NOTE_ON without a NOTE_OFF in between.
+            # Ignore key-repeat
             if key is not None and key in self.state["held"]:
                 return events
 
@@ -511,8 +499,8 @@ class SceneCaptioningDetector(BaseDetector):
 class Detector:
     """
     Main Detector class that provides a unified interface for different detection strategies.
-    It initializes the appropriate detector based on the specified strategy and delegates
-    the detection task to the initialized detector.
+    It initializes the appropriate detector based on the specified strategy 
+    and delegates the detection task to the initialized detector.
     """
 
     def __init__(self, strategy: str = None):
