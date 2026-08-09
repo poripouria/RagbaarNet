@@ -399,6 +399,8 @@ class TypingPipeline(BaseChannel):
     _KEY_CLASS_MAP.update({
         "backspace": "typing_delete", "enter": "typing_newline",
         "tab": "typing_indent", "space": "typing_space",
+        "scroll": "scroll",
+        "mousemove": "mousemove",
     })
 
     def __init__(self):
@@ -501,7 +503,7 @@ class Processor:
 
         logger.info("🔄 Initializing music generation...")
         try:
-            self.musician = Musician('lstm-onessen', tempo=120, key_signature="C_major")
+            self.musician = Musician('lstm-onessen-orchestral', tempo=120, key_signature="C_major")
             self.music_queue = Queue(maxsize=5)
             self.current_music = None
             self.music_enabled = True
