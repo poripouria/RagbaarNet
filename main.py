@@ -7,11 +7,12 @@ Run: `python main.py`.
 
 import os
 import time
-import threading
-import base64
-import argparse
 import cv2
 import numpy as np
+import threading
+import base64
+import signal
+import argparse
 from flask import Flask, jsonify, send_from_directory, redirect, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
@@ -427,8 +428,24 @@ def handle_switch_musician(data):
         emit('musician_switched', {'success': False, 'error': str(e)})
         logger.error("❌ Error switching musician: %s", e)
 
+def shutdown_server(signum, frame):
+    """Handle server shutdown signals."""
+
+    logger.info("\n🛑 Shutdown signal received (%s).", signum)
+
+    try:
+        processor.shutdown()
+    except Exception:
+        logger.exception("❌ Error while shutting down processor.")
+
+    logger.info("✅ Server shutdown complete.")
+    raise SystemExit(0)
+
 def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     """Run the processor server"""
+
+    signal.signal(signal.SIGINT, shutdown_server)
+    signal.signal(signal.SIGTERM, shutdown_server)
 
     logger.info("🚀 Starting Video Processor Server on %s:%s", host, port)
     logger.info("🎥 Active channel: %s", processor.get_current_state().get('active_channel'))
@@ -447,9 +464,6 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
 
     try:
         socketio.run(app, host=host, port=port, debug=debug)
-    except KeyboardInterrupt:
-        logger.info("\n🛑 Shutting down server...")
-        processor.shutdown()
     except Exception as e:
         logger.exception("❌ Server error: %s", e)
         processor.shutdown()

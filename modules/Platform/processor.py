@@ -496,6 +496,9 @@ class Processor:
         self.main_ui_connected = False
         self.status_page_clients = set()
 
+        self._shutdown_lock = threading.Lock()
+        self._is_shutdown = False
+
         logger.info("🔄 Initializing music generation...")
         try:
             self.musician = Musician('lstm-onessen', tempo=120, key_signature="C_major")
@@ -917,12 +920,33 @@ class Processor:
     # --- lifecycle / misc -------------------------------------------------------------
 
     def shutdown(self):
-        """Shutdown the processor"""
+        """Shutdown the processor safely and only once."""
 
-        logger.info("🛑 Shutting down Main processor...")
-        self.input_queue.put(None)  # Shutdown signal
+        with self._shutdown_lock:
+
+            if self._is_shutdown:
+                logger.debug("Processor shutdown already completed.")
+                return
+
+            self._is_shutdown = True
+
+            logger.info("🛑 Shutting down Main processor...")
+            # Send shutdown signal to the processing loop
+            try:
+                self.input_queue.put(None)
+            except Exception:
+                logger.exception("❌ Failed to send shutdown signal to input queue.")
+
+        # Wait for processing thread outside the lock
         if self.processing_thread.is_alive():
             self.processing_thread.join(timeout=2.0)
+
+            if self.processing_thread.is_alive():
+                logger.warning("⚠️ Processing thread did not stop within the timeout.")
+            else:
+                logger.info("✅ Processing thread stopped.")
+
+        logger.info("✅ Processor shutdown complete.")
 
     def enable_debug_mode(self, enable=True):
         """Enable or disable debug mode for verbose logging"""
