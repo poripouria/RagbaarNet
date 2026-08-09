@@ -52,31 +52,30 @@ class BaseChannel(ABC):
     def to_observation(self, item: Dict[str, Any]) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]:
         raise NotImplementedError
 
-    def set_debug_mode(self, enabled: bool) -> None:
-        pass
-
-
-class SegmentationPipeline(BaseChannel):
+class DrivingPipeline(BaseChannel):
     """
-    Video frames -> Segmentor -> colormap overlay -> (result, roi) for Detector('roi-events').
+    Video frames -> Driving Model -> (result, roi) for Detector().
     """
 
-    name = "segmentation"
+    name = "driving"
     expected_kind = "frame"
     detector_strategy = "roi-events"
 
     def __init__(self):
         """
-        Initialize the segmentation channel, including loading the segmentation model.
+        Initialize the driving channel.
         """
         from modules.Models.Segmentation.Segmentor import Segmentor
 
-        # How many queued frames to skip between actual segmentation runs.
-        self.processing_interval = int(os.environ.get('RAGBAARNET_SEGMENTATION_INTERVAL', '2'))
+        # How many queued frames to skip between actual driving model runs.
+        self.processing_interval = int(os.environ.get('RAGBAARNET_DRIVING_INTERVAL', '2'))
         self._tick = 0
 
-        max_side_raw = os.environ.get('RAGBAARNET_SEGMENTATION_MAX_SIDE', '').strip()
-        self.segmentation_max_side = int(max_side_raw) if max_side_raw.isdigit() else None
+        # Mode (1-Segmentation 2-Captioning)
+        self.processing_mode = None
+
+        max_side_raw = os.environ.get('RAGBAARNET_PROCESSING_MAX_SIDE', '').strip()
+        self.processing_max_side = int(max_side_raw) if max_side_raw.isdigit() else None
 
         self.debug_mode = False
         self.encode_params = [cv2.IMWRITE_JPEG_QUALITY, 75]
@@ -315,10 +314,10 @@ class SegmentationPipeline(BaseChannel):
             seg_frame = frame
             orig_h, orig_w = frame.shape[:2]
 
-            if self.segmentation_max_side is not None:
+            if self.processing_max_side is not None:
                 max_side = max(orig_h, orig_w)
-                if max_side > self.segmentation_max_side:
-                    scale = self.segmentation_max_side / float(max_side)
+                if max_side > self.processing_max_side:
+                    scale = self.processing_max_side / float(max_side)
                     new_w, new_h = max(1, int(orig_w * scale)), max(1, int(orig_h * scale))
                     seg_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
@@ -376,7 +375,7 @@ class SegmentationPipeline(BaseChannel):
             }
 
             # detector_input shaped exactly how ROIEventsDetector.__call__ unpacks it:
-            #   seg_result, roi = input
+            #   result, roi = input
             detector_input = (result, {'corners': roi_points, 'controls': roi_controls})
 
             return detector_input, display_payload
@@ -436,35 +435,10 @@ class TypingPipeline(BaseChannel):
         return None, None
 
 
-class CaptioningPipeline(BaseChannel):
-    """Placeholder for a future frame-captioning-driven channel.
-
-    NOT IMPLEMENTED YET: to_observation() always returns (None, None), so
-    selecting this channel runs without crashing but produces no music until
-    the real captioning model + Detector('scene-captioning') logic are written.
-    """
-
-    name = "captioning"
-    expected_kind = "frame"
-    detector_strategy = "scene-captioning"
-
-    def __init__(self):
-        self.debug_mode = False
-        logger.warning("⚠️ CaptioningPipeline is a placeholder - it will not produce any music yet.")
-
-    def set_debug_mode(self, enabled: bool) -> None:
-        self.debug_mode = enabled
-
-    def to_observation(self, item):
-        return None, None
-
-
 AVAILABLE_CHANNELS: Dict[int, type] = {
-    1: SegmentationPipeline,
-    2: CaptioningPipeline,
-    3: TypingPipeline,
+    1: DrivingPipeline,
+    2: TypingPipeline,
 }
-
 
 # ============================================================================
 # Processor
@@ -530,7 +504,7 @@ class Processor:
         for key, cls in AVAILABLE_CHANNELS.items():
             print(f"  {key}. {cls.name}")
 
-        choice_raw = input("Enter your choice (1-3) [default: 1 - segmentation]: ").strip()
+        choice_raw = input("Enter your choice (1-2) [default: 1 - driving]: ").strip()
         try:
             choice = int(choice_raw) if choice_raw else 1
         except ValueError:
@@ -538,8 +512,8 @@ class Processor:
 
         channel_cls = AVAILABLE_CHANNELS.get(choice)
         if channel_cls is None:
-            logger.warning("⚠️ Invalid choice '%s' - defaulting to 'segmentation'.", choice_raw)
-            channel_cls = SegmentationPipeline
+            logger.warning("⚠️ Invalid choice '%s' - defaulting to 'driving'.", choice_raw)
+            channel_cls = DrivingPipeline
 
         logger.info("🔄 Initializing '%s' channel...", channel_cls.name)
         return channel_cls()
