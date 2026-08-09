@@ -162,8 +162,6 @@ class RuleBasedMusician(BaseMusician):
             "traffic sign": (67, 70, 'strings', 4),
             "stop sign": (69, 80, 'strings', 4),
             # "road": (36, 50, 'drums', 9),
-
-            "typing": (60, 90, 'piano', 0),
         }
 
         return mapping.get(base_class, None)
@@ -316,7 +314,6 @@ class LSTMMusician(BaseMusician):
             "car", "truck", "bus", "train", "plane",
             "bicycle", "motorcycle", "person",
             "traffic light", "traffic sign", "stop sign",
-            "typing",   # covers typing_letter, typing_digit, typing_delete, ... (see TypingPipeline)
         ]
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
@@ -508,6 +505,8 @@ class LSTMOrchestralMusician(BaseMusician):
             "stop sign": ('strings', 3),
 
             "typing": ('piano', 0),
+            "scroll": ('strings', 3),
+            "mousemove": ('pad', 5),
         }
 
         return mapping.get(base_class, None)
