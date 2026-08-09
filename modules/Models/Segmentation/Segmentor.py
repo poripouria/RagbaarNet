@@ -200,62 +200,98 @@ class YOLOSegmentor(BaseSegmentor):
         # Ensure evaluation/inference context
         with torch.inference_mode():
             results = self.model.predict(
-                source = yolo_input,
-                device = self.device,
-                verbose = False
+                source=yolo_input,
+                device=self.device,
+                verbose=False
             )[0]
 
         # Initialize maps and lists for results
-        segmentation_map = np.full((h, w), 255, dtype=np.uint16)  # 255 = background sentinel (no detection)
-        confidence_map   = np.zeros((h, w), dtype=np.float32)
+        segmentation_map = np.full((h, w), 255, dtype=np.uint16)  # 255 = background sentinel
+        confidence_map = np.zeros((h, w), dtype=np.float32)
         class_counter = {}
         masks = {}
         bounding_boxes = []
 
         if results.masks is not None and len(results.masks) > 0:
-            # Convert tensors to numpy once
-            masks_data = results.masks.data.cpu().numpy()      # (N, H, W) normalized
+
+            # Detection information
             boxes = results.boxes.xyxy.cpu().numpy()
             confs = results.boxes.conf.cpu().numpy()
             clss = results.boxes.cls.cpu().numpy()
 
-            for mask, box, conf, cls in zip(masks_data, boxes, confs, clss):
+            mask_polygons = results.masks.xy
+
+            for polygon, box, conf, cls in zip( mask_polygons, boxes, confs, clss):
+
                 class_id = int(cls)
 
-                # Resize mask
-                mask_resized = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
-                mask_binary = (mask_resized > 0.4).astype(np.uint8)
+                # Build binary instance mask in the current image space
 
-                # Fill segmentation map
+                mask_binary = np.zeros((h, w), dtype=np.uint8)
+
+                if polygon is not None and len(polygon) >= 3:
+
+                    polygon = np.asarray(polygon, dtype=np.float32)
+                    polygon[:, 0] = np.clip(polygon[:, 0], 0, w - 1)
+                    polygon[:, 1] = np.clip(polygon[:, 1], 0, h-1)
+                    polygon = np.round(polygon).astype(np.int32)
+
+                    cv2.fillPoly(mask_binary, [polygon], 1)
+
+                # Fill semantic segmentation map
                 segmentation_map[mask_binary == 1] = class_id
 
-                # Update confidence map (keep maximum)
+                # Update confidence map
                 confidence_map = np.maximum(confidence_map, mask_binary * float(conf))
 
-                # Store additional info
+                # Create stable per-frame class name
                 class_name = self.model.names[class_id]
                 instance_id = class_counter.get(class_name, 0)
                 key = f"{class_name}_{instance_id}"
-                class_counter[class_name] = instance_id + 1
-                masks[key] = mask_binary
+                class_counter[class_name] = (instance_id + 1)
+
+                # Store instance mask
+                masks[key] = mask_binary.astype(bool)
+
+                # Bounding box
+                bbox = box.tolist()
+
+                # Compute centroid from the actual rasterized mask
+                moments = cv2.moments(mask_binary)
+
+                if moments["m00"] > 0:
+                    centroid = (
+                        moments["m10"] / moments["m00"],
+                        moments["m01"] / moments["m00"]
+                    )
+                else:
+                    x1, y1, x2, y2 = bbox
+                    centroid = (
+                        (x1 + x2) / 2.0,
+                        (y1 + y2) / 2.0
+                    )
 
                 bounding_boxes.append({
-                    'bbox': box.tolist(),
+                    'bbox': bbox,
                     'confidence': float(conf),
                     'class_id': class_id,
-                    'class_name': key
+                    'class_name': key,
+                    'centroid': centroid,
                 })
 
-        # Ordered class labels (safe)
-        class_labels = [self.model.names[i] for i in sorted(self.model.names.keys())]
+        # Ordered class labels
+        class_labels = [
+            self.model.names[i]
+            for i in sorted(self.model.names.keys())
+        ]
 
         return SegmentationResult(
-            segmentation_map = segmentation_map,
-            confidence_map = confidence_map,
-            class_labels = class_labels,
-            bounding_boxes = bounding_boxes,
-            masks = masks,
-            metadata = {
+            segmentation_map=segmentation_map,
+            confidence_map=confidence_map,
+            class_labels=class_labels,
+            bounding_boxes=bounding_boxes,
+            masks=masks,
+            metadata={
                 'model_type': 'YOLO',
                 'model_path': self.model_path,
                 'device': self.device,
