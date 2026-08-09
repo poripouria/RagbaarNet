@@ -341,9 +341,16 @@ function ragbaarNet(scene) {
     }
 
     editor.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            editor.value = editor.value.slice(0, start) + '\t' + editor.value.slice(end);
+            editor.selectionStart = editor.selectionEnd = start + 1;
+            updateGutter();
+        }
+
         // Ignore OS key-repeat: we only want one NOTE_ON per physical press.
-        // (Detector('key-events') also guards this server-side, this just
-        // avoids flooding the socket.)
         if (e.repeat) return;
 
         const key = e.key.toLowerCase();
@@ -368,6 +375,51 @@ function ragbaarNet(scene) {
         heldKeys.forEach(key => sendEvent('keyup', key));
         heldKeys.clear();
         renderHeldKeys();
+        releaseScrollSoon.cancel();
+        releaseMouseSoon.cancel();
+    });
+
+    // --- Scroll -> piano, mouse movement -> pad --------------------------------
+    function makeGestureTrigger(key, holdMs) {
+        let isHeld = false;
+        let releaseTimer = null;
+
+        function trigger() {
+            if (!isHeld) {
+                isHeld = true;
+                sendEvent('keydown', key);
+            }
+            clearTimeout(releaseTimer);
+            releaseTimer = setTimeout(() => {
+                isHeld = false;
+                sendEvent('keyup', key);
+            }, holdMs);
+        }
+
+        trigger.cancel = () => {
+            clearTimeout(releaseTimer);
+            if (isHeld) sendEvent('keyup', key);
+            isHeld = false;
+        };
+
+        return trigger;
+    }
+
+    const releaseScrollSoon = makeGestureTrigger('scroll', 250);
+    const releaseMouseSoon = makeGestureTrigger('mousemove', 350);
+
+    editor.addEventListener('wheel', () => {
+        releaseScrollSoon();
+    }, { passive: true });
+
+    // Throttle mousemove sampling - firing on every pixel of movement would
+    // flood the socket for no musical benefit.
+    let lastMouseSample = 0;
+    editor.addEventListener('mousemove', () => {
+        const now = Date.now();
+        if (now - lastMouseSample < 80) return;
+        lastMouseSample = now;
+        releaseMouseSoon();
     });
 
     // --- Fake line-number gutter, synced to content + scroll -------------------
