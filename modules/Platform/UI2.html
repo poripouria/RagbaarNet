@@ -146,6 +146,12 @@
 
     .note-count strong { color: var(--accent); }
 
+    .connection-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
     /* --- start-engine overlay (Web Audio needs a user gesture) --------------- */
     .start-overlay {
         position: absolute;
@@ -181,16 +187,96 @@
         accent-color: var(--accent);
     }
 
-    .stop-btn {
+    /* Small square icon buttons (save, stop) instead of wide text buttons */
+    .icon-btn {
         background: transparent;
         border: 1px solid var(--border-color);
         color: var(--text-muted);
         border-radius: 4px;
-        padding: 2px 8px;
-        font-size: 11px;
+        width: 26px;
+        height: 26px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
         cursor: pointer;
+        padding: 0;
     }
-    .stop-btn:hover { border-color: #ff5f56; color: #ff5f56; }
+    .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .icon-btn.stop-btn:hover { border-color: #ff5f56; color: #ff5f56; }
+
+    /* Editable filename in the title bar - looks like plain text until you
+       notice the dashed underline, then it's obviously an input. */
+    .filename-input {
+        background: transparent;
+        border: none;
+        border-bottom: 1px dashed transparent;
+        color: var(--text-primary);
+        font-size: 13px;
+        font-family: inherit;
+        padding: 0 1px;
+        outline: none;
+    }
+    .filename-input:hover,
+    .filename-input:focus {
+        border-bottom-color: var(--text-muted);
+    }
+
+    /* --- syntax-highlighted editor -------------------------------------------
+       Classic overlay trick: a real <textarea> sits on top with invisible text
+       (just a visible caret), while a Prism-highlighted <pre><code> underneath,
+       kept pixel-identical (same font/padding/line-height) and scroll-synced,
+       shows the colored text through it. */
+    .code-area {
+        position: relative;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    .highlight-pre,
+    .highlight-pre code[class*="language-"] {
+        margin: 0 !important;
+        background: transparent !important;
+        font-family: 'Consolas', 'Courier New', monospace !important;
+        font-size: 14px !important;
+        line-height: 1.6 !important;
+        white-space: pre !important;
+        tab-size: 4;
+        text-shadow: none !important;
+    }
+
+    .highlight-pre {
+        position: absolute;
+        inset: 0;
+        padding: 16px !important;
+        overflow: hidden;
+        pointer-events: none;
+    }
+
+    #editor {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        color: transparent;
+        caret-color: var(--accent);
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        padding: 16px;
+        border: none;
+        outline: none;
+        resize: none;
+        tab-size: 4;
+        white-space: pre;
+    }
+
+    #editor::placeholder {
+        color: var(--text-muted);
+        opacity: 1;
+    }
 </style>
 </head>
 <body>
@@ -204,7 +290,12 @@
             <div class="traffic-lights">
                 <span class="red"></span><span class="yellow"></span><span class="green"></span>
             </div>
-            <div class="titlebar-title"><strong>RagbaarNet</strong> — Typing Channel (session.js)</div>
+            <div class="titlebar-title">
+                <strong>RagbaarNet</strong> —
+                <input type="text" id="filenameInput" class="filename-input" value="session.js"
+                    spellcheck="false" autocomplete="off" autocapitalize="off"
+                    title="Click to rename (also picks the syntax highlighting)">
+            </div>
         </div>
         <div class="status">
             <div class="volume-control">
@@ -212,32 +303,41 @@
                 <input type="range" id="volumeSlider" min="0" max="100" value="40">
                 <span id="volumeLabel">40%</span>
             </div>
-            <button class="stop-btn" id="stopBtn" title="Silence everything immediately">Stop all</button>
-            <span class="status-dot" id="statusDot"></span>
-            <span id="statusText">Connecting…</span>
+            <button class="icon-btn" id="saveBtn" title="Save as file (Ctrl+S)">💾</button>
+            <button class="icon-btn stop-btn" id="stopBtn" title="Silence everything immediately">⏹</button>
         </div>
     </div>
 
     <div class="editor-wrapper">
         <div class="gutter" id="gutter"><div>1</div></div>
-        <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"
-            placeholder=
+        <div class="code-area">
+            <pre id="highlightPre" class="highlight-pre" aria-hidden="true"><code id="highlightCode" class="language-javascript"></code></pre>
+            <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"
+                placeholder=
 "// Start typing and enjoy your performance! Each key press sends a NOTE_ON/NOTE_OFF to the processor.
 function ragbaarNet(scene) {
     return generateMusic(scene);
 }"
-        ></textarea>
+            ></textarea>
+        </div>
     </div>
 
     <div class="statusbar">
         <div class="statusbar-group">
             <span>Last key: <strong id="lastKey">—</strong></span>
             <span class="note-count">Notes sent: <strong id="noteCount">0</strong></span>
+            <span class="connection-status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Connecting…</span>
+            </span>
         </div>
         <div class="held-keys" id="heldKeys"></div>
     </div>
 
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script src="https://unpkg.com/tone@15.1.22/build/Tone.js"></script>
 <!-- Same audio pipeline the main video UI uses (Tone.js mixing chain, per-instrument
      voice factories, reverb sends, polyphony limiter, handleMusicEvents/playMusicEvent).
@@ -247,6 +347,35 @@ function ragbaarNet(scene) {
 <script src="/ui/js/core.js"></script>
 <script src="/ui/js/audio-engine.js"></script>
 <script>
+    // --- Syntax highlighting (Prism.js), driven entirely by the filename's
+    // extension - no hardcoded language, no dropdown to keep in sync by hand.
+    Prism.plugins.autoloader.languages_path = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
+
+    const LANGUAGE_BY_EXT = {
+        py: 'python',
+        cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp', h: 'cpp',
+        c: 'c',
+        html: 'markup', htm: 'markup', xml: 'markup',
+        js: 'javascript', jsx: 'javascript', ts: 'javascript', tsx: 'javascript',
+        json: 'json', css: 'css', md: 'markdown', java: 'java', cs: 'csharp',
+    };
+
+    function detectLanguage(filename) {
+        const ext = (filename.split('.').pop() || '').toLowerCase();
+        return LANGUAGE_BY_EXT[ext] || 'javascript';
+    }
+
+    const highlightCode = document.getElementById('highlightCode');
+    const highlightPre = document.getElementById('highlightPre');
+    const filenameInput = document.getElementById('filenameInput');
+
+    function updateHighlight() {
+        highlightCode.className = `language-${detectLanguage(filenameInput.value)}`;
+        // Trailing newline keeps the <pre>'s height honest when the last line is empty.
+        highlightCode.textContent = editor.value + '\n';
+        Prism.highlightElement(highlightCode);
+    }
+
     // --- Shims for the two small pieces of UI.html/main.js that audio-engine.js's
     // initializeAudioSystem() expects but that live outside core.js/audio-engine.js
     // (main.js isn't loaded here - it also wires up ROI/video, which this page doesn't need).
@@ -320,6 +449,33 @@ function ragbaarNet(scene) {
         if (typeof hardStopAllAudio === 'function') hardStopAllAudio();
     });
 
+    // --- Save (downloads the buffer under whatever name is in the title bar) ---
+    function saveFile() {
+        const filename = filenameInput.value.trim() || 'session.txt';
+        const blob = new Blob([editor.value], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', saveFile);
+
+    // Filename drives syntax highlighting (see detectLanguage above) and
+    // auto-sizes to its own content so it doesn't look like a fixed-width box.
+    function resizeFilenameInput() {
+        filenameInput.size = Math.max(6, filenameInput.value.length);
+    }
+    filenameInput.addEventListener('input', () => {
+        resizeFilenameInput();
+        updateHighlight();
+    });
+    resizeFilenameInput();
+
     // --- Keystroke capture -----------------------------------------------------
     const editor = document.getElementById('editor');
     const lastKeyEl = document.getElementById('lastKey');
@@ -348,6 +504,14 @@ function ragbaarNet(scene) {
             editor.value = editor.value.slice(0, start) + '\t' + editor.value.slice(end);
             editor.selectionStart = editor.selectionEnd = start + 1;
             updateGutter();
+            updateHighlight();
+        }
+
+        // Ctrl/Cmd+S saves instead of triggering the browser's "Save Page" dialog.
+        // The keystroke still counts musically (see below) - it's a real keypress.
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            saveFile();
         }
 
         // Ignore OS key-repeat: we only want one NOTE_ON per physical press.
@@ -432,12 +596,18 @@ function ragbaarNet(scene) {
         gutter.innerHTML = html;
     }
 
-    editor.addEventListener('input', updateGutter);
+    editor.addEventListener('input', () => {
+        updateGutter();
+        updateHighlight();
+    });
     editor.addEventListener('scroll', () => {
         gutter.scrollTop = editor.scrollTop;
+        highlightPre.scrollTop = editor.scrollTop;
+        highlightPre.scrollLeft = editor.scrollLeft;
     });
 
     updateGutter();
+    updateHighlight();
 </script>
 
 </body>
