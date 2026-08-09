@@ -451,9 +451,6 @@ class KeyEventsDetector(BaseDetector):
                 "type": "NOTE_ON",
                 "object_id": key,
                 "class": class_name,
-                "edges": [],
-                "area": None,
-                "area/ROI": None,
                 "intensity": intensity,
             })
 
@@ -465,9 +462,6 @@ class KeyEventsDetector(BaseDetector):
                 "type": "NOTE_OFF",
                 "object_id": key,
                 "class": class_name,
-                "edges": [],
-                "area": None,
-                "area/ROI": None,
                 "intensity": intensity,
             })
 
