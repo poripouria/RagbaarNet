@@ -463,7 +463,7 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     threading.Thread(target=run_telemetry_server, daemon=True).start()
 
     try:
-        socketio.run(app, host=host, port=port, debug=debug)
+        socketio.run(app, host=host, port=port, debug=debug, use_reloader=False)
     except Exception as e:
         logger.exception("❌ Server error: %s", e)
         processor.shutdown()

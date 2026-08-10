@@ -102,6 +102,7 @@ function connectToProcessor() {
                 };
                 document.head.appendChild(script);
             } else {
+                console.trace('🔌 Creating new socket connection');
                 initializeSocketConnection();
             }
         })
@@ -313,6 +314,7 @@ function tryAlternativeConnections() {
                         if (segmentationSocket) {
                             segmentationSocket.disconnect();
                         }
+                        console.trace('🔌 Creating new socket connection');
                         initializeSocketConnection();
                     }
                 })
