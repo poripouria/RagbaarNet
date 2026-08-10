@@ -630,65 +630,6 @@ class LSTMOrchestralMusician(BaseMusician):
             }
         )
 
-class TestDrummerMusician(BaseMusician):
-    """
-    Test musician that generates a simple drum pattern for testing purposes.
-    This musician is designed to produce a basic drum beat, allowing for quick testing
-    of the music generation framework without relying on complex models or external data.
-    """
-
-    def __init__(self, tempo=120, key_signature="C_major"):
-        """
-        Args:
-            tempo: Music tempo in BPM
-            key_signature: Key signature for music generation
-        """
-        super().__init__(tempo, key_signature)
-
-        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}")
-
-    def generate_music(self, results, frame_id, state):
-        """
-        Generate a simple drum pattern based on the input scene data.
-        """
-
-        logger.info(f"🎵 Generating test drum pattern for frame {frame_id}")
-
-        self.frame_counter = frame_id
-
-        # Simple drum pattern: kick on even frames, snare on odd frames
-        music_events = []
-        if frame_id % 4 == 0:
-            music_events.append(
-                MusicEvent(
-                    event_type="note_on",
-                    note=36,  # Kick drum MIDI note
-                    channel=9,
-                    velocity=100,
-                    instrument="drums",
-                    timestamp=self.frame_counter,
-                )
-            )
-            logger.info(f"Generated kick drum event for frame {frame_id}")
-        else:
-            music_events.append(
-                MusicEvent(
-                    event_type="note_on",
-                    note=38,  # Snare drum MIDI note
-                    channel=9,
-                    velocity=100,
-                    instrument="drums",
-                    timestamp=self.frame_counter,
-                )
-            )
-            logger.info(f"Generated snare drum event for frame {frame_id}")
-        return MusicFrame(
-            events=music_events,
-            frame_id=frame_id,
-            metadata={
-                "scene_events": results,
-            }
-        )
 
 class Musician:
     """
@@ -718,11 +659,6 @@ class Musician:
             "class": LSTMOrchestralMusician,
             "label": "LSTM (Orchestral)",
             "description": "Just like the LSTM musician, but with orchestral instruments.",
-        },
-        "test-drummer": {
-            "class": TestDrummerMusician,
-            "label": "Test Drummer",
-            "description": "Simple test musician that generates a basic drum pattern.",
         },
     }
 
