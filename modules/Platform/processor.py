@@ -270,10 +270,6 @@ class DrivingPipeline(BaseChannel):
             except Exception:
                 segmentation_map = np.clip(np.asarray(segmentation_map, dtype=np.int32), 0, 255).astype(np.uint8)
 
-            if self.debug_mode:
-                unique_classes = np.unique(segmentation_map)
-                logger.debug("🔍 Classes: %s, Shape: %s", unique_classes, segmentation_map.shape)
-
             class_labels = list(getattr(result, 'class_labels', None) or [])
             if not class_labels and self.segmentor is not None:
                 try:
