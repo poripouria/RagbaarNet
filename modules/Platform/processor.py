@@ -270,8 +270,7 @@ class DrivingPipeline(BaseChannel):
             except Exception:
                 segmentation_map = np.clip(np.asarray(segmentation_map, dtype=np.int32), 0, 255).astype(np.uint8)
 
-            # Occasional debug info (not every frame)
-            if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+            if self.debug_mode:
                 unique_classes = np.unique(segmentation_map)
                 logger.debug("🔍 Classes: %s, Shape: %s", unique_classes, segmentation_map.shape)
 
