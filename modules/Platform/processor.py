@@ -470,7 +470,7 @@ class Processor:
         self._shutdown_lock = threading.Lock()
         self._is_shutdown = False
 
-        logger.info("🔄 Initializing music generation...")
+        logger.info("🔄 Initializing music generation platfom...")
         try:
             self.musician = Musician('lstm-onessen-orchestral', tempo=120, key_signature="C_major", time_signature=(4,4))
             self.music_queue = Queue(maxsize=5)
