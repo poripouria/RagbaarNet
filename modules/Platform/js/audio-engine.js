@@ -663,6 +663,7 @@ function getCurrentlyPlayingInstruments() {
 function updateMusicInfo(musicData) {
     const eventCount = (musicData && Array.isArray(musicData.events)) ? musicData.events.length : 0;
     const key = (musicData && musicData.key_signature) ? musicData.key_signature : lastMusicStatus.keySignature;
+    const timesign = (musicData && musicData.time_signature) ? musicData.time_signature : lastMusicStatus.timeSignature;
 
     const instruments = getCurrentlyPlayingInstruments();
     const instrumentSummary = Object.entries(instruments)

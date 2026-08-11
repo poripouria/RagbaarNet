@@ -54,8 +54,6 @@ class MusicFrame:
         events: List of music events for this frame
         frame_id: Identifier for the corresponding video frame
         timestamp: Generation timestamp
-        tempo: Current tempo (BPM)
-        key_signature: Current key signature
         metadata: Additional frame-specific information
     """
 
@@ -74,17 +72,19 @@ class BaseMusician(ABC):
     NOTE_ON_TYPES = frozenset({"ROI_TOUCH", "NOTE_ON"})
     NOTE_OFF_TYPES = frozenset({"ROI_RELEASE", "NOTE_OFF"})
 
-    def __init__(self, tempo: int = 120, key_signature: str = "C_major"):
+    def __init__(self, tempo: int = 120, key_signature: str = "C_major", time_signature: tuple = (4, 4)):
         """
         Initialize the base musician.
 
         Args:
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
+            time_signature: Time signature for music generation
         """
 
         self.tempo = tempo
         self.key_signature = key_signature
+        self.time_signature = time_signature
         self.active_notes = {i: {} for i in range(16)}  # Initialize active notes for all 16 MIDI channels
 
         self.frame_counter = 0
@@ -133,15 +133,16 @@ class RuleBasedMusician(BaseMusician):
     particularly focusing on objects interacting with a defined Region of Interest (ROI).
     """
 
-    def __init__(self, tempo=120, key_signature="C_major"):
+    def __init__(self, tempo=120, key_signature="C_major", time_signature: tuple = (4, 4)):
         """
         Args:
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
+            time_signature: Time signature for music generation
         """
-        super().__init__(tempo, key_signature)
+        super().__init__(tempo, key_signature, time_signature)
 
-        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}")
+        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, time_signature={time_signature}")
 
     def _map_classes(self, obj_class):
         """
@@ -239,13 +240,14 @@ class ContinuousPianistMusician(RuleBasedMusician):
     a more fluid and expressive musical output in response to visual stimuli.
     """
 
-    def __init__(self, tempo=120, key_signature="C_major"):
+    def __init__(self, tempo=120, key_signature="C_major", time_signature: tuple = (4, 4)):
         """
         Args:
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
+            time_signature: Time signature for music generation
         """
-        super().__init__(tempo, key_signature)
+        super().__init__(tempo, key_signature, time_signature)
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}")
 
@@ -285,15 +287,16 @@ class LSTMMusician(BaseMusician):
         "pad", "synth"
     )
 
-    def __init__(self, tempo=120, key_signature="C_major", temperature=0.9, instrument="piano"):
+    def __init__(self, tempo=120, key_signature="C_major", time_signature: tuple = (4, 4), temperature=0.9, instrument="piano"):
         """
         Args:
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
+            time_signature: Time signature for music generation
             temperature: Sampling temperature for LSTM model
             instrument: Tone.js instrument used to play generated melodies
         """
-        super().__init__(tempo, key_signature)
+        super().__init__(tempo, key_signature, time_signature)
         self.temperature = temperature
 
         if instrument not in self.AVAILABLE_INSTRUMENTS:
@@ -316,7 +319,7 @@ class LSTMMusician(BaseMusician):
             "traffic light", "traffic sign", "stop sign",
         ]
 
-        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
+        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, time_signature={time_signature}, temperature={temperature}")
 
     def generate_music(self, results, frame_id, state):
         """
@@ -444,14 +447,15 @@ class LSTMOrchestralMusician(BaseMusician):
     richer and more diverse musical output.
     """
 
-    def __init__(self, tempo=120, key_signature="C_major", temperature=0.9):
+    def __init__(self, tempo=120, key_signature="C_major", time_signature=(4, 4), temperature=0.9):
         """
         Args:
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
+            time_signature: Time signature for music generation
             temperature: Sampling temperature for LSTM model
         """
-        super().__init__(tempo, key_signature)
+        super().__init__(tempo, key_signature, time_signature)
 
         self.temperature = temperature
 
@@ -486,7 +490,7 @@ class LSTMOrchestralMusician(BaseMusician):
             instrument: list(self.last_seed_notes[instrument]) for instrument in self.last_seed_notes
         }
 
-        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, temperature={temperature}")
+        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, time_signature={time_signature}, temperature={temperature}")
 
     def _map_classes(self, obj_class):
         """
@@ -662,7 +666,7 @@ class Musician:
         },
     }
 
-    def __init__(self, musician_type: str = "lstm-onessen", tempo: int = 120, key_signature: str = "C_major", instrument: str = "piano"):
+    def __init__(self, musician_type: str = "lstm-onessen-orchestral", tempo: int = 120, key_signature: str = "C_major", time_signature: tuple = (4, 4), instrument: str = "piano"):
         """
         Initialize the main Musician.
 
@@ -676,6 +680,7 @@ class Musician:
         self.musician_type = musician_type.lower()
         self.tempo = tempo
         self.key_signature = key_signature
+        self.time_signature = time_signature
         self.instrument = instrument
 
         entry = self.MUSICIAN_REGISTRY.get(self.musician_type)
@@ -691,14 +696,15 @@ class Musician:
 
     def _create_musician(self, entry):
         if entry["class"] is LSTMMusician:
-            return entry["class"](self.tempo, self.key_signature, instrument=self.instrument)
-        return entry["class"](self.tempo, self.key_signature)
+            return entry["class"](self.tempo, self.key_signature, self.time_signature, instrument=self.instrument)
+        return entry["class"](self.tempo, self.key_signature, self.time_signature)
 
     def switch_musician(
         self,
         musician_type: str,
         tempo: Optional[int] = None,
         key_signature: Optional[str] = None,
+        time_signature: Optional[tuple] = None,
         instrument: Optional[str] = None
     ) -> None:
         """
@@ -708,12 +714,14 @@ class Musician:
             musician_type: New musician type
             tempo: New tempo (keeps current if None)
             key_signature: New key signature (keeps current if None)
+            time_signature: New time signature (keeps current if None)
             instrument: LSTM instrument (keeps current if None)
         """
 
         self.musician_type = musician_type.lower()
         self.tempo = self.tempo if tempo is None else tempo
         self.key_signature = self.key_signature if key_signature is None else key_signature
+        self.time_signature = self.time_signature if time_signature is None else time_signature
         self.instrument = self.instrument if instrument is None else instrument
 
         entry = self.MUSICIAN_REGISTRY.get(self.musician_type)

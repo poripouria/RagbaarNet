@@ -180,6 +180,10 @@ function initializeSocketConnection() {
                 lastMusicStatus.keySignature = data.key_signature;
                 updateMusicStatusDisplay();
             }
+            if (data && data.time_signature) {
+                lastMusicStatus.timeSignature = data.time_signature;
+                updateMusicStatusDisplay();
+            }
         });
 
         // Pushed by the processor whenever it receives fresh telemetry

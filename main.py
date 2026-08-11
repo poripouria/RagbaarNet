@@ -362,6 +362,19 @@ def handle_set_music_key(data):
         emit('music_status', {'error': str(e), 'success': False})
         logger.error("❌ Error setting music key: %s", e)
 
+@socketio.on('set_music_time')
+def handle_set_music_time(data):
+    """Handle music time signature change"""
+
+    try:
+        time_signature = data.get('time_signature', (4, 4))
+        result = processor.set_music_time_signature(time_signature)
+        emit('music_status', {'time_signature': time_signature, 'success': result})
+        logger.info("🎵 Music time signature set to: %s", time_signature)
+    except Exception as e:
+        emit('music_status', {'error': str(e), 'success': False})
+        logger.error("❌ Error setting music time signature: %s", e)
+
 @socketio.on('get_music_status')
 def handle_get_music_status():
     """Get current music generation status"""

@@ -472,7 +472,7 @@ class Processor:
 
         logger.info("🔄 Initializing music generation...")
         try:
-            self.musician = Musician('lstm-onessen-orchestral', tempo=120, key_signature="C_major")
+            self.musician = Musician('lstm-onessen-orchestral', tempo=120, key_signature="C_major", time_signature=(4,4))
             self.music_queue = Queue(maxsize=5)
             self.current_music = None
             self.music_enabled = True
@@ -640,6 +640,7 @@ class Processor:
                 'events_count': len(music_frame.events),
                 'tempo': self.musician.tempo,
                 'key_signature': self.musician.key_signature,
+                'time_signature': self.musician.time_signature,
             }
 
             if self.music_queue.full():
@@ -708,6 +709,7 @@ class Processor:
                     'events_count': music_data['events_count'],
                     'tempo': music_data['tempo'],
                     'key_signature': music_data['key_signature'],
+                    'time_signature': music_data['time_signature'],
                     'timestamp': music_data['timestamp'],
                 }
 
@@ -780,6 +782,7 @@ class Processor:
                     'events_count': music_data['events_count'],
                     'tempo': music_data['tempo'],
                     'key_signature': music_data['key_signature'],
+                    'time_signature': music_data['time_signature'],
                     'frames_since_music': frame_diff,
                     'timestamp': music_data['timestamp'],
                 }
@@ -816,6 +819,15 @@ class Processor:
             return True
         return False
 
+    def set_music_time(self, time_signature: tuple):
+        """Set music time signature"""
+
+        if hasattr(self, 'musician') and self.musician is not None:
+            self.musician.time_signature = time_signature
+            logger.info(f"🎵 Music time signature set to {time_signature}")
+            return True
+        return False
+
     def get_music_status(self):
         """Get current music generation status"""
 
@@ -824,6 +836,7 @@ class Processor:
                 'enabled': getattr(self, 'music_enabled', False),
                 'tempo': self.musician.tempo,
                 'key_signature': self.musician.key_signature,
+                'time_signature': self.musician.time_signature,
                 'musician_type': self.musician.musician_type,
                 'instrument': self.musician.instrument,
                 'queue_size': self.music_queue.qsize() if hasattr(self, 'music_queue') else 0,
