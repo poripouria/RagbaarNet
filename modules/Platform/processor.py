@@ -889,7 +889,7 @@ class Processor:
             return {'success': False, 'error': str(e)}
 
     def switch_musician(self, musician_type: str):
-        """Switch to a different music generation model (keeps current tempo/key)"""
+        """Switch to a different music generation model (keeps current tempo/key/timesign)"""
 
         if not hasattr(self, 'musician') or self.musician is None:
             return {'success': False, 'error': 'Musician system not initialized'}

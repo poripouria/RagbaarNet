@@ -64,7 +64,7 @@ let musicianSwitchTimeoutId = null;
 
 const MUSICIAN_SWITCH_TIMEOUT_MS = 8000;
 
-let currentTempo = 120;
+let currentTempo = pendingTempo;
 
 const TEMPO_MIN = 60;
 
@@ -77,7 +77,7 @@ const SPEED_MAX = 160;
 // Controlable, The higher the value, the slower the curve at low speeds. A value of 1.0 would be linear.
 const N = 1.7;
 
-let pendingSpeedKmh = speedFromTempo(120);
+let pendingSpeedKmh = speedFromTempo(pendingTempo);
 
 let currentSpeedKmh = pendingSpeedKmh;
 
