@@ -56,6 +56,7 @@ let lastMusicStatus = {
     eventCount: 0,
     tempo: currentTempo,
     keySignature: 'C_major',
+    timeSignature: (4, 4),
     instruments: []
 };
 
@@ -629,12 +630,17 @@ function updateMusicStatusDisplay() {
         parts.push(keyLabel);
     }
 
+    const timeSign = lastMusicStatus.timeSignature;
+    if (timeSign && timeSign[0] && timeSign[1]) {
+        parts.push(`${timeSign[0]}/${timeSign[1]}`);
+    }
+
     if (lastMusicStatus.instruments.length > 0) {
         const instrumentLabel = lastMusicStatus.instruments.join(', ');
         parts.push(`Instruments: ${instrumentLabel}`);
     }
 
-    const message = parts.length > 0 ? `🎵 ${parts.join(' • ')}` : `🎵 Tempo ${lastMusicStatus.tempo} BPM`;
+    const message = parts.length > 0 ? `🎵 ${parts.join(' • ')}` : `🎵 Tempo ${lastMusicStatus.tempo} BPM, ${lastMusicStatus.timeSignature[1]/lastMusicStatus.timeSignature[2]}`;
     updateStatus(message);
 }
 
@@ -674,6 +680,7 @@ function updateMusicInfo(musicData) {
         eventCount,
         tempo: currentTempo,
         keySignature: key,
+        timeSignature: timesign,
         instruments: instrumentSummary
     };
 
