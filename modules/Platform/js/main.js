@@ -14,6 +14,7 @@
 window.onload = function() {
     setupEventListeners();
     showInputSelection();
+    updateMusicButton();
 };
 
 /**
@@ -409,7 +410,7 @@ function updateMusicButton() {
             musicBtn.classList.add('playing');
         } else {
             musicBtn.textContent = '🎵 Generate Music';
-            musicBtn.style.backgroundColor = '#4a9eff';
+            musicBtn.style.backgroundColor = '';
             musicBtn.classList.remove('playing');
         }
     }
