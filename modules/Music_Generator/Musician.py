@@ -391,7 +391,7 @@ class LSTMMusician(BaseMusician):
                     related_note = self.active_notes[0][e["object_id"]]["note"]
                     self.active_notes[0].pop(e["object_id"], None)
                 else:
-                    logger.warning("No previous note found to turn off on release event.")
+                    logger.warning(f"No previous note found to turn off on release event for object_id {e['object_id']}.")
                     continue
                 note = related_note
 
@@ -584,7 +584,7 @@ class LSTMOrchestralMusician(BaseMusician):
                     related_note = self.active_notes[channel][e["object_id"]]["note"]
                     self.active_notes[channel].pop(e["object_id"], None)
                 else:
-                    logger.warning("No previous note found to turn off on release event.")
+                    logger.warning(f"No previous note found to turn off on release event for object_id {e['object_id']}.")
                     continue
                 note = related_note
 
