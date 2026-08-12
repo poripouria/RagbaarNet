@@ -49,7 +49,7 @@ let processingCanvas = null;
 
 let processingCtx = null;
 
-let segmentationSocket = null;
+let processingSocket = null;
 
 let currentSegmentationOverlay = null;
 
@@ -121,7 +121,7 @@ function connectToProcessor() {
 function initializeSocketConnection() {
     try {
         console.log(`🔄 Attempting to connect to processor at: ${processorUrl}`);
-        segmentationSocket = io(processorUrl, {
+        processingSocket = io(processorUrl, {
             timeout: 10000,
             reconnection: true,
             reconnectionAttempts: 5,
@@ -129,7 +129,7 @@ function initializeSocketConnection() {
             transports: ['websocket', 'polling'] // Allow fallback to polling
         });
         
-        segmentationSocket.on('connect', function() {
+        processingSocket.on('connect', function() {
             console.log('✅ Connected to segmentation processor');
             updateStatus('Processor connected - Background segmentation processing active');
             updateSegmentationStatus('Connected');
@@ -138,30 +138,30 @@ function initializeSocketConnection() {
             updateSegmentationButtonState();
             
             // Sync the currently active musician (in case it differs from our default guess)
-            segmentationSocket.emit('get_available_musicians');
-            segmentationSocket.emit('get_music_status');
+            processingSocket.emit('get_available_musicians');
+            processingSocket.emit('get_music_status');
             
             // Start requesting updates
             startRequestingUpdates();
         });
         
-        segmentationSocket.on('disconnect', function() {
+        processingSocket.on('disconnect', function() {
             console.log('⚠️ Disconnected from segmentation processor');
             updateStatus('Processor disconnected');
             updateSegmentationStatus('Disconnected');
         });
         
-        segmentationSocket.on('frame_update', function(data) {
+        processingSocket.on('frame_update', function(data) {
             updateSegmentationDisplay(data);
         });
         
-        segmentationSocket.on('music_update', function(musicData) {
+        processingSocket.on('music_update', function(musicData) {
             if (isMusicGenerationActive) {
                 handleMusicEvents(musicData);
             }
         });
         
-        segmentationSocket.on('music_status', function(data) {
+        processingSocket.on('music_status', function(data) {
             if (data && Number.isInteger(data.tempo)) {
                 currentTempo = clampTempoValue(data.tempo);
                 pendingTempo = currentTempo;
@@ -191,7 +191,7 @@ function initializeSocketConnection() {
         });
 
         // Pushed by the processor whenever it receives fresh telemetry
-        segmentationSocket.on('telemetry_update', function(data) {
+        processingSocket.on('telemetry_update', function(data) {
             if (!data) return;
 
             latestTelemetry = {
@@ -220,7 +220,7 @@ function initializeSocketConnection() {
             }
         });
         
-        segmentationSocket.on('musicians_list', function(data) {
+        processingSocket.on('musicians_list', function(data) {
             if (data && Array.isArray(data.musicians) && data.musicians.length > 0) {
                 availableMusicians = data.musicians;
             }
@@ -235,7 +235,7 @@ function initializeSocketConnection() {
             updateInstrumentControls();
         });
         
-        segmentationSocket.on('music_settings_updated', function(data) {
+        processingSocket.on('music_settings_updated', function(data) {
             clearTimeout(musicianSwitchTimeoutId);
             isSwitchingMusician = false;
             setMusicianListInteractive(true);
@@ -260,7 +260,7 @@ function initializeSocketConnection() {
             }
         });
 
-        segmentationSocket.on('musician_switched', function(data) {
+        processingSocket.on('musician_switched', function(data) {
             clearTimeout(musicianSwitchTimeoutId);
             isSwitchingMusician = false;
             setMusicianListInteractive(true);
@@ -278,7 +278,7 @@ function initializeSocketConnection() {
             }
         });
         
-        segmentationSocket.on('connect_error', function(error) {
+        processingSocket.on('connect_error', function(error) {
             console.error('❌ Connection error:', error);
             updateStatus('Segmentation Error: Connection Error - Check CORS');
             updateSegmentationStatus('Connection Error - Check CORS');
@@ -287,7 +287,7 @@ function initializeSocketConnection() {
             tryAlternativeConnections();
         });
         
-        segmentationSocket.on('error', function(error) {
+        processingSocket.on('error', function(error) {
             console.error('❌ Socket error:', error);
             updateStatus('Processor error: ' + error.message);
             updateSegmentationStatus('Error');
@@ -323,8 +323,8 @@ function tryAlternativeConnections() {
                         processorUrl = url;
                         
                         // Disconnect current socket and reconnect to working URL
-                        if (segmentationSocket) {
-                            segmentationSocket.disconnect();
+                        if (processingSocket) {
+                            processingSocket.disconnect();
                         }
                         console.trace('🔌 Creating new socket connection');
                         initializeSocketConnection();
@@ -342,9 +342,9 @@ function requestImmediateUpdate() {
      * Force an immediate update request to get the latest segmentation data
      * Useful when toggling segmentation view ON
      */
-    if (segmentationSocket && segmentationSocket.connected) {
+    if (processingSocket && processingSocket.connected) {
         console.log('🔄 Requesting immediate segmentation update');
-        segmentationSocket.emit('request_update');
+        processingSocket.emit('request_update');
     }
 }
 
@@ -353,12 +353,12 @@ function startRequestingUpdates() {
     const SLOW = 300; // when display is OFF
     let lastSlowEmit = 0;
     setInterval(() => {
-        if (!(segmentationSocket && segmentationSocket.connected)) return;
+        if (!(processingSocket && processingSocket.connected)) return;
         const now = Date.now();
         if (segmentationDisplayEnabled) {
-            segmentationSocket.emit('request_update');
+            processingSocket.emit('request_update');
         } else if (now - lastSlowEmit >= SLOW) {
-            segmentationSocket.emit('request_update');
+            processingSocket.emit('request_update');
             lastSlowEmit = now;
         }
     }, FAST);
@@ -657,13 +657,13 @@ function toggleFrameProcessing() {
         } else {
             console.log('⚠️ No segmentation overlay data available yet - waiting for next update');
             // Request immediate update instead of showing loading message
-            if (segmentationSocket && segmentationSocket.connected) {
+            if (processingSocket && processingSocket.connected) {
                 requestImmediateUpdate();
             }
         }
         
         // Ensure processor connection (processing was already running)
-        if (!segmentationSocket || !segmentationSocket.connected) {
+        if (!processingSocket || !processingSocket.connected) {
             connectToProcessor();
         } else {
             // Request immediate update to get latest segmentation data
