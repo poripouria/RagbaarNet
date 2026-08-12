@@ -56,7 +56,7 @@ let lastMusicStatus = {
     eventCount: 0,
     tempo: currentTempo,
     keySignature: 'C_major',
-    timeSignature: (4, 4),
+    timeSignature: [4, 4],
     instruments: []
 };
 
@@ -400,6 +400,8 @@ function initializeInstrumentVoices() {
     };
 }
 
+const QUANTIZE_GRID = "16n";
+
 function handleMusicEvents(musicData) {
     try {
         if (!musicData || !musicData.events) {
@@ -408,13 +410,14 @@ function handleMusicEvents(musicData) {
 
         console.log(`🎵 Received ${musicData.events.length} music events for frame ${musicData.frame_counter}`);
 
-        // Slight delay between events to avoid overwhelming
-        const scheduleTime = Tone.now() + 0.02;
-        // // human feel
-        // const jitter = (Math.random() - 0.5) * 0.008;
+        // Nearest grid point on the central clock
+        const scheduleTime = Tone.Transport.state === 'started'
+        ? Tone.Transport.nextSubdivision(QUANTIZE_GRID)
+        : Tone.now() + 0.02;    // Fallback
+
         // Schedule each music event
         musicData.events.forEach((event, index) => {
-            playMusicEvent(event, scheduleTime); // + jitter
+            playMusicEvent(event, scheduleTime);
         });
 
         // Update UI with music info

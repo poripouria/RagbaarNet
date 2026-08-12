@@ -374,6 +374,10 @@ async function startMusicGeneration() {
     if (isMusicGenerationActive) {
         stopMusicGeneration();
     } else {
+        // Central clock
+        Tone.Transport.bpm.value = currentTempo;
+        Tone.Transport.start();
+
         isMusicGenerationActive = true;
         updateMusicButton();
         updateStatus('🎵 Music generation started - listening for events...');
@@ -394,6 +398,10 @@ function stopMusicGeneration() {
     
     // Stop any currently playing notes
     stopAllActiveNotes();
+
+    // Clear all scheduled events on the Transport and stop the clock
+    Tone.Transport.cancel();
+    Tone.Transport.stop();
     
     // Disable music generation on server
     if (segmentationSocket && segmentationSocket.connected) {
