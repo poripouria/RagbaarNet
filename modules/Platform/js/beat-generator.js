@@ -78,14 +78,14 @@ function initBeatGenerator() {
         const step = beatStepIndex % pattern.steps;
 
         if (pattern.kick[step]) {
-            playDrumSound({ note: 36, velocity: 55 }, time); // kick
+            playDrumSound({ note: 36, velocity: 75 }, time); // kick
         }
         if (pattern.snare[step]) {
-            playDrumSound({ note: 38, velocity: 40 }, time); // snare
+            playDrumSound({ note: 38, velocity: 65 }, time); // snare
         }
         const hihatPattern = pattern.hihat[currentHihatLevel] || pattern.hihat.low;
         if (hihatPattern[step]) {
-            playDrumSound({ note: 42, velocity: 35 }, time); // hihat
+            playDrumSound({ note: 42, velocity: 45 }, time); // hihat
         }
 
         beatStepIndex++;

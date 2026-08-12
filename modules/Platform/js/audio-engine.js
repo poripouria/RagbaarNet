@@ -334,7 +334,7 @@ function initializeInstrumentVoices() {
 
     // --- Drums ---
     // Drums get their OWN submix bus (drumsBus) instead of hitting masterBusIn directly.
-    drumsBus = new Tone.Gain(1.35).connect(masterBusIn);
+    drumsBus = new Tone.Gain(0.55).connect(masterBusIn);
 
     function connectDrumWithReverbSend(node, sendAmount) {
         node.connect(drumsBus);
