@@ -150,6 +150,17 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+let lastBpmRampTime = 0;
+const BPM_RAMP_MIN_INTERVAL_MS = 1000; // New ramp each 1s maximum, to avoid too many ramp calls in a short time
+
+function syncTransportBpm(newTempo) {
+    if (Tone.Transport.state !== 'started') return;
+    const now = performance.now();
+    if (now - lastBpmRampTime < BPM_RAMP_MIN_INTERVAL_MS) return;
+    lastBpmRampTime = now;
+    Tone.Transport.bpm.rampTo(newTempo, 2);
+}
+
 function clampTempoValue(value) {
     const parsedValue = Number.parseInt(value, 10);
     if (Number.isNaN(parsedValue)) {

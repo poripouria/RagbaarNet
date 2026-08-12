@@ -170,6 +170,10 @@ function initializeSocketConnection() {
                 lastMusicStatus.tempo = currentTempo;
                 updateTempoControls(currentSpeedKmh);
                 updateMusicStatusDisplay();
+
+                if (Tone.Transport.state === 'started') {
+                    syncTransportBpm(currentTempo);
+                }
             }
             if (data && data.instrument) {
                 currentInstrument = data.instrument;
@@ -198,6 +202,9 @@ function initializeSocketConnection() {
 
             currentSpeedKmh = latestTelemetry.speed_kmh != null ? clampSpeedValue(latestTelemetry.speed_kmh) : currentSpeedKmh;
             currentTempo = calculateAutoTempoFromSpeed(currentSpeedKmh);
+            if (Tone.Transport.state === 'started') {
+                syncTransportBpm(currentTempo);
+            }
             pendingSpeedKmh = currentSpeedKmh;
             pendingTempo = currentTempo;
             lastMusicStatus.tempo = currentTempo;
