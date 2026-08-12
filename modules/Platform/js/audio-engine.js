@@ -526,7 +526,7 @@ function playDrumSound(event, scheduleTime) {
             voice.triggerAttackRelease("16n", scheduleTime, velocity);
         }
         const PERCUSSION_VISIBILITY_MS = 600;
-        recentPercussion.set(`${drumType}-${Date.now()}`, Date.now() + PERCUSSION_VISIBILITY_MS);
+        recentPercussion.set(drumType, Date.now() + PERCUSSION_VISIBILITY_MS);
     } catch (e) {
         console.warn('⚠️ Tone.js drum trigger error:', e);
     }
