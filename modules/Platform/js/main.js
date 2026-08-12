@@ -222,17 +222,21 @@ function openMusicianModal() {
     pendingMusicianSelection = currentMusicianType;
     pendingInstrument = currentInstrument;
     pendingSpeedKmh = currentSpeedKmh;
+    pendingDrumsEnabled = isDrumsEnabled;
+    
     renderMusicianList();
     updateInstrumentControls();
     updateTempoControls(pendingSpeedKmh);
+    renderDrumsToggle();
+    // renderTimeSignatureList(); 
     setMusicianModalStatus('Adjust the settings and tap Apply.');
     setMusicianListInteractive(!isSwitchingMusician);
     updateMusicianApplyButton();
     modal.style.display = 'flex';
 
     // Refresh from the server in case the list or current selection changed elsewhere
-    if (segmentationSocket && segmentationSocket.connected) {
-        segmentationSocket.emit('get_available_musicians');
+    if (processingSocket && processingSocket.connected) {
+        processingSocket.emit('get_available_musicians');
     }
 }
 
@@ -253,7 +257,7 @@ function applyMusicSettings() {
         return;
     }
 
-    if (!segmentationSocket || !segmentationSocket.connected) {
+    if (!processingSocket || !processingSocket.connected) {
         setMusicianModalStatus('⚠️ Not connected to processor - cannot update music settings');
         return;
     }
@@ -261,11 +265,14 @@ function applyMusicSettings() {
     pendingSpeedKmh = latestTelemetry.speed_kmh != null ? clampSpeedValue(latestTelemetry.speed_kmh) : pendingSpeedKmh;
     pendingTempo = calculateAutoTempoFromSpeed(pendingSpeedKmh);
 
+    isDrumsEnabled = pendingDrumsEnabled;
+    setDrumsEnabled(isDrumsEnabled);
+
     isSwitchingMusician = true;
     setMusicianListInteractive(false);
     updateMusicianApplyButton();
     setMusicianModalStatus('Applying music settings...');
-    segmentationSocket.emit('set_music_settings', {
+    processingSocket.emit('set_music_settings', {
         musician_type: pendingMusicianSelection,
         instrument: pendingInstrument,
         tempo: pendingTempo
@@ -313,6 +320,60 @@ function renderInstrumentList() {
             pendingInstrument = instrument.id;
             renderInstrumentList();
             updateMusicianApplyButton();
+        };
+
+        chip.addEventListener('click', selectHandler);
+        chip.addEventListener('touchend', selectHandler);
+        container.appendChild(chip);
+    });
+}
+
+function renderDrumsToggle() {
+    const container = document.getElementById('drumsToggleList');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    const isSelected = pendingDrumsEnabled;
+    chip.className = 'instrument-chip' + (isSelected ? ' selected' : '');
+    chip.setAttribute('role', 'option');
+    chip.setAttribute('aria-selected', isSelected.toString());
+    chip.innerHTML = `
+        <img class="instrument-chip-icon" src="../../assets/icons/instruments/drums.png" alt="" aria-hidden="true" draggable="false">
+        <span class="instrument-chip-label">Drums</span>
+    `;
+
+    const toggleHandler = (event) => {
+        event.preventDefault();
+        pendingDrumsEnabled = !pendingDrumsEnabled;
+        renderDrumsToggle();
+    };
+
+    chip.addEventListener('click', toggleHandler);
+    chip.addEventListener('touchend', toggleHandler);
+    container.appendChild(chip);
+}
+
+function renderTimeSignatureList() {
+    const container = document.getElementById('timeSignatureList');
+    if (!container) return;
+
+    container.innerHTML = '';
+    timeSignatureOptions.forEach(ts => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        const isSelected = ts.value[0] === currentTimeSignature[0] && ts.value[1] === currentTimeSignature[1];
+        chip.className = 'instrument-chip' + (isSelected ? ' selected' : '');
+        chip.setAttribute('role', 'option');
+        chip.setAttribute('aria-selected', isSelected.toString());
+        chip.textContent = ts.label;
+
+        const selectHandler = (event) => {
+            event.preventDefault();
+            currentTimeSignature = ts.value;
+            renderTimeSignatureList();
         };
 
         chip.addEventListener('click', selectHandler);
@@ -377,15 +438,17 @@ async function startMusicGeneration() {
         // Central clock
         Tone.Transport.bpm.value = currentTempo;
         Tone.Transport.start();
-        initBeatGenerator();
+        if (isDrumsEnabled) {
+            initBeatGenerator();
+        }
 
         isMusicGenerationActive = true;
         updateMusicButton();
         updateStatus('🎵 Music generation started - listening for events...');
         
         // Request music generation from server
-        if (segmentationSocket && segmentationSocket.connected) {
-            segmentationSocket.emit('toggle_music', { enabled: true });
+        if (processingSocket && processingSocket.connected) {
+            processingSocket.emit('toggle_music', { enabled: true });
         } else {
             console.warn('⚠️ Socket not connected, music will start when connection is established');
         }
@@ -406,8 +469,8 @@ function stopMusicGeneration() {
     Tone.Transport.stop();
     
     // Disable music generation on server
-    if (segmentationSocket && segmentationSocket.connected) {
-        segmentationSocket.emit('toggle_music', { enabled: false });
+    if (processingSocket && processingSocket.connected) {
+        processingSocket.emit('toggle_music', { enabled: false });
     }
 }
 

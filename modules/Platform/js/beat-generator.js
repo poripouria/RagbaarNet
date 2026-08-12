@@ -56,6 +56,17 @@ function timeSignatureKey(timeSignature) {
 let beatGeneratorEventId = null;
 let beatStepIndex = 0;
 
+function setDrumsEnabled(enabled) {
+    isDrumsEnabled = enabled;
+
+    if (!isMusicGenerationActive) return;
+    if (enabled) {
+        initBeatGenerator();
+    } else {
+        stopBeatGenerator();
+    }
+}
+
 function initBeatGenerator() {
     if (beatGeneratorEventId !== null) return; // Already running
 

@@ -56,6 +56,18 @@ let currentInstrument = 'piano';
 
 let pendingInstrument = currentInstrument;
 
+let isDrumsEnabled = true;
+
+let pendingDrumsEnabled = isDrumsEnabled;
+
+// const timeSignatureOptions = [
+//     { id: '4/4', label: '4/4', value: [4, 4] },
+//     { id: '3/4', label: '3/4', value: [3, 4] },
+//     { id: '6/8', label: '6/8', value: [6, 8] }
+// ];
+
+// let currentTimeSignature = [4, 4];
+
 let pendingTempo = 120;
 
 let isSwitchingMusician = false;
