@@ -377,6 +377,7 @@ async function startMusicGeneration() {
         // Central clock
         Tone.Transport.bpm.value = currentTempo;
         Tone.Transport.start();
+        initBeatGenerator();
 
         isMusicGenerationActive = true;
         updateMusicButton();
@@ -398,6 +399,7 @@ function stopMusicGeneration() {
     
     // Stop any currently playing notes
     stopAllActiveNotes();
+    stopBeatGenerator();
 
     // Clear all scheduled events on the Transport and stop the clock
     Tone.Transport.cancel();

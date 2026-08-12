@@ -204,6 +204,32 @@ function clampVolumeValue(value) {
     return Math.max(VOLUME_MIN, Math.min(VOLUME_MAX, parsedValue));
 }
 
+// --- Drum / Beat engine: RPM-driven hi-hat density ---
+let currentHihatLevel = 'low'; // 'low' | 'mid' | 'high' | 'max'
+const RPM_LOW_THRESHOLD = 1500;
+const RPM_MID_THRESHOLD = 2500;
+const RPM_HIGH_THRESHOLD = 4000;
+const RPM_HYSTERESIS = 200; // Prevents rapid oscillation near borders
+
+function calculateDrumDensityFromRpm(rpm) {
+    if (!Number.isFinite(rpm)) return currentHihatLevel;
+
+    if (currentHihatLevel === 'low' && rpm > RPM_LOW_THRESHOLD + RPM_HYSTERESIS) {
+        currentHihatLevel = 'mid';
+    } else if (currentHihatLevel === 'mid' && rpm > RPM_MID_THRESHOLD + RPM_HYSTERESIS) {
+        currentHihatLevel = 'high';
+    } else if (currentHihatLevel === 'high' && rpm > RPM_HIGH_THRESHOLD + RPM_HYSTERESIS) {
+        currentHihatLevel = 'max';
+    } else if (currentHihatLevel === 'max' && rpm < RPM_HIGH_THRESHOLD - RPM_HYSTERESIS) {
+        currentHihatLevel = 'high';
+    } else if (currentHihatLevel === 'high' && rpm < RPM_MID_THRESHOLD - RPM_HYSTERESIS) {
+        currentHihatLevel = 'mid';
+    } else if (currentHihatLevel === 'mid' && rpm < RPM_LOW_THRESHOLD - RPM_HYSTERESIS) {
+        currentHihatLevel = 'low';
+    }
+    return currentHihatLevel;
+}
+
 /**
  * Mobile Viewport Height Fix
  * Handles the mobile browser navigation bar issue

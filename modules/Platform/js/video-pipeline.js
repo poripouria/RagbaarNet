@@ -199,7 +199,8 @@ function initializeSocketConnection() {
                 accel: Number.isFinite(data.accel) ? data.accel : latestTelemetry.accel,
                 rpm: Number.isFinite(data.rpm) ? data.rpm : latestTelemetry.rpm
             };
-
+            
+            currentHihatLevel = calculateDrumDensityFromRpm(latestTelemetry.rpm);
             currentSpeedKmh = latestTelemetry.speed_kmh != null ? clampSpeedValue(latestTelemetry.speed_kmh) : currentSpeedKmh;
             currentTempo = calculateAutoTempoFromSpeed(currentSpeedKmh);
             if (Tone.Transport.state === 'started') {

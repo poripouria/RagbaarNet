@@ -124,14 +124,14 @@ function connectWithReverbSend(node, sendAmount, velocity = 1) {
 
 // Per-instrument output trim (0-1 multiplier applied on top of velocity, right before triggerAttack)
 const INSTRUMENT_OUTPUT_TRIM = {
-    piano: 1.0,
+    piano: 1.0, 
     electric_piano: 0.95,
     strings: 0.6,
     bass: 1.05,
     electric_guitar: 0.95,
     acoustic_guitar: 1.0,
     pad: 0.85,
-    synth: 0.9
+    synth: 0.9,
 };
 
 // Hard cap on simultaneous voices PER INSTRUMENT. This is a safety net independent of the shared-effects

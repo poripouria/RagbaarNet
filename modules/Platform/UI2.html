@@ -346,6 +346,7 @@ function ragbaarNet(scene) {
      first - audio-engine.js reads its globals (currentTempo, currentVolume, etc.) at load time. -->
 <script src="/ui/js/core.js"></script>
 <script src="/ui/js/audio-engine.js"></script>
+<script src="/ui/js/beat-generator.js"></script>
 <script>
     // --- Syntax highlighting (Prism.js), driven entirely by the filename's
     // extension - no hardcoded language, no dropdown to keep in sync by hand.
@@ -436,6 +437,9 @@ function ragbaarNet(scene) {
             await Tone.start();
             initializeAudioSystem();          // builds the mastering chain + instrument factories
             isMusicGenerationActive = true;   // audio-engine.js checks this before playing tonal notes
+            Tone.Transport.bpm.value = currentTempo;
+            Tone.Transport.start();
+            initBeatGenerator();
             startOverlay.style.display = 'none';
             editor.focus();
             console.log('🎵 Audio engine started');
@@ -446,7 +450,10 @@ function ragbaarNet(scene) {
     });
 
     document.getElementById('stopBtn').addEventListener('click', () => {
-        if (typeof hardStopAllAudio === 'function') hardStopAllAudio();
+        if (typeof hardStopAllAudio === 'function') {
+            hardStopAllAudio();
+            stopBeatGenerator();
+        }
     });
 
     // --- Save (downloads the buffer under whatever name is in the title bar) ---
@@ -543,7 +550,7 @@ function ragbaarNet(scene) {
         releaseMouseSoon.cancel();
     });
 
-    // --- Scroll -> piano, mouse movement -> pad --------------------------------
+    // --- Scroll -> string, mouse movement -> pad --------------------------------
     function makeGestureTrigger(key, holdMs) {
         let isHeld = false;
         let releaseTimer = null;
