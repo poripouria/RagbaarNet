@@ -418,6 +418,12 @@ body {
     white-space: nowrap;
 }
 
+.instrument-chip-sub-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
 .musician-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
