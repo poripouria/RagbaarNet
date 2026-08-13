@@ -377,13 +377,23 @@ class LSTMMusician(BaseMusician):
                     velocity = int(intensity * (127 - 17) + 17)
 
                 # Generate new notes using the LSTM model
-                self._rt_generator = self.generator.generate_melody_RT(
-                    seed=" ".join(self.last_seed_notes),
-                    length=200,
-                    temperature=self.temperature
-                )
-                
-                new_note = next(self._rt_generator)
+                if self._rt_generator is None:
+                    self._rt_generator = self.generator.generate_melody_RT(
+                        seed=" ".join(self.last_seed_notes),
+                        length=200,
+                        temperature=self.temperature
+                    )
+
+                try:
+                    new_note = next(self._rt_generator)
+                except StopIteration:
+                    self._rt_generator = self.generator.generate_melody_RT(
+                        seed=" ".join(self.last_seed_notes),
+                        length=200,
+                        temperature=self.temperature
+                    )
+                    new_note = next(self._rt_generator)
+
                 note = int(new_note)
                 
                 self.active_notes[0][e["object_id"]] = {
@@ -573,13 +583,23 @@ class LSTMOrchestralMusician(BaseMusician):
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
                     velocity = int(intensity * (127 - 17) + 17)
 
-                self._rt_generator = self.generator.generate_melody_RT(
-                    seed=" ".join(self.last_seed_notes[instrument]),
-                    length=200,
-                    temperature=self.temperature
-                )
+                if self._rt_generator is None:
+                    self._rt_generator = self.generator.generate_melody_RT(
+                        seed=" ".join(self.last_seed_notes),
+                        length=200,
+                        temperature=self.temperature
+                    )
 
-                new_note = next(self._rt_generator)
+                try:
+                    new_note = next(self._rt_generator)
+                except StopIteration:
+                    self._rt_generator = self.generator.generate_melody_RT(
+                        seed=" ".join(self.last_seed_notes),
+                        length=200,
+                        temperature=self.temperature
+                    )
+                    new_note = next(self._rt_generator)
+                
                 note = int(new_note)
 
                 self.active_notes[channel][e["object_id"]] = {
