@@ -20,7 +20,8 @@ const METER_PATTERNS = {
         hihat: {
             low:  [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0], // Quarter-note pulse
             mid:  [1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0], // Eighth-note pulse
-            high: [1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1]  // Sixteenth-note pulse
+            high: [1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1], // Sixteenth-note pulse
+            max:  [1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1], // Sixteenth-note pulse
         }
     },
     "3/4": {
@@ -30,7 +31,8 @@ const METER_PATTERNS = {
         hihat: {
             low:  [1,0,0,0, 1,0,0,0, 1,0,0,0],
             mid:  [1,0,1,0, 1,0,1,0, 1,0,1,0],
-            high: [1,1,1,1, 1,1,1,1, 1,1,1,1]
+            high: [1,1,1,1, 1,1,1,1, 1,1,1,1],
+            max:  [1,1,1,1, 1,1,1,1, 1,1,1,1],
         }
     },
     "6/8": {
@@ -42,7 +44,8 @@ const METER_PATTERNS = {
         hihat: {
             low:  [1,0,0,0,0,0, 1,0,0,0,0,0], // Dotted-quarter pulse — 2 hits per measure
             mid:  [1,0,1,0,1,0, 1,0,1,0,1,0], // Eighth-note pulse — natural 6/8 feel (6 hits)
-            high: [1,1,1,1,1,1, 1,1,1,1,1,1]  // Sixteenth-note pulse — busy "gallop" feel
+            high: [1,1,1,1,1,1, 1,1,1,1,1,1], // Sixteenth-note pulse — busy "gallop" feel
+            max:  [1,1,1,1,1,1, 1,1,1,1,1,1], // Sixteenth-note pulse — busy "gallop" feel
         }
     },
 };
