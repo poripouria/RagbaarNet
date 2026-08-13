@@ -439,11 +439,11 @@ async function startMusicGeneration() {
         // Central clock
         Tone.Transport.bpm.value = currentTempo;
         Tone.Transport.start();
+
+        isMusicGenerationActive = true;
         if (isDrumsEnabled) {
             initBeatGenerator();
         }
-
-        isMusicGenerationActive = true;
         updateMusicButton();
         updateStatus('🎵 Music generation started - listening for events...');
         
