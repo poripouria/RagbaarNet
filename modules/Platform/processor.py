@@ -20,7 +20,7 @@ import zlib
 import hashlib
 import colorsys
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from queue import Queue, Empty
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
