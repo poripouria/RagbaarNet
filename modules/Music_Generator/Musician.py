@@ -89,7 +89,7 @@ class BaseMusician(ABC):
         self.active_notes = {i: {} for i in range(16)}  # Initialize active notes for all 16 MIDI channels
 
         self.frame_counter = 0
-        self.max_missing_frames = 4     # Number of frames to keep an object in memory after it disappears
+        self.max_missing_frames = 8     # Number of frames to keep an object in memory after it disappears
 
     def __call__(self, results: List[Dict[str, Any]], frame_id: int = 0, state: Dict[str, Any] = None):
         return self.generate_music(results, frame_id, state)
