@@ -764,15 +764,12 @@ class Musician:
             for musician_id, info in cls.MUSICIAN_REGISTRY.items()
         ]
 
-    def save_generated_melody(self):
+    def save_generated_melody(self, save_path: Optional[str] = None) -> None:
         """
         Save the generated melody (List of MusicFrames) to a MIDI file.
-        Use the current time for file name for easy access.
-
-        Args:
         """
 
-        pass
+        raise NotImplementedError("Saving generated melody to MIDI is not implemented yet.")
 
     def __call__(self, 
                  results,

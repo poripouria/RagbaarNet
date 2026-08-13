@@ -914,6 +914,9 @@ class Processor:
 
             self._is_shutdown = True
 
+            logger.info("🎼 Saving generated music...")
+            self.musician.save_generated_melody()
+
             logger.info("🛑 Shutting down Main processor...")
             # Send shutdown signal to the processing loop
             try:
