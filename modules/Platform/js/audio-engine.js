@@ -134,6 +134,15 @@ const INSTRUMENT_OUTPUT_TRIM = {
     synth: 0.9,
 };
 
+// Per-drum output trim (velocity multiplier applied before triggerAttack)
+const DRUM_OUTPUT_TRIM = {
+    kick: 0.9,
+    snare: 0.8,
+    hihat: 0.45,
+    crash: 0.65,
+    generic: 0.75
+};
+
 // Hard cap on simultaneous voices PER INSTRUMENT. This is a safety net independent of the shared-effects
 const MAX_POLYPHONY_PER_INSTRUMENT = 6;
 
@@ -334,7 +343,7 @@ function initializeInstrumentVoices() {
 
     // --- Drums ---
     // Drums get their OWN submix bus (drumsBus) instead of hitting masterBusIn directly.
-    drumsBus = new Tone.Gain(0.55).connect(masterBusIn);
+    drumsBus = new Tone.Gain(0.20).connect(masterBusIn);
 
     function connectDrumWithReverbSend(node, sendAmount) {
         node.connect(drumsBus);
@@ -347,11 +356,11 @@ function initializeInstrumentVoices() {
     }
 
     const snareFilter = new Tone.Filter(1800, 'highpass');
-    connectDrumWithReverbSend(snareFilter, 0.14);
+    connectDrumWithReverbSend(snareFilter, 0.08);
     const genericFilter = new Tone.Filter(1000, 'bandpass');
-    connectDrumWithReverbSend(genericFilter, 0.1);
+    connectDrumWithReverbSend(genericFilter, 0.06);
     const crashFilter = new Tone.Filter(6000, 'highpass');
-    connectDrumWithReverbSend(crashFilter, 0.28); // crashes love room/reverb, unlike kick
+    connectDrumWithReverbSend(crashFilter, 0.14); // less room for crashes
 
     instrumentVoices = {
         drums: {
@@ -361,7 +370,7 @@ function initializeInstrumentVoices() {
                     octaves: 6,
                     envelope: { attack: 0.001, decay: 0.35, sustain: 0, release: 0.4 }
                 });
-                connectDrumWithReverbSend(node, 0.03);
+                connectDrumWithReverbSend(node, 0.02);
                 return node;
             })(),
             snare: new Tone.NoiseSynth({
@@ -370,7 +379,7 @@ function initializeInstrumentVoices() {
             }).connect(snareFilter),
             hihat: (() => {
                 const hihatFilter = new Tone.Filter(3500, 'highpass');
-                connectDrumWithReverbSend(hihatFilter, 0.08);
+                connectDrumWithReverbSend(hihatFilter, 0.04);
                 const node = new Tone.MetalSynth({
                     envelope: { attack: 0.001, decay: 0.16, release: 0.05 },
                     harmonicity: 5.1,
@@ -378,7 +387,7 @@ function initializeInstrumentVoices() {
                     resonance: 5000,
                     octaves: 1.5
                 }).connect(hihatFilter);
-                node.volume.value = 2;
+                node.volume.value = -10; // was +2 — this is dB, not linear
                 return node;
             })(),
             crash: (() => {
@@ -389,7 +398,7 @@ function initializeInstrumentVoices() {
                     resonance: 3000,
                     octaves: 2.5
                 }).connect(crashFilter);
-                node.volume.value = 1;
+                node.volume.value = -8;
                 return node;
             })(),
             generic: new Tone.NoiseSynth({
@@ -507,9 +516,10 @@ function playTonalInstrument(event, instrument, channel, scheduleTime) {
 
 function playDrumSound(event, scheduleTime) {
 
-    const rawDrumVelocity = Math.min(1, Math.max(0, (event.velocity ?? 100) / 127));
-    const velocity = Math.max(0.2, Math.pow(rawDrumVelocity, 0.6));
     const drumType = getDrumType(event.note);
+    const trim = DRUM_OUTPUT_TRIM[drumType] ?? 0.9;
+    const rawDrumVelocity = Math.min(1, Math.max(0, (event.velocity ?? 100) / 127));
+    const velocity = Math.max(0.2, Math.pow(rawDrumVelocity, 0.6) * trim);
     const drumVoices = instrumentVoices.drums || {};
     const voice = drumVoices[drumType] || drumVoices.generic;
 
