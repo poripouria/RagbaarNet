@@ -170,7 +170,7 @@ function syncTransportBpm(newTempo) {
     const now = performance.now();
     if (now - lastBpmRampTime < BPM_RAMP_MIN_INTERVAL_MS) return;
     lastBpmRampTime = now;
-    Tone.Transport.bpm.rampTo(newTempo, 2);
+    Tone.Transport.bpm.rampTo(newTempo, 1); // Ramp to new tempo over 1 second
 }
 
 function clampTempoValue(value) {
