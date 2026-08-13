@@ -221,8 +221,18 @@ class RuleBasedMusician(BaseMusician):
         for channel in self.active_notes:
             for object_id in list(self.active_notes[channel].keys()):
                 if self._is_stale(state, object_id, self.max_missing_frames):
-                    event = "note_off"
-                    self.active_notes[channel].pop(object_id, None)
+                    note_info = self.active_notes[channel].get(object_id)
+                    if note_info:
+                        music_events.append(MusicEvent(
+                            event_type="note_off",
+                            note=note_info["note"],
+                            channel=channel,
+                            velocity=0,
+                            instrument=note_info["instrument"],
+                            timestamp=self.frame_counter,
+                            metadata={"object_id": object_id}
+                        ))
+                        self.active_notes[channel].pop(object_id, None)
                     logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
