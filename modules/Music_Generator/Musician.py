@@ -8,6 +8,7 @@ It supports various music generation strategies with easy integration for additi
 
 import os
 import sys
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -32,6 +33,7 @@ class MusicEvent:
         channel: MIDI channel (0-15)
         velocity: Note velocity (0-127), optional depending on event_type
         instrument: Name of the instrument (e.g., "piano", "violin"), optional
+        timeid: Unique identifier for the event, useful for tracking and debugging
         timestamp: Time at which the event occurs
         metadata: Additional event-specific information
     """
@@ -41,6 +43,7 @@ class MusicEvent:
     channel: int = 0
     velocity: Optional[int] = None
     instrument: Optional[str] = None
+    timeid: Optional[int] = None
     timestamp: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -53,13 +56,11 @@ class MusicFrame:
     Attributes:
         events: List of music events for this frame
         frame_id: Identifier for the corresponding video frame
-        timestamp: Generation timestamp
         metadata: Additional frame-specific information
     """
 
     events: List[MusicEvent]
     frame_id: int = 0
-    timestamp: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 class BaseMusician(ABC):
@@ -212,7 +213,8 @@ class RuleBasedMusician(BaseMusician):
                     channel=channel,
                     velocity=velocity if e["type"] in self.NOTE_ON_TYPES else 0,
                     instrument=instrument,
-                    timestamp=self.frame_counter,
+                    timeid=self.frame_counter,
+                    timestamp=time.time(),
                     metadata=e
                 )
             )
@@ -229,7 +231,8 @@ class RuleBasedMusician(BaseMusician):
                             channel=channel,
                             velocity=0,
                             instrument=note_info["instrument"],
-                            timestamp=self.frame_counter,
+                            timeid=self.frame_counter,
+                            timestamp=time.time(),
                             metadata={"object_id": object_id}
                         ))
                         self.active_notes[channel].pop(object_id, None)
@@ -418,7 +421,8 @@ class LSTMMusician(BaseMusician):
                     channel=0,
                     velocity=velocity,
                     instrument=self.instrument,
-                    timestamp=self.frame_counter,
+                    timeid=self.frame_counter,
+                    timestamp=time.time(),
                     metadata=e
                 )
             )
@@ -435,7 +439,8 @@ class LSTMMusician(BaseMusician):
                         channel=0,
                         velocity=0,
                         instrument=note_info["instrument"],
-                        timestamp=self.frame_counter,
+                        timeid=self.frame_counter,
+                        timestamp=time.time(),
                         metadata={"object_id": object_id}
                     )
                 )
@@ -611,7 +616,8 @@ class LSTMOrchestralMusician(BaseMusician):
                     channel=channel,
                     velocity=velocity,
                     instrument=instrument,
-                    timestamp=self.frame_counter,
+                    timeid=self.frame_counter,
+                    timestamp=time.time(),
                     metadata=e
                 )
             )
@@ -629,7 +635,8 @@ class LSTMOrchestralMusician(BaseMusician):
                             channel=channel,
                             velocity=0,
                             instrument=note_info["instrument"],
-                            timestamp=self.frame_counter,
+                            timeid=self.frame_counter,
+                            timestamp=time.time(),
                             metadata={"object_id": object_id}
                         )
                     )
