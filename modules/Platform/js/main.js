@@ -343,6 +343,7 @@ function renderDrumsToggle() {
     chip.innerHTML = `
         <img class="instrument-chip-icon" src="../../assets/icons/instruments/drums.png" alt="" aria-hidden="true" draggable="false">
         <span class="instrument-chip-label">Drums</span>
+        <span class="instrument-chip-sub-label">${isSelected ? '(Enabled)' : '(Disabled)'}</span>
     `;
 
     const toggleHandler = (event) => {
