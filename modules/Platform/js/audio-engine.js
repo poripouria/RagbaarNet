@@ -565,8 +565,8 @@ function hardStopAllAudio() {
     if (masterGain && typeof Tone !== 'undefined') {
         const now = Tone.now();
         masterGain.gain.cancelScheduledValues(now);
-        masterGain.gain.setValueAtTime(0, now);
         masterGain.gain.linearRampToValueAtTime(masterGain.gain.value || 0.3, now + 0.05);
+        masterGain.gain.setValueAtTime(0, now);
     }
 
     console.log('🛑 Hard stop: all audio silenced immediately');
@@ -643,7 +643,7 @@ function updateMusicStatusDisplay() {
         parts.push(`Instruments: ${instrumentLabel}`);
     }
 
-    const message = parts.length > 0 ? `🎵 ${parts.join(' • ')}` : `🎵 Tempo ${lastMusicStatus.tempo} BPM, ${lastMusicStatus.timeSignature[1]/lastMusicStatus.timeSignature[2]}`;
+    const message = parts.length > 0 ? `🎵 ${parts.join(' • ')}` : `🎵 Tempo ${lastMusicStatus.tempo} BPM, ${lastMusicStatus.timeSignature[0]/lastMusicStatus.timeSignature[1]}`;
     updateStatus(message);
 }
 
