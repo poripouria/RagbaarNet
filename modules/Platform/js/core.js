@@ -219,7 +219,7 @@ function clampVolumeValue(value) {
 // --- Drum / Beat engine: RPM-driven hi-hat density ---
 let currentHihatLevel = 'low'; // 'low' | 'mid' | 'high' | 'max'
 const RPM_LOW_THRESHOLD = 1500;
-const RPM_MID_THRESHOLD = 2500;
+const RPM_MID_THRESHOLD = 3000;
 const RPM_HIGH_THRESHOLD = 4000;
 const RPM_HYSTERESIS = 200; // Prevents rapid oscillation near borders
 
