@@ -315,7 +315,7 @@ class LSTMMusician(BaseMusician):
             raise ValueError(f"Unsupported LSTM instrument: {instrument}. Supported instruments: {", ".join(self.AVAILABLE_INSTRUMENTS)}")
         self.instrument = instrument
 
-        from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
+        from modules.Models.Music.LSTM_OnEssen.generator import MelodyGenerator
         self.generator = MelodyGenerator()
         self._rt_generator = None
 
@@ -482,7 +482,7 @@ class LSTMOrchestralMusician(BaseMusician):
 
         self.temperature = temperature
 
-        from Models.Music.LSTM_OnEssen.generator import MelodyGenerator
+        from modules.Models.Music.LSTM_OnEssen.generator import MelodyGenerator
         self.generator = MelodyGenerator()
         self._rt_generator = None
 
