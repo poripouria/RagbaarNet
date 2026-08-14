@@ -367,13 +367,13 @@ class LSTMMusician(BaseMusician):
                     if area < 0.005:
                         logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
                         continue
-                    # Scale area to velocity range (Power Curve Scaler) Area:0.005-0.5, Velocity:21-128
+                    # Scale area to velocity range (Power Curve Scaler) Area:0.005-0.5, Velocity:32-128
                     normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
-                    curved_area = normalized_area ** 1.7
-                    velocity = int(curved_area * (127 - 20) + 20)
+                    curved_area = normalized_area ** 0.8
+                    velocity = int(curved_area * (127 - 31) + 31)
                 else:
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
-                    velocity = int(intensity * (127 - 20) + 20)
+                    velocity = int(intensity * (127 - 31) + 31)
 
                 # Generate new notes using the LSTM model
                 if self._rt_generator is None:
@@ -577,11 +577,11 @@ class LSTMOrchestralMusician(BaseMusician):
                         logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
                         continue
                     normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
-                    curved_area = normalized_area ** 1.7
-                    velocity = int(curved_area * (127 - 20) + 20)
+                    curved_area = normalized_area ** 0.8
+                    velocity = int(curved_area * (127 - 31) + 31)
                 else:
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
-                    velocity = int(intensity * (127 - 20) + 20)
+                    velocity = int(intensity * (127 - 31) + 31)
 
                 if self._rt_generator is None:
                     self._rt_generator = self.generator.generate_melody_RT(
