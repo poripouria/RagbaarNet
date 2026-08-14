@@ -19,8 +19,8 @@ from flask_cors import CORS
 
 from modules.Platform.processor import Processor
 from modules.utils.logging_setup import setup_logging
+logger = setup_logging("INFO", name="Platform.main")
 
-logger = setup_logging("INFO", name="Platform.Main")
 
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
@@ -28,7 +28,10 @@ app.config['SECRET_KEY'] = 'video_processing_secret'
 CORS(app)  # Enable CORS for all routes
 
 # Reduce Socket.IO/engineio log noise in production
-socketio = SocketIO(app, cors_allowed_origins="*", logger=False, engineio_logger=False)
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Global processor instance - pass socketio for real-time broadcasting
+processor = Processor(socketio_instance=socketio)
 
 # Paths for serving the existing web UI (so mobile devices can load it from the laptop)
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -43,20 +46,18 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 
-# Global processor instance - pass socketio for real-time broadcasting
-processor = Processor(socketio_instance=socketio)
-
 
 # Telemetry receiver (Android app)
 telemetry_app = Flask('telemetry_receiver')
 
 @telemetry_app.route('/telemetry', methods=['GET', 'POST'])
 def receive_telemetry():
+    """Receive telemetry data from the Android app."""
+
     if request.method == 'GET':
         return jsonify({'success': True, 'message': 'Telemetry server is alive!'})
 
     data = request.get_json(silent=True) or {}
-
     socketio.emit('telemetry_update', {
         'speed_kmh': data.get('speed_kmh'),
         'accel': data.get('accel'),
@@ -173,30 +174,25 @@ def process_frame():
 
 @app.route('/api/input_event', methods=['POST'])
 def input_event():
-    """Generic ingress for event-based channels (currently: TypingPipeline).
+    """Generic ingress for event-based channels."""
 
-    Body: {"source": "typing", "payload": {...}, "timestamp": 172...}
-    Silently ignored (with a server-side warning) if the active channel isn't
-    an event-based one - Processor picks exactly one channel at startup.
-    """
     try:
         data = request.get_json(silent=True) or {}
         source_name = data.get('source')
         payload = data.get('payload')
-
         if not source_name or payload is None:
             return jsonify({'error': "'source' and 'payload' are required"}), 400
-
         processor.add_event(source_name, payload, timestamp=data.get('timestamp'))
         return jsonify({'success': True})
+    
     except Exception as e:
         logger.exception("❌ Error handling input event: %s", e)
         return jsonify({'error': str(e)}), 500
 
-
 @socketio.on('input_event')
 def handle_input_event(data):
     """Socket.IO twin of /api/input_event, for low-latency streaming sources (e.g. the VSCode extension)."""
+
     try:
         data = data or {}
         source_name = data.get('source')
@@ -205,10 +201,10 @@ def handle_input_event(data):
             emit('input_event_ack', {'success': False, 'error': "'source' and 'payload' are required"})
             return
         processor.add_event(source_name, payload, timestamp=data.get('timestamp'))
+
     except Exception as e:
         emit('input_event_ack', {'success': False, 'error': str(e)})
         logger.error("❌ Error handling input_event (socket): %s", e)
-
 
 @app.route('/api/get_display', methods=['GET'])
 def get_display():
@@ -218,7 +214,7 @@ def get_display():
         # Mark main UI as connected when it requests data
         processor.set_main_ui_connected(True)
         display_data = processor.get_synchronized_display(for_main_ui=True)
-        return jsonify(display_data)
+        return jsonify(display_data)  
     except Exception as e:
         logger.exception("❌ Error getting display data: %s", e)
         return jsonify({'error': str(e)}), 500
@@ -288,8 +284,8 @@ def handle_update_request():
                          client_type, response_data.get('frame_counter', 0), has_overlay, response_data.get('queue_size', 0))
 
     except Exception as e:
-        logger.exception("❌ Error handling update request: %s", e)
         emit('error', {'message': str(e)})
+        logger.error("❌ Error handling update request: %s", e)
 
 @socketio.on('connect')
 def handle_connect():
@@ -297,7 +293,6 @@ def handle_connect():
 
     # Determine if this is status page or main UI based on referrer.
     referrer = (request.headers.get('Referer', '') or '').lower()
-
     # When Referer is missing (e.g., some WebViews), default to Main UI.
     is_main_ui = (not referrer) or ('/ui/' in referrer) or ('/ui2/' in referrer) or referrer.endswith(('/ui', '/ui2'))
 
@@ -317,11 +312,8 @@ def handle_disconnect():
         processor.status_page_clients.remove(request.sid)
         logger.info("📄 Status page disconnected: %s", request.sid)
     else:
-        # Check if any main UI clients are still connected
-        # If not, mark main UI as disconnected
-        logger.info("🎯 Main UI disconnected: %s", request.sid)
-        # In a simple case, assume main UI is disconnected
         processor.set_main_ui_connected(False)
+        logger.info("🎯 Main UI disconnected: %s", request.sid)
 
 @socketio.on('toggle_music')
 def handle_toggle_music(data):
@@ -331,7 +323,6 @@ def handle_toggle_music(data):
         enabled = data.get('enabled', True)
         result = processor.toggle_music_generation(enabled)
         emit('music_status', {'enabled': result, 'success': True})
-        logger.info("🎵 Music generation toggled: %s", enabled)
     except Exception as e:
         emit('music_status', {'error': str(e), 'success': False})
         logger.error("❌ Error toggling music: %s", e)
@@ -344,7 +335,6 @@ def handle_set_music_tempo(data):
         tempo = data.get('tempo', 120)
         result = processor.set_music_tempo(tempo)
         emit('music_status', {'tempo': tempo, 'success': result})
-        logger.info("🎵 Music tempo set to: %s BPM", tempo)
     except Exception as e:
         emit('music_status', {'error': str(e), 'success': False})
         logger.error("❌ Error setting music tempo: %s", e)
@@ -415,10 +405,9 @@ def handle_set_music_settings(data):
         )
         emit('music_settings_updated', result)
         if result.get('success'):
-            logger.info(
-                "🎵 Music settings updated: musician=%s, instrument=%s, tempo=%s",
-                result.get('musician_type'), result.get('instrument'), result.get('tempo')
-            )
+            logger.info("🎵 Music settings updated: musician=%s, instrument=%s, tempo=%s",
+                        result.get('musician_type'), result.get('instrument'), result.get('tempo'))
+        
     except Exception as e:
         emit('music_settings_updated', {'success': False, 'error': str(e)})
         logger.error("❌ Error applying music settings: %s", e)
@@ -437,6 +426,7 @@ def handle_switch_musician(data):
         emit('musician_switched', result)
         if result.get('success'):
             logger.info("🎭 Musician switched to: %s", result.get('musician_type'))
+        
     except Exception as e:
         emit('musician_switched', {'success': False, 'error': str(e)})
         logger.error("❌ Error switching musician: %s", e)
@@ -445,16 +435,14 @@ def shutdown_server(signum, frame):
     """Handle server shutdown signals."""
 
     logger.info("\n🛑 Shutdown signal received (%s).", signum)
-
     try:
         processor.shutdown()
     except Exception:
         logger.exception("❌ Error while shutting down processor.")
-
     logger.info("✅ Server shutdown complete.")
     raise SystemExit(0)
 
-def run_processor_server(host='0.0.0.0', port=5000, debug=False):
+def run_processor_server(host='0.0.0.0', port=5000, debug=False, interval=1):
     """Run the processor server"""
 
     signal.signal(signal.SIGINT, shutdown_server)
@@ -464,6 +452,7 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     logger.info("🎥 Active channel: %s", processor.get_current_state().get('active_channel'))
     logger.info("🌐 Web interface available at:")
     logger.info("   - UI:     http://%s:%s/ui/", host, port)
+    logger.info("   - UI2:    http://%s:%s/ui2/", host, port)
     logger.info("📡 API endpoints:")
     logger.info("   - POST /api/process_frame - Send frame data")
     logger.info("   - GET  /api/get_display   - Get synchronized display")
@@ -471,7 +460,9 @@ def run_processor_server(host='0.0.0.0', port=5000, debug=False):
     logger.info("   - POST /api/debug/enable  - Enable verbose debug logging")
     logger.info("   - POST /api/debug/disable - Disable debug logging for performance")
     logger.info("   - POST http://%s:5500/telemetry - Receive Android telemetry (speed/accel/rpm)", host)
-    logger.info("🚀 Performance Mode: Debug logging %s", "ON" if processor.debug_mode else "OFF")
+    logger.info("🚀 Performance Mode:")
+    logger.info("   - Processing interval: %s frames", interval)
+    logger.info("   - Debug mode: %s", "Enabled" if debug else "Disabled")
 
     threading.Thread(target=run_telemetry_server, daemon=True).start()
 
@@ -487,18 +478,16 @@ if __name__ == '__main__':
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to (use 0.0.0.0 for LAN/mobile access)')
     parser.add_argument('--port', type=int, default=5000, help='Port to bind to')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    parser.add_argument('--interval', type=int, default=2, help='Processing interval in frames (only used by the segmentation channel)')
+    parser.add_argument('--interval', type=int, default=1, help='Processing interval in frames (only used by the segmentation channel)')
 
     args = parser.parse_args()
 
-    # Update processing interval if specified and the active channel supports it.
-    if args.interval != 2 and hasattr(processor.channel, 'processing_interval'):
+    if args.interval != 1 and hasattr(processor.channel, 'processing_interval'):
         processor.channel.processing_interval = args.interval
         logger.info("🔄 Updated '%s' channel interval to %s frames", processor.channel.name, args.interval)
 
     # Set debug mode based on argument
     if args.debug:
         processor.enable_debug_mode(True)
-        logger.info("🐛 Debug mode enabled via command line")
 
-    run_processor_server(args.host, args.port, args.debug)
+    run_processor_server(args.host, args.port, args.debug, args.interval)
