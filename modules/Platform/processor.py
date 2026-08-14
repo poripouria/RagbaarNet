@@ -26,6 +26,7 @@ from queue import Queue, Empty
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from Detection.Detector import Detector
 from Music_Generator.Musician import Musician
+from Platform.midi_output import MidiOutput
 from utils.logging_setup import setup_logging, set_level
 
 logger = setup_logging("INFO", name="Platform.Processor")
@@ -482,6 +483,19 @@ class Processor:
             self.musician = None
             self.music_enabled = False
 
+        self.audio_backend = os.environ.get('RAGBAARNET_AUDIO_BACKEND', 'tone').strip().lower()
+        if self.audio_backend not in ('tone', 'midi', 'both'):
+            logger.warning("⚠️ Invalid audio backend '%s' - defaulting to 'tone'.", self.audio_backend)
+            self.audio_backend = 'tone'
+        self.midi_output = None
+        if self.audio_backend in ('midi', 'both'):
+            try:
+                logger.info("🔄 Initializing MIDI output backend...")
+                self.midi_output = MidiOutput()
+            except Exception as e:
+                logger.exception("❌ Error initializing MIDI output: %s", e)
+                self.midi_output = None
+
         # Pick exactly one channel for this run and the single Detector strategy that goes with it.
         self.channel = self._select_channel()
         self.detector = Detector(self.channel.detector_strategy)
@@ -632,6 +646,9 @@ class Processor:
         try:
             music_frame = self.musician(results=scene_events, frame_id=self.frame_counter, state=state)
 
+            if self.midi_output is not None:
+                self.midi_output.send_music_frame(music_frame)
+
             music_data = {
                 'frame_id': frame_id,
                 'timestamp': timestamp,
@@ -711,6 +728,7 @@ class Processor:
                     'key_signature': music_data['key_signature'],
                     'time_signature': music_data['time_signature'],
                     'timestamp': music_data['timestamp'],
+                    'audio_backend': self.audio_backend,
                 }
 
                 self.socketio.emit('music_update', music_response)
@@ -911,6 +929,8 @@ class Processor:
             if self._is_shutdown:
                 logger.debug("Processor shutdown already completed.")
                 return
+            
+            self.midi_output.close()
 
             self._is_shutdown = True
 
