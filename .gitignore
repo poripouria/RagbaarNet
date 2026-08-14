@@ -1,10 +1,13 @@
 Dataset/
+FL Studio/
 ragbaarnet-env/
 modules/utils/Tests/
+modules/Music_Generator/Generated Melodies/
 assets/test/
 __pycache__/
 *.pyc
 *.pyo
+logs/
 
 # Android/Gradle (do not commit local machine or build artifacts)
 **/.idea/
@@ -29,13 +32,10 @@ google-services.json
 modules/Models/Segmentation/Pre-trained Models/*
 *.pt
 
-# VS Code
+# Code IDEs
 .vscode/*
 AGENTS.md
+.zed/
 
 # Hand-crafted music dataset
 single_file_dataset
-
-.zed/
-logs/
-modules/Music_Generator/Generated Melodies/
