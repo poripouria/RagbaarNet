@@ -300,8 +300,8 @@
         <div class="status">
             <div class="volume-control">
                 <span>🔊</span>
-                <input type="range" id="volumeSlider" min="0" max="100" value="40">
-                <span id="volumeLabel">40%</span>
+                <input type="range" id="volumeSlider" min="0" max="100" value="70">
+                <span id="volumeLabel">70%</span>
             </div>
             <button class="icon-btn" id="saveBtn" title="Save as file (Ctrl+S)">💾</button>
             <button class="icon-btn stop-btn" id="stopBtn" title="Silence everything immediately">⏹</button>
@@ -339,17 +339,11 @@ function ragbaarNet(scene) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
 <script src="https://unpkg.com/tone@15.1.22/build/Tone.js"></script>
-<!-- Same audio pipeline the main video UI uses (Tone.js mixing chain, per-instrument
-     voice factories, reverb sends, polyphony limiter, handleMusicEvents/playMusicEvent).
-     Served from modules/Platform/js/ via the existing /ui/<filename> static route, so
-     this is the SAME code running, not a parallel reimplementation. core.js must load
-     first - audio-engine.js reads its globals (currentTempo, currentVolume, etc.) at load time. -->
 <script src="/ui/js/core.js"></script>
 <script src="/ui/js/audio-engine.js"></script>
 <script src="/ui/js/beat-generator.js"></script>
 <script>
-    // --- Syntax highlighting (Prism.js), driven entirely by the filename's
-    // extension - no hardcoded language, no dropdown to keep in sync by hand.
+    // --- Syntax highlighting (Prism.js), driven entirely by the filename's extension
     Prism.plugins.autoloader.languages_path = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
 
     const LANGUAGE_BY_EXT = {
@@ -377,9 +371,6 @@ function ragbaarNet(scene) {
         Prism.highlightElement(highlightCode);
     }
 
-    // --- Shims for the two small pieces of UI.html/main.js that audio-engine.js's
-    // initializeAudioSystem() expects but that live outside core.js/audio-engine.js
-    // (main.js isn't loaded here - it also wires up ROI/video, which this page doesn't need).
     function updateVolumeControls(vol) {
         const label = document.getElementById('volumeLabel');
         if (label) label.textContent = `${vol}%`;
@@ -417,9 +408,8 @@ function ragbaarNet(scene) {
         statusTextEl.textContent = 'Connection error — is main.py running?';
     });
 
-    // The actual sound: hand every music_update straight to audio-engine.js's own
-    // handler. It schedules playMusicEvent() per event (note_on -> triggerAttack,
-    // note_off -> stopNote) and updates the shared status line via updateMusicInfo().
+    // The actual sound: hand every music_update straight to audio-engine.js's own handler. 
+    // It schedules playMusicEvent() per event (note_on -> triggerAttack, note_off -> stopNote)
     let noteCount = 0;
     const noteCountEl = document.getElementById('noteCount');
     socket.on('music_update', (data) => {
@@ -540,8 +530,8 @@ function ragbaarNet(scene) {
         sendEvent('keyup', key);
     });
 
-    // If the editor loses focus mid-keypress (alt-tab, etc.), release
-    // everything so Musician doesn't hold a note forever.
+    // If the editor loses focus mid-keypress (alt-tab, etc.),
+    // release everything so Musician doesn't hold a note forever.
     editor.addEventListener('blur', () => {
         heldKeys.forEach(key => sendEvent('keyup', key));
         heldKeys.clear();
@@ -583,8 +573,7 @@ function ragbaarNet(scene) {
         releaseScrollSoon();
     }, { passive: true });
 
-    // Throttle mousemove sampling - firing on every pixel of movement would
-    // flood the socket for no musical benefit.
+    // Throttle mousemove sampling
     let lastMouseSample = 0;
     editor.addEventListener('mousemove', () => {
         const now = Date.now();
