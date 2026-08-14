@@ -12,8 +12,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Any
 
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from utils.logging_setup import setup_logging
+from modules.utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="Detection.Detector")
 

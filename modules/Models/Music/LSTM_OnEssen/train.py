@@ -15,9 +15,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
-from utils.logging_setup import setup_logging
-from Models.Music.LSTM_OnEssen.preprocess import generate_training_sequences, SEQUENCE_LENGTH, MAPPING_PATH
+from modules.utils.logging_setup import setup_logging
+from modules.Models.Music.LSTM_OnEssen.preprocess import generate_training_sequences, SEQUENCE_LENGTH, MAPPING_PATH
 
 logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.train")
 

@@ -13,10 +13,9 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
-from utils.logging_setup import setup_logging
-from Models.Music.LSTM_OnEssen.train import LSTM_OnEssen
-from Models.Music.LSTM_OnEssen.preprocess import SEQUENCE_LENGTH
+from modules.utils.logging_setup import setup_logging
+from modules.Models.Music.LSTM_OnEssen.train import LSTM_OnEssen
+from modules.Models.Music.LSTM_OnEssen.preprocess import SEQUENCE_LENGTH
 
 logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.generator")
 np.random.seed(42)

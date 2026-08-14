@@ -17,8 +17,7 @@ from typing import Dict, List, Tuple, Union, Optional, Any
 from ultralytics import YOLO
 from transformers import SegformerConfig, SegformerImageProcessor, SegformerForSemanticSegmentation
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from utils.logging_setup import setup_logging
+from modules.utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="segmentation.segmentor")
 

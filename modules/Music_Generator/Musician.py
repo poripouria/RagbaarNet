@@ -13,8 +13,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from utils.logging_setup import setup_logging
+from modules.utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="Music_Generator.Musician")
 

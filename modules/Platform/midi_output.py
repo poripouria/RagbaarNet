@@ -9,8 +9,8 @@ import os
 from typing import Optional
 import mido
 
-from Music_Generator.Musician import MusicFrame
-from utils.logging_setup import setup_logging
+from modules.Music_Generator.Musician import MusicFrame
+from modules.utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="Platform.MidiOutput")
 

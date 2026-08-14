@@ -23,11 +23,10 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Tuple
 from queue import Queue, Empty
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from Detection.Detector import Detector
-from Music_Generator.Musician import Musician
-from Platform.midi_output import MidiOutput
-from utils.logging_setup import setup_logging, set_level
+from modules.Detection.Detector import Detector
+from modules.Music_Generator.Musician import Musician
+from modules.Platform.midi_output import MidiOutput
+from modules.utils.logging_setup import setup_logging, set_level
 
 logger = setup_logging("INFO", name="Platform.Processor")
 

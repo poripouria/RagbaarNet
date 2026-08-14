@@ -12,8 +12,7 @@ import numpy as np
 import os
 import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
-from utils.logging_setup import setup_logging
+from modules.utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.preprocess")
 
