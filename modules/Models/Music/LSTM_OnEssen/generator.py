@@ -5,19 +5,17 @@ Melody Generator for LSTM-OnEssen Model
 This module contains functions to generate melodies using a trained PyTorch LSTM model for music generation tasks.
 """
 
-import json
-import numpy as np
-import torch
-import music21 as m21
 import os
-import sys
+import json
+import torch
+import numpy as np
+import music21 as m21
 from pathlib import Path
 
-from modules.utils.logging_setup import setup_logging
 from modules.Models.Music.LSTM_OnEssen.train import LSTM_OnEssen
 from modules.Models.Music.LSTM_OnEssen.preprocess import SEQUENCE_LENGTH
-
-logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.generator")
+from modules.utils.logging_setup import setup_logging
+logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen")
 np.random.seed(42)
 torch.manual_seed(42)
 
@@ -60,7 +58,7 @@ class MelodyGenerator:
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.eval()
 
-        logger.info(f"✅ Model loaded successfully (Best loss: {checkpoint.get('best_loss', 'N/A')})")
+        logger.info(f"✅ Model loaded successfully (Best loss: {checkpoint.get('best_loss', 'N/A'):.3f})")
 
     def generate_melody_RT(self, seed: str, length: int = 500, temperature: float = 0.8):
         """Generates a melody using the trained LSTM model. 
@@ -111,7 +109,7 @@ class MelodyGenerator:
 
             melody.append(output_symbol)
 
-        logger.info(f"🎵 Generated melody (length {len(melody)}): {' '.join(melody)}")
+        # logger.info(f"🎵 Generated melody (length {len(melody)}): {' '.join(melody)}")
         return melody
         
     def generate_melody(self, seed: str, length: int = 500, temperature: float = 0.8):

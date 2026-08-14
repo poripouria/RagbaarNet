@@ -6,15 +6,13 @@ This module contains functions to preprocess the Essen music dataset for trainin
 (Special thanks to Valerio Velardo)
 """
 
-import json
-import music21 as m21
-import numpy as np
 import os
-import sys
+import json
+import numpy as np
+import music21 as m21
 
 from modules.utils.logging_setup import setup_logging
-
-logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.preprocess")
+logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen")
 
 KERN_DATASET_PATH           = "Dataset/KernScores/essen/europa/deutschl"
 SAVE_DIR                    = "modules/Models/Music/LSTM_OnEssen/dataset"

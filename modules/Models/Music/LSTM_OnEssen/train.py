@@ -7,18 +7,17 @@ for music generation tasks.
 (Special thanks to Valerio Velardo)
 """
 
-import json
 import os
-import sys
-import numpy as np
+import json
 import torch
 import torch.nn as nn
+import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 
 from modules.utils.logging_setup import setup_logging
 from modules.Models.Music.LSTM_OnEssen.preprocess import generate_training_sequences, SEQUENCE_LENGTH, MAPPING_PATH
 
-logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen.train")
+logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen")
 
 INTERNAL_UNIT_SIZE = [256, 256]
 LEARNING_RATE      = 0.001
