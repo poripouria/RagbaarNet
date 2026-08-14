@@ -50,20 +50,12 @@ class MidiOutput:
             if event.note is None:
                 continue
 
-            if event.event_type == "note_on":
-                self.port.send(mido.Message(
-                    "note_on",
-                    note=event.note,
-                    velocity=70,
-                    channel=event.channel,
-                ))
-            elif event.event_type == "note_off":
-                self.port.send(mido.Message(
-                    "note_off",
-                    note=event.note,
-                    velocity=0,
-                    channel=event.channel,
-                ))
+            self.port.send(mido.Message(
+                event.event_type,
+                note=event.note,
+                velocity=event.velocity,
+                channel=event.channel,
+            ))
 
     def close(self):
         """Close the MIDI output port."""
