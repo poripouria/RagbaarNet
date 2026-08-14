@@ -413,21 +413,21 @@ const QUANTIZE_GRID = "16n";
 
 function handleMusicEvents(musicData) {
     try {
-        if (!musicData || !musicData.events) {
-            return;
-        }
+        if (!musicData || !musicData.events) return;
 
         console.log(`🎵 Received ${musicData.events.length} music events for frame ${musicData.frame_counter}`);
 
-        // Nearest grid point on the central clock
-        const scheduleTime = Tone.Transport.state === 'started'
-        ? Tone.Transport.nextSubdivision(QUANTIZE_GRID)
-        : Tone.now() + 0.02;    // Fallback
+        if (audioBackend !== 'midi') {
+            // Nearest grid point on the central clock
+            const scheduleTime = Tone.Transport.state === 'started'
+            ? Tone.Transport.nextSubdivision(QUANTIZE_GRID)
+            : Tone.now() + 0.02;    // Fallback
 
-        // Schedule each music event
-        musicData.events.forEach((event, index) => {
-            playMusicEvent(event, scheduleTime);
-        });
+            // Schedule each music event
+            musicData.events.forEach((event, index) => {
+                playMusicEvent(event, scheduleTime);
+            });
+        }
 
         // Update UI with music info
         updateMusicInfo(musicData);
