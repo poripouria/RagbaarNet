@@ -361,20 +361,19 @@ class LSTMMusician(BaseMusician):
                 event = "note_on"
 
                 # Compute velocity based on the touching area size (larger area -> louder note).
-                # Non-spatial events (e.g. a keyboard NOTE_ON) have no area - fall back to the
-                # event's 'intensity' (0-1, set by whichever channel produced it) instead of
-                # silently leaving velocity at 0.
+                # Non-spatial events (e.g. a keyboard NOTE_ON) have no area - fall back to the event's 'intensity'
                 area = e.get("area/ROI", None)
                 if area is not None:
-                    # Scale area to velocity range (MinMax Scaler) Area:0.005-0.2, Velocity:16-128
-                    scaled_area = (min(area, 0.2) - 0.005) / (0.2 - 0.005)
-                    velocity = int(scaled_area * (127 - 17) + 17)
                     if area < 0.005:
                         logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
                         continue
+                    # Scale area to velocity range (Power Curve Scaler) Area:0.005-0.5, Velocity:21-128
+                    normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
+                    curved_area = normalized_area ** 1.7
+                    velocity = int(curved_area * (127 - 20) + 20)
                 else:
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
-                    velocity = int(intensity * (127 - 17) + 17)
+                    velocity = int(intensity * (127 - 20) + 20)
 
                 # Generate new notes using the LSTM model
                 if self._rt_generator is None:
@@ -574,14 +573,15 @@ class LSTMOrchestralMusician(BaseMusician):
 
                 area = e.get("area/ROI", None)
                 if area is not None:
-                    scaled_area = (min(area, 0.2) - 0.005) / (0.2 - 0.005)
-                    velocity = int(scaled_area * (127 - 17) + 17)
                     if area < 0.005:
                         logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
                         continue
+                    normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
+                    curved_area = normalized_area ** 1.7
+                    velocity = int(curved_area * (127 - 20) + 20)
                 else:
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
-                    velocity = int(intensity * (127 - 17) + 17)
+                    velocity = int(intensity * (127 - 20) + 20)
 
                 if self._rt_generator is None:
                     self._rt_generator = self.generator.generate_melody_RT(
@@ -805,8 +805,9 @@ class Musician:
         """
         Save the generated melody (List of MusicFrames) to a MIDI file.
         """
-
-        raise NotImplementedError("Saving generated melody to MIDI is not implemented yet.")
+        
+        logger.warning("Saving generated melody to MIDI is not implemented yet.")
+        pass  # Placeholder for future implementation
 
     def __call__(self, 
                  results,
