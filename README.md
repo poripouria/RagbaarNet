@@ -1,4 +1,4 @@
-# RagbaarNet - AI Music Generation Platform
+# RagbaarNet: AI Real-time Event-based Music Generation Platform
 
 **Master's Thesis Project**: Real-Time Music Generation Based on Driver Visual Perception in Smart Vehicles
 
