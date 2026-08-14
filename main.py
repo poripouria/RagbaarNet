@@ -18,7 +18,7 @@ from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
 from modules.Platform.processor import Processor
-from modules.utils.logging_setup import setup_logging
+from modules.utils.logging_setup import setup_logging, set_level
 logger = setup_logging("INFO", name="Platform.main")
 
 
@@ -237,9 +237,11 @@ def toggle_debug(action):
     try:
         if action == 'enable':
             processor.enable_debug_mode(True)
+            set_level(logger, "DEBUG")
             return jsonify({'success': True, 'debug_mode': True})
         elif action == 'disable':
             processor.enable_debug_mode(False)
+            set_level(logger, "INFO")
             return jsonify({'success': True, 'debug_mode': False})
         else:
             return jsonify({'error': 'Invalid action. Use enable or disable'}), 400
@@ -276,8 +278,9 @@ def handle_update_request():
             else:
                 logger.exception("❌ Error emitting frame update: %s", emit_err)
 
-        # Debug logging (only when enabled)
-        if processor.debug_mode:
+        # Debug logging (only when enabled and interval reached)
+        if processor.debug_mode and (time.time() - processor.last_socket_debug_time) > processor.debug_interval:
+            processor.last_socket_debug_time = time.time()
             has_overlay = 'segmentation_overlay' in response_data and response_data['segmentation_overlay'] is not None
             client_type = "Main UI" if is_main_ui else "Status Page"
             logger.debug("📡 Update sent to %s - Frame: %s, Has overlay: %s, Queue: %s",
