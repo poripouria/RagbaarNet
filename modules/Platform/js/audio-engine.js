@@ -417,7 +417,7 @@ function handleMusicEvents(musicData) {
 
         console.log(`🎵 Received ${musicData.events.length} music events for frame ${musicData.frame_counter}`);
 
-        if (audioBackend !== 'midi') {
+        if (musicData.audio_backend !== 'midi') {
             // Nearest grid point on the central clock
             const scheduleTime = Tone.Transport.state === 'started'
             ? Tone.Transport.nextSubdivision(QUANTIZE_GRID)
