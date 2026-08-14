@@ -1,6 +1,4 @@
 """
-RagbaarNet MIDI output backend.
-
 This module sends generated MusicFrame events to a MIDI output port 
 such as LoopMIDI, allowing an external DAW to render the music.
 """
@@ -11,8 +9,7 @@ import mido
 
 from modules.Music_Generator.Musician import MusicFrame
 from modules.utils.logging_setup import setup_logging
-
-logger = setup_logging("INFO", name="Platform.MidiOutput")
+logger = setup_logging("INFO", name="Platform.midi_output")
 
 
 class MidiOutput:
