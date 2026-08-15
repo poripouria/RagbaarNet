@@ -262,9 +262,6 @@ class Processor:
         Broadcast music events to connected WebSocket clients.
         """
 
-        if self.midi_output is not None:
-            self.midi_output.send_music_frame(music_frame)
-
         try:
             if self.main_ui_connected and self.socketio:
                 music_frame = music_data['music_frame']
@@ -297,6 +294,9 @@ class Processor:
                 }
 
                 self.socketio.emit('music_update', music_response)
+
+                if self.midi_output is not None:
+                    self.midi_output.send_music_frame(music_frame)
 
         except Exception as e:
             logger.error("❌ Error broadcasting music update: %s", e)
