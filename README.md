@@ -1,15 +1,22 @@
-# RagbaarNet 🎵
+<!-- # RagbaarNet
 
-### AI Platform for Real-Time Event-Based Music Generation
+### Real-Time Event-Based Music Generation Platform -->
+
+<p align="center">
+  <img src="assets\logo\RagbaarIcon_Icon.png" alt="RagbaarNet Logo" width="280"/>
+</p>
+
+<h1 align="center">RagbaarNet</h1>
+
+
+   🎵 Real-Time Event-Based Music Generation Platform 
+
 
 > **Master's Thesis Project**  
 > Real-Time Music Generation Based on Driver Visual Perception in Smart Vehicles
 
 > **Status:** Work in Progress
 
-<p align="center">
-  <img src="assets\logo\RagbaarIcon_Icon.png" alt="RagbaarNet Logo">
-</p>
 
 ## About
 
