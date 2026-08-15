@@ -103,7 +103,7 @@ class BaseMusician(ABC):
         return self.generate_music(results, frame_id, state)
 
     @staticmethod
-    def _is_stale(state: Dict[str, Any], object_id: Any, max_missing_frames: int) -> bool:
+    def _is_stale(state: Dict[str, Any], object_id: Any) -> bool:
         """
         Whether a held note's underlying object should be auto-released.
         Only meaningful for Detector states that track per-object 'missing_frames'. 
@@ -113,11 +113,7 @@ class BaseMusician(ABC):
         if not isinstance(state, dict) or "objects" not in state:
             return False
 
-        tracked = state["objects"].get(object_id)
-        if tracked is None:
-            return True
-
-        return tracked.get("missing_frames", 0) >= max_missing_frames
+        return object_id not in state["objects"]
 
     @abstractmethod
     def generate_music(self,
@@ -236,7 +232,7 @@ class RuleBasedMusician(BaseMusician):
 
         for channel in self.active_notes:
             for object_id in list(self.active_notes[channel].keys()):
-                if self._is_stale(state, object_id, self.max_missing_frames):
+                if self._is_stale(state, object_id):
                     note_info = self.active_notes[channel].get(object_id)
                     if note_info:
                         music_events.append(MusicEvent(
@@ -411,7 +407,7 @@ class LSTMMusician(BaseMusician):
             self.last_seed_notes = self._note_buffer[-32:]
 
         for object_id, note_info in list(self.active_notes[0].items()):
-            if self._is_stale(state, object_id, self.max_missing_frames):
+            if self._is_stale(state, object_id):
                 music_events.append(
                     MusicEvent(
                         event_type="note_off",
@@ -598,7 +594,7 @@ class LSTMOrchestralMusician(BaseMusician):
 
         for channel in self.active_notes:
             for object_id, note_info in list(self.active_notes[channel].items()):
-                if self._is_stale(state, object_id, self.max_missing_frames):
+                if self._is_stale(state, object_id):
                     music_events.append(
                         MusicEvent(
                             event_type="note_off",
