@@ -96,9 +96,9 @@ class Processor:
 
         print("CHOOSE A PROCESSING CHANNEL (this cannot be changed without restarting):")
         for key, cls in AVAILABLE_CHANNELS.items():
-            print(f"  {key}. {cls.name}")
+            print(f"  {key}. {cls.name}", "[DEFAULT]" if key == 1 else "")
 
-        choice_raw = input("Enter your choice (1-2) [default: 1 - driving]: ").strip()
+        choice_raw = input("Enter your choice: ").strip()
         try:
             choice = int(choice_raw) if choice_raw else 1
         except ValueError:
