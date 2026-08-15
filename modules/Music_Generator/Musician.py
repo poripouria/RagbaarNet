@@ -334,12 +334,13 @@ class LSTMMusician(BaseMusician):
                 area = e.get("area/ROI", None)
                 if area is not None:
                     if area < 0.005:
-                        logger.info(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
-                        continue
-                    # Scale area to velocity range (Power Curve Scaler) Area:0.005-0.5, Velocity:32-128
-                    normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
-                    curved_area = normalized_area ** 0.8
-                    velocity = int(curved_area * (127 - 31) + 31)
+                        logger.info(f"Event with very small area ({area}). Using minimum velocity for class '{obj_class}'.")
+                        velocity = 15
+                    else:
+                        # Scale area to velocity range (Power Curve Scaler) Area:0.005-0.5, Velocity:32-128
+                        normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
+                        curved_area = normalized_area ** 0.8
+                        velocity = int(curved_area * (127 - 31) + 31)
                 else:
                     # Non-spatial events (e.g. a keyboard NOTE_ON) have no area - fall back to the event's 'intensity'
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
@@ -528,11 +529,12 @@ class LSTMOrchestralMusician(BaseMusician):
                 area = e.get("area/ROI", None)
                 if area is not None:
                     if area < 0.005:
-                        logger.info(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
-                        continue
-                    normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
-                    curved_area = normalized_area ** 0.8
-                    velocity = int(curved_area * (127 - 31) + 31)
+                        logger.info(f"Event with very small area ({area}). Using minimum velocity for class '{obj_class}'.")
+                        velocity = 15
+                    else:
+                        normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
+                        curved_area = normalized_area ** 0.8
+                        velocity = int(curved_area * (127 - 31) + 31)
                 else:
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
                     velocity = int(intensity * (127 - 31) + 31)
