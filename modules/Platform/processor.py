@@ -166,7 +166,8 @@ class Processor:
         logic, and updates the display and music generation accordingly.
         """
         logger.info("🚀 Processing loop started (channel: %s, interval: %d)", 
-                    self.channel.name, self.channel.processing_interval)
+                    self.channel.name, 
+                    self.channel.processing_interval if hasattr(self.channel, 'processing_interval') else 1)
 
         while True:
             try:
