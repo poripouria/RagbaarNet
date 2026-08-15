@@ -1,9 +1,26 @@
-# RagbaarNet: AI Real-time Event-based Music Generation Platform
+# RagbaarNet 🎵
 
-**Master's Thesis Project**: Real-Time Music Generation Based on Driver Visual Perception in Smart Vehicles
+### AI Platform for Real-Time Event-Based Music Generation
 
-> ⚠️ **Project Status**: Work in Progress - Core components under development
+> **Master's Thesis Project**  
+> Real-Time Music Generation Based on Driver Visual Perception in Smart Vehicles
 
-## 🎯 Overview
+> **Status:** Work in Progress
 
-RagbaarNet is a research project developing an AI system that generates music based on driver visual perception. The platform uses real-time video processing and semantic segmentation to understand driving scenarios.
+<p align="center">
+  <img src="assets\logo\RagbaarIcon_Icon.png" alt="RagbaarNet Logo">
+</p>
+
+## About
+
+RagbaarNet is a research-oriented platform exploring how meaningful real-time events can be transformed into musical experiences.
+
+The current research direction focuses on interpreting visual information from driving scenarios and mapping detected events to musical responses in real time.
+
+The project is being developed as part of a Master's thesis, with an emphasis on modularity, real-time interaction, and extensibility toward other event-driven applications.
+
+
+## Repository Structure
+
+The project is organized into modular components for perception, event detection, music generation, and real-time processing.
+More details will be documented as the system and research methodology become more finalized.
