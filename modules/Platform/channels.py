@@ -60,6 +60,8 @@ class DrivingPipeline(BaseChannel):
 
         max_side_raw = os.environ.get('RAGBAARNET_PROCESSING_MAX_SIDE', '').strip()
         self.processing_max_side = int(max_side_raw) if max_side_raw.isdigit() else None
+        if self.processing_max_side is not None:
+            logger.info("↔️ Driving channel will resize frames to max side %d for processing", self.processing_max_side)
 
         self.debug_mode = False
 
@@ -320,10 +322,6 @@ class DrivingPipeline(BaseChannel):
                         }
 
                     result.segmentation_map = self._validate_segmentation_map(result.segmentation_map)
-
-                    if self.debug_mode:
-                        logger.debug("↔️ Resized segmentation outputs from %dx%d to original frame size (%dx%d)", 
-                                     seg_frame.shape[1], seg_frame.shape[0], orig_w, orig_h)
 
                 except Exception as resize_err:
                     logger.exception("❌ Failed to resize segmentation outputs: %s", resize_err)
