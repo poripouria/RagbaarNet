@@ -112,7 +112,12 @@ class BaseMusician(ABC):
         
         if not isinstance(state, dict) or "objects" not in state:
             return False
-        return state["objects"].get(object_id, {}).get("missing_frames", 0) > max_missing_frames
+
+        tracked = state["objects"].get(object_id)
+        if tracked is None:
+            return True
+
+        return tracked.get("missing_frames", 0) >= max_missing_frames
 
     @abstractmethod
     def generate_music(self,
