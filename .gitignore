@@ -1,41 +1,74 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+ragbaarnet-env/
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+logs/
+*.log
+
+# ===== Project-specific =====
 Dataset/
 FL Studio/
-ragbaarnet-env/
 modules/utils/Tests/
 modules/Music_Generator/Generated Melodies/
 assets/test/
-__pycache__/
-*.pyc
-*.pyo
-logs/
+single_file_dataset
 
-# Android/Gradle (do not commit local machine or build artifacts)
-**/.idea/
-**/*.iml
-**/.gradle/
-**/local.properties
-**/build/
-**/.cxx/
-**/.externalNativeBuild/
-captures/
-*.apk
-*.aab
-*.jks
-*.keystore
-google-services.json
-*.hprof
-
-# Agent/Research artifacts
-.artifacts/
-
-# Local/offline SegFormer weights (keep local; too large for GitHub)
+# Large model weights (keep local)
 modules/Models/Segmentation/Pre-trained Models/*
 *.pt
 
-# Code IDEs
-.vscode/*
-AGENTS.md
-.zed/
+# ===== Android / Gradle =====
+**/.gradle/
+**/build/
+**/out/
+**/local.properties
+**/.cxx/
+**/.externalNativeBuild/
+**/captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.hprof
+output-metadata.json
+bin/
+gen/
+out/
+.kotlin/
 
-# Hand-crafted music dataset
-single_file_dataset
+# Signing & secrets
+*.jks
+*.keystore
+*.hprof
+keystore.properties
+signing.properties
+google-services.json
+
+# ===== IDEs =====
+**/.idea/
+**/.artifacts/
+**/*.iml
+*.ipr
+*.iws
+.vscode/
+.zed/
+AGENTS.md
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
