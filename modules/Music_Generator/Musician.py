@@ -15,11 +15,7 @@ from modules.utils.logging_setup import setup_logging
 logger = setup_logging("INFO", name="Music_Generator.Musician")
 
 
-# Fixed MIDI channel per instrument voice, shared by every musician
-# implementation so that external MIDI receivers (e.g. an FL Studio channel
-# rack) always route a given instrument's notes to the same channel/slot,
-# regardless of which musician (or which instrument was previously active)
-# generated the event.
+# Fixed MIDI channel per instrument voice, shared by every musician implementation
 INSTRUMENT_MIDI_CHANNELS: Dict[str, int] = {
     'piano': 0,
     'electric_piano': 1,
