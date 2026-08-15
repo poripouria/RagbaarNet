@@ -15,6 +15,24 @@ from modules.utils.logging_setup import setup_logging
 logger = setup_logging("INFO", name="Music_Generator.Musician")
 
 
+# Fixed MIDI channel per instrument voice, shared by every musician
+# implementation so that external MIDI receivers (e.g. an FL Studio channel
+# rack) always route a given instrument's notes to the same channel/slot,
+# regardless of which musician (or which instrument was previously active)
+# generated the event.
+INSTRUMENT_MIDI_CHANNELS: Dict[str, int] = {
+    'piano': 0,
+    'electric_piano': 1,
+    'acoustic_guitar': 2,
+    'electric_guitar': 3,
+    'strings': 4,
+    'pad': 5,
+    'bass': 6,
+    'synth': 7,
+    'drums': 9,
+}
+
+
 @dataclass
 class MusicEvent:
     """
@@ -143,21 +161,25 @@ class RuleBasedMusician(BaseMusician):
 
         base_class = obj_class.split("_")[0]
         mapping = {
-            #                   MIDI, velocity, instrument, channel
-            "car":              (60, 100, 'piano', 0),
-            "truck":            (48, 120, 'piano', 0),
-            "bus":              (48, 90, 'piano', 0),
-            "train":            (55, 110, 'electric_piano', 1),
-            "plane":            (72, 100, 'electric_piano', 1),
-            "bicycle":          (64, 90, 'acoustic_guitar', 2),
-            "person":           (72, 110, 'acoustic_guitar', 2),
-            "motorcycle":       (70, 100, 'electric_guitar', 3),
-            "traffic light":    (67, 70, 'strings', 4),
-            "traffic sign":     (67, 70, 'strings', 4),
-            "stop sign":        (69, 80, 'strings', 4),
+            #                   MIDI, velocity, instrument
+            "car":              (60, 100, 'piano'),
+            "truck":            (48, 120, 'piano'),
+            "bus":              (48, 90, 'piano'),
+            "train":            (55, 110, 'electric_piano'),
+            "plane":            (72, 100, 'electric_piano'),
+            "bicycle":          (64, 90, 'acoustic_guitar'),
+            "person":           (72, 110, 'acoustic_guitar'),
+            "motorcycle":       (70, 100, 'electric_guitar'),
+            "traffic light":    (67, 70, 'strings'),
+            "traffic sign":     (67, 70, 'strings'),
+            "stop sign":        (69, 80, 'strings'),
         }
 
-        return mapping.get(base_class, None)
+        entry = mapping.get(base_class, None)
+        if entry is None:
+            return None
+        note, velocity, instrument = entry
+        return note, velocity, instrument, INSTRUMENT_MIDI_CHANNELS.get(instrument, 0)
     
     def generate_music(self, results, frame_id, state):
         """
@@ -336,12 +358,16 @@ class LSTMMusician(BaseMusician):
 
                 new_note = next(self._rt_generator)
                 note = int(new_note)
-                
+
+
+                channel = INSTRUMENT_MIDI_CHANNELS.get(self.instrument, 0)
+
                 self.active_notes[0][e["object_id"]] = {
                     "voice_id": e["object_id"],
                     "note": note,
                     "velocity": velocity,
                     "instrument": self.instrument,
+                    "channel": channel,
                 }
 
                 self._note_buffer.append(new_note)
@@ -353,6 +379,7 @@ class LSTMMusician(BaseMusician):
                 related_note = None
                 if e["object_id"] in self.active_notes[0]:
                     related_note = self.active_notes[0][e["object_id"]]["note"]
+                    channel = self.active_notes[0][e["object_id"]]["channel"]
                     self.active_notes[0].pop(e["object_id"], None)
                 else:
                     logger.warning(f"No previous note found to turn off on release event for object_id {e['object_id']}.")
@@ -369,7 +396,7 @@ class LSTMMusician(BaseMusician):
                 MusicEvent(
                     event_type=event,
                     note=note,
-                    channel=0,
+                    channel=channel,
                     velocity=velocity,
                     instrument=self.instrument,
                     timeid=self.frame_counter,
@@ -377,7 +404,7 @@ class LSTMMusician(BaseMusician):
                     metadata=e
                 )
             )
-            logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity}, 'instrument': '{self.instrument}'")
+            logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity}, 'instrument': '{self.instrument}', 'channel': {channel}")
 
             self.last_seed_notes = self._note_buffer[-32:]
 
@@ -387,7 +414,7 @@ class LSTMMusician(BaseMusician):
                     MusicEvent(
                         event_type="note_off",
                         note=note_info["note"],
-                        channel=0,
+                        channel=note_info.get("channel", 0),
                         velocity=0,
                         instrument=note_info["instrument"],
                         timeid=self.frame_counter,
@@ -451,25 +478,28 @@ class LSTMOrchestralMusician(BaseMusician):
 
         base_class = obj_class.split("_")[0]
         mapping = {
-            #                   instrument, channel
-            "car":              ('piano', 0),
-            "truck":            ('piano', 0),
-            "bus":              ('piano', 0),
-            "train":            ('electric_piano', 1),
-            "plane":            ('electric_piano', 1),
-            "bicycle":          ('bass', 6),
-            "motorcycle":       ('bass', 6),
-            "person":           ('bass', 6),
-            "traffic light":    ('strings', 4),
-            "traffic sign":     ('strings', 4),
-            "stop sign":        ('strings', 4),
+            #                   instrument
+            "car":              'piano',
+            "truck":            'piano',
+            "bus":              'piano',
+            "train":            'electric_piano',
+            "plane":            'electric_piano',
+            "bicycle":          'bass',
+            "motorcycle":       'bass',
+            "person":           'bass',
+            "traffic light":    'strings',
+            "traffic sign":     'strings',
+            "stop sign":        'strings',
 
-            "typing":           ('piano', 0),
-            "scroll":           ('strings', 4),
-            "mousemove":        ('pad', 5),
+            "typing":           'piano',
+            "scroll":           'strings',
+            "mousemove":        'pad',
         }
 
-        return mapping.get(base_class, None)
+        instrument = mapping.get(base_class, None)
+        if instrument is None:
+            return None
+        return instrument, INSTRUMENT_MIDI_CHANNELS.get(instrument, 0)
 
     def generate_music(self, results, frame_id, state):
         """
