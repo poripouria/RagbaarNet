@@ -126,12 +126,12 @@ class ROI:
         for name, edge_mask in zip(edge_names, self.edge_masks):
             if np.logical_and(mask, edge_mask).any():
                 edges.append(name)
-        erea = self.calculate_intersection_area(mask)
+        area = self.calculate_intersection_area(mask)
 
         return {
             "touching": touching,
             "edges": edges,
-            "area": erea
+            "area": area
         }
 
 
@@ -336,7 +336,7 @@ class ROIEventsDetector(BaseDetector):
             )
             touching = collision["touching"]
             edges = collision["edges"]
-            erea = collision["area"]
+            area = collision["area"]
 
             track = self.state["objects"].get(obj_id, {})
             prev = track.get("touching", False)
@@ -355,8 +355,8 @@ class ROIEventsDetector(BaseDetector):
                     "object_id": obj_id,
                     "class": obj_class,
                     "edges": edges,
-                    "area": erea,
-                    "area/ROI": float(erea /self.roi.calculate_ROI_area()) if self.roi else None,
+                    "area": area,
+                    "area/ROI": float(area /self.roi.calculate_ROI_area()) if self.roi else None,
                 })
 
         logger.info(f"Detected {len(events)} scene events")
