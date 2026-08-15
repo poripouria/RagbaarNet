@@ -197,8 +197,9 @@ class Processor:
                     except Exception as detector_err:
                         logger.error("❌ Detector error: %s", detector_err)
 
-                    if scene_events and self.music_enabled and self.musician is not None:
-                            
+                    # Run the musician every frame!
+                    if self.music_enabled and self.musician is not None:
+
                         music_frame = self.musician(
                             results=scene_events, 
                             frame_id=self.frame_counter, 
