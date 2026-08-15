@@ -14,11 +14,7 @@ Example:
 
 From the project root:
 
-`./ragbaarnet-env/Scripts/python.exe modules/Platform/processor.py --host 0.0.0.0 --port 5000`
-
-or:
-
-`powershell -ExecutionPolicy Bypass -File ./run_platform_server.ps1 -Host 0.0.0.0 -Port 5000`
+`./ragbaarnet-env/Scripts/python.exe main.py `
 
 Then verify from your phone browser (same Wi‑Fi):
 
