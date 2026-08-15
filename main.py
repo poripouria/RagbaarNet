@@ -320,11 +320,14 @@ def handle_disconnect():
 
 @socketio.on('toggle_music')
 def handle_toggle_music(data):
-    """Handle music generation toggle from client"""
+    """Enable or disable music generation (Handle music generation toggle from client)"""
 
     try:
-        enabled = data.get('enabled', True)
-        result = processor.toggle_music_generation(enabled)
+        enable = data.get('enabled', True)
+        if hasattr(processor, 'music_enabled'):
+            processor.music_enabled = (not processor.music_enabled) if enable is None else enable
+            logger.info(f"🎵 Music generation {'enabled' if processor.music_enabled else 'disabled'}")
+            result = processor.music_enabled
         emit('music_status', {'enabled': result, 'success': True})
     except Exception as e:
         emit('music_status', {'error': str(e), 'success': False})
@@ -332,12 +335,14 @@ def handle_toggle_music(data):
 
 @socketio.on('set_music_tempo')
 def handle_set_music_tempo(data):
-    """Handle music tempo change from client"""
+    """Set music tempo (BPM) (Handle music tempo change from client)"""
 
     try:
         tempo = data.get('tempo', 120)
-        result = processor.set_music_tempo(tempo)
-        emit('music_status', {'tempo': tempo, 'success': result})
+        if hasattr(processor, 'musician') and processor.musician is not None:
+            processor.musician.set_tempo(tempo)
+            logger.info(f"🎵 Music tempo set to {tempo} BPM")
+        emit('music_status', {'tempo': tempo, 'success': True})
     except Exception as e:
         emit('music_status', {'error': str(e), 'success': False})
         logger.error("❌ Error setting music tempo: %s", e)
@@ -348,9 +353,10 @@ def handle_set_music_key(data):
 
     try:
         key_signature = data.get('key_signature', 'C_major')
-        result = processor.set_music_key(key_signature)
-        emit('music_status', {'key_signature': key_signature, 'success': result})
-        logger.info("🎵 Music key set to: %s", key_signature)
+        if hasattr(processor, 'musician') and processor.musician is not None:
+            processor.musician.set_key_signature(key_signature)
+            logger.info("🎵 Music key set to: %s", key_signature)
+        emit('music_status', {'key_signature': key_signature, 'success': True})
     except Exception as e:
         emit('music_status', {'error': str(e), 'success': False})
         logger.error("❌ Error setting music key: %s", e)
@@ -361,9 +367,10 @@ def handle_set_music_time(data):
 
     try:
         time_signature = data.get('time_signature', (4, 4))
-        result = processor.set_music_time_signature(time_signature)
-        emit('music_status', {'time_signature': time_signature, 'success': result})
-        logger.info("🎵 Music time signature set to: %s", time_signature)
+        if hasattr(processor, 'musician') and processor.musician is not None:
+            processor.musician.set_time_signature(time_signature)
+            logger.info("🎵 Music time signature set to: %s", time_signature)
+        emit('music_status', {'time_signature': time_signature, 'success': True})
     except Exception as e:
         emit('music_status', {'error': str(e), 'success': False})
         logger.error("❌ Error setting music time signature: %s", e)
@@ -373,7 +380,18 @@ def handle_get_music_status():
     """Get current music generation status"""
 
     try:
-        status = processor.get_music_status()
+        if hasattr(processor, 'musician') and processor.musician is not None:
+            status = {
+                'enabled': getattr(processor, 'music_enabled', False),
+                'tempo': processor.musician.tempo,
+                'key_signature': processor.musician.key_signature,
+                'time_signature': processor.musician.time_signature,
+                'musician_type': processor.musician.musician_type,
+                'instrument': processor.musician.instrument,
+                'queue_size': processor.music_queue.qsize() if hasattr(processor, 'music_queue') else 0,
+            }
+        else:
+            status = {'enabled': False, 'musician_available': False}
         emit('music_status', status)
     except Exception as e:
         emit('music_status', {'error': str(e), 'success': False})
