@@ -13,6 +13,7 @@ from typing import List, Tuple, Any
 from modules.utils.logging_setup import setup_logging
 logger = setup_logging("INFO", name="Detection.detector")
 
+
 class ROI:
     """
     ROI defined by 4 corner points + 4 bezier control points
