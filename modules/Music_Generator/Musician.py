@@ -96,7 +96,7 @@ class BaseMusician(ABC):
         self.active_notes = {i: {} for i in range(16)}  # Initialize active notes for all 16 MIDI channels
 
         self.frame_counter = 0
-        self.max_missing_frames = 8     # Number of frames to keep an object in memory after it disappears
+        self.max_missing_frames = 10     # Number of frames to keep an object in memory after it disappears
 
     def __call__(self, results: List[Dict[str, Any]], frame_id: int=0, state: Dict[str, Any]=None):
 
@@ -109,7 +109,7 @@ class BaseMusician(ABC):
         Only meaningful for Detector states that track per-object 'missing_frames'. 
         Detector strategies without that concept simply never go stale here.
         """
-        
+
         if not isinstance(state, dict) or "objects" not in state:
             return False
 

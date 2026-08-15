@@ -166,7 +166,7 @@ class ROIEventsDetector(BaseDetector):
 
         self.roi = None                 # Will be set per frame if provided
         self.prev_roi_payload = None    # Tracks ROI coordinates and frame dimensions
-        self.max_missing_frames = 8     # Number of frames to keep an object in memory after it disappears
+        self.max_missing_frames = 10    # Number of frames to keep an object in memory after it disappears
 
     def __call__(self, input: Any, frame_id: int = 0):
 
