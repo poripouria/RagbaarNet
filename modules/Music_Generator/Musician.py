@@ -19,7 +19,6 @@ logger = setup_logging("INFO", name="Music_Generator.Musician")
 class MusicEvent:
     """
     Core atomic event in the music system.
-
     This represents a single musical action (NOT only MIDI note).
     Designed to be extendable for future MIDI CC, pitch bend, etc.
 
@@ -69,17 +68,15 @@ class BaseMusician(ABC):
     NOTE_ON_TYPES = frozenset({"ROI_TOUCH", "NOTE_ON"})
     NOTE_OFF_TYPES = frozenset({"ROI_RELEASE", "NOTE_OFF"})
 
-    def __init__(self, tempo: int = 120, key_signature: str = "C_major", time_signature: tuple = (4, 4)):
+    def __init__(self, key_signature: str="C_major", time_signature: tuple=(4, 4)):
         """
         Initialize the base musician.
 
         Args:
-            tempo: Music tempo in BPM
             key_signature: Key signature for music generation
             time_signature: Time signature for music generation
         """
 
-        self.tempo = tempo
         self.key_signature = key_signature
         self.time_signature = time_signature
         self.active_notes = {i: {} for i in range(16)}  # Initialize active notes for all 16 MIDI channels
@@ -87,19 +84,18 @@ class BaseMusician(ABC):
         self.frame_counter = 0
         self.max_missing_frames = 8     # Number of frames to keep an object in memory after it disappears
 
-    def __call__(self, results: List[Dict[str, Any]], frame_id: int = 0, state: Dict[str, Any] = None):
+    def __call__(self, results: List[Dict[str, Any]], frame_id: int=0, state: Dict[str, Any]=None):
+
         return self.generate_music(results, frame_id, state)
 
     @staticmethod
     def _is_stale(state: Dict[str, Any], object_id: Any, max_missing_frames: int) -> bool:
-        """Whether a held note's underlying object should be auto-released.
-
-        Only meaningful for Detector states that track per-object 'missing_frames'
-        (e.g. ROIEventsDetector's state = {"objects": {...}, ...}). Detector
-        strategies without that concept - e.g. KeyEventsDetector, whose state is
-        {"held": {...}} and relies on an explicit NOTE_OFF instead of frames going
-        missing - simply never go stale here.
         """
+        Whether a held note's underlying object should be auto-released.
+        Only meaningful for Detector states that track per-object 'missing_frames'. 
+        Detector strategies without that concept simply never go stale here.
+        """
+        
         if not isinstance(state, dict) or "objects" not in state:
             return False
         return state["objects"].get(object_id, {}).get("missing_frames", 0) > max_missing_frames
@@ -130,36 +126,35 @@ class RuleBasedMusician(BaseMusician):
     particularly focusing on objects interacting with a defined Region of Interest (ROI).
     """
 
-    def __init__(self, tempo=120, key_signature="C_major", time_signature: tuple = (4, 4)):
+    def __init__(self, key_signature="C_major", time_signature: tuple=(4, 4)):
         """
         Args:
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
             time_signature: Time signature for music generation
         """
-        super().__init__(tempo, key_signature, time_signature)
+        super().__init__(key_signature, time_signature)
 
-        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, time_signature={time_signature}")
+        logger.info(f"🎵 {self.__class__.__name__} initialized with key_signature={key_signature}, time_signature={time_signature}")
 
     def _map_classes(self, obj_class):
         """
         Map object class to MIDI note, velocity, instrument, and channel."""
 
         base_class = obj_class.split("_")[0]
-
-        mapping = {     # MIDI note, velocity, instrument, channel
-            "car": (60, 100, 'piano', 0),
-            "truck": (48, 120, 'piano', 0),
-            "bus": (48, 90, 'piano', 0),
-            "train": (55, 110, 'electric_piano', 1),
-            "plane": (72, 100, 'electric_piano', 1),
-            "bicycle": (64, 90, 'acoustic_guitar', 2),
-            "person": (72, 110, 'acoustic_guitar', 2),
-            "motorcycle": (70, 100, 'electric_guitar', 3),
-            "traffic light": (67, 70, 'strings', 4),
-            "traffic sign": (67, 70, 'strings', 4),
-            "stop sign": (69, 80, 'strings', 4),
-            # "road": (36, 50, 'drums', 9),
+        mapping = {
+            #                   MIDI, velocity, instrument, channel
+            "car":              (60, 100, 'piano', 0),
+            "truck":            (48, 120, 'piano', 0),
+            "bus":              (48, 90, 'piano', 0),
+            "train":            (55, 110, 'electric_piano', 1),
+            "plane":            (72, 100, 'electric_piano', 1),
+            "bicycle":          (64, 90, 'acoustic_guitar', 2),
+            "person":           (72, 110, 'acoustic_guitar', 2),
+            "motorcycle":       (70, 100, 'electric_guitar', 3),
+            "traffic light":    (67, 70, 'strings', 4),
+            "traffic sign":     (67, 70, 'strings', 4),
+            "stop sign":        (69, 80, 'strings', 4),
         }
 
         return mapping.get(base_class, None)
@@ -184,8 +179,8 @@ class RuleBasedMusician(BaseMusician):
             if mapped is None:
                 logger.warning(f"No mapping found for object class '{obj_class}'. Skipping event.")
                 continue
+            
             note, velocity, instrument, channel = mapped
-
             event = None
             if e["type"] in self.NOTE_ON_TYPES:
                 event = "note_on"
@@ -242,51 +237,10 @@ class RuleBasedMusician(BaseMusician):
             }
         )
 
-class ContinuousPianistMusician(RuleBasedMusician):
-    """
-    Continuous Pianist musician that generates sustained piano notes based on scene events.
-    This musician is designed to produce continuous and overlapping piano notes, allowing for
-    a more fluid and expressive musical output in response to visual stimuli.
-    """
-
-    def __init__(self, tempo=120, key_signature="C_major", time_signature: tuple = (4, 4)):
-        """
-        Args:
-            tempo: Music tempo in BPM
-            key_signature: Key signature for music generation
-            time_signature: Time signature for music generation
-        """
-        super().__init__(tempo, key_signature, time_signature)
-
-        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}")
-
-    def _map_classes(self, obj_class):
-        """
-        Map object class to MIDI note, velocity, instrument, and channel."""
-
-        base_class = obj_class.split("_")[0]
-
-        mapping = {
-            "car": (60, 100, 'piano', 0),
-            "truck": (48, 120, 'piano', 0),
-            "bus": (42, 120, 'piano', 0),
-            "train": (55, 110, 'piano', 0),
-            "plane": (72, 100, 'piano', 0),
-            "bicycle": (64, 90, 'electric_piano', 1),
-            "person": (72, 110, 'electric_piano', 1),
-            "motorcycle": (70, 92, 'electric_piano', 1),
-            "traffic light": (80, 70, 'piano', 2),
-            "traffic sign": (67, 70, 'piano', 2),
-            "stop sign": (69, 80, 'piano', 2),
-            # "road": (36, 50, 'piano', 0),
-        }
-
-        return mapping.get(base_class, None)
-
 class LSTMMusician(BaseMusician):
     """
     LSTM-based musician that generates music using a trained LSTM model. This musician
-    leverages a neural network to produce music based on learned patterns from training data.
+    leverages an LSTM to produce monophonic melodies based on learned patterns from Essen folk song training data.
     """
 
     AVAILABLE_INSTRUMENTS = (
@@ -296,16 +250,15 @@ class LSTMMusician(BaseMusician):
         "pad", "synth"
     )
 
-    def __init__(self, tempo=120, key_signature="C_major", time_signature: tuple = (4, 4), temperature=0.9, instrument="piano"):
+    def __init__(self, key_signature="C_major", time_signature: tuple=(4, 4), temperature=0.9, instrument="piano"):
         """
         Args:
-            tempo: Music tempo in BPM
             key_signature: Key signature for music generation
             time_signature: Time signature for music generation
             temperature: Sampling temperature for LSTM model
             instrument: Tone.js instrument used to play generated melodies
         """
-        super().__init__(tempo, key_signature, time_signature)
+        super().__init__(key_signature, time_signature)
         self.temperature = temperature
 
         if instrument not in self.AVAILABLE_INSTRUMENTS:
@@ -328,7 +281,7 @@ class LSTMMusician(BaseMusician):
             "traffic light", "traffic sign", "stop sign",
         ]
 
-        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, time_signature={time_signature}, temperature={temperature}")
+        logger.info(f"🎵 {self.__class__.__name__} initialized with key_signature={key_signature}, time_signature={time_signature}, temperature={temperature}")
 
     def generate_music(self, results, frame_id, state):
         """
@@ -467,15 +420,14 @@ class LSTMOrchestralMusician(BaseMusician):
     richer and more diverse musical output.
     """
 
-    def __init__(self, tempo=120, key_signature="C_major", time_signature=(4, 4), temperature=0.9):
+    def __init__(self, key_signature="C_major", time_signature=(4, 4), temperature=0.9):
         """
         Args:
-            tempo: Music tempo in BPM
             key_signature: Key signature for music generation
             time_signature: Time signature for music generation
             temperature: Sampling temperature for LSTM model
         """
-        super().__init__(tempo, key_signature, time_signature)
+        super().__init__(key_signature, time_signature)
 
         self.temperature = temperature
 
@@ -681,11 +633,6 @@ class Musician:
             "class": RuleBasedMusician,
             "label": "Rule-Based Musician",
             "description": "Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).",
-        },
-        "continuous_pianist": {
-            "class": ContinuousPianistMusician,
-            "label": "Continuous Pianist",
-            "description": "Piano musician with sustained/continuous note playback.",
         },
         "lstm-onessen": {
             "class": LSTMMusician,
