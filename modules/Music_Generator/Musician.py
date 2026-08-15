@@ -272,6 +272,10 @@ class LSTMMusician(BaseMusician):
         self.last_seed_notes = ["67", "_", "67", "_", 
                                 "67", "_", "_", "65", 
                                 "64", "_", "62", "_", 
+                                "60", "_", "60", "_",
+                                "48", "_", "_", "_",
+                                "50", "_", "52", "_",
+                                "60", "61", "62", "_", 
                                 "60", "_", "60", "_"]
         self._note_buffer = list(self.last_seed_notes)
 
@@ -309,8 +313,6 @@ class LSTMMusician(BaseMusician):
             if e["type"] in self.NOTE_ON_TYPES:
                 event = "note_on"
 
-                # Compute velocity based on the touching area size (larger area -> louder note).
-                # Non-spatial events (e.g. a keyboard NOTE_ON) have no area - fall back to the event's 'intensity'
                 area = e.get("area/ROI", None)
                 if area is not None:
                     if area < 0.005:
@@ -321,27 +323,18 @@ class LSTMMusician(BaseMusician):
                     curved_area = normalized_area ** 0.8
                     velocity = int(curved_area * (127 - 31) + 31)
                 else:
+                    # Non-spatial events (e.g. a keyboard NOTE_ON) have no area - fall back to the event's 'intensity'
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
                     velocity = int(intensity * (127 - 31) + 31)
 
                 # Generate new notes using the LSTM model
-                if self._rt_generator is None:
-                    self._rt_generator = self.generator.generate_melody_RT(
-                        seed=" ".join(self.last_seed_notes),
-                        length=200,
-                        temperature=self.temperature
-                    )
+                self._rt_generator = self.generator.generate_melody_RT(
+                    seed=" ".join(self.last_seed_notes),
+                    length=100,
+                    temperature=self.temperature
+                )
 
-                try:
-                    new_note = next(self._rt_generator)
-                except StopIteration:
-                    self._rt_generator = self.generator.generate_melody_RT(
-                        seed=" ".join(self.last_seed_notes),
-                        length=200,
-                        temperature=self.temperature
-                    )
-                    new_note = next(self._rt_generator)
-
+                new_note = next(self._rt_generator)
                 note = int(new_note)
                 
                 self.active_notes[0][e["object_id"]] = {
@@ -366,7 +359,7 @@ class LSTMMusician(BaseMusician):
                     continue
                 note = related_note
 
-                self._note_buffer.extend(["r", "_"])
+                self._note_buffer.extend(["r"])
 
             else:
                 self._note_buffer.append("_")
@@ -386,7 +379,7 @@ class LSTMMusician(BaseMusician):
             )
             logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity}, 'instrument': '{self.instrument}'")
 
-            self.last_seed_notes = self._note_buffer[-16:]
+            self.last_seed_notes = self._note_buffer[-32:]
 
         for object_id, note_info in list(self.active_notes[0].items()):
             if self._is_stale(state, object_id, self.max_missing_frames):
@@ -416,8 +409,7 @@ class LSTMMusician(BaseMusician):
 class LSTMOrchestralMusician(BaseMusician):
     """
     LSTM-based orchestral musician that generates music using a trained LSTM model. This musician 
-    is similar to the LSTMMusician but is designed to produce orchestral sounds, allowing for a 
-    richer and more diverse musical output.
+    is similar to the LSTMMusician but is designed to produce orchestral sounds.
     """
 
     def __init__(self, key_signature="C_major", time_signature=(4, 4), temperature=0.9):
@@ -435,34 +427,21 @@ class LSTMOrchestralMusician(BaseMusician):
         self.generator = MelodyGenerator()
         self._rt_generator = None
 
-        self.last_seed_notes = {
-            "piano": ["64", "_", "67", "_",
-                      "65", "_", "65", "_",
-                      "65", "_", "62", "_",
-                      "62", "_", "64", "_"],
-            "electric_piano": ["64", "_", "67", "_",
-                               "65", "_", "65", "_",
-                               "65", "_", "62", "_",
-                               "62", "_", "64", "_"],
-            "strings": ["67", "_", "67", "_", 
-                        "65", "_", "_", "65",
-                        "64", "_", "62", "_",
-                        "62", "_", "64", "_"],
-            "bass": ["48", "_", "48", "_",
-                     "48", "_", "_", "50",
-                     "50", "_", "52", "_",
-                     "52", "_", "50", "_"],
-            "pad": ["60", "_", "60", "_",
-                    "60", "_", "_", "62",
-                    "62", "_", "64", "_",
-                    "64", "_", "62", "_"],
-        }
+        self.last_seed_notes = ["64", "_", "67", "_",
+                                "65", "_", "65", "_",
+                                "65", "_", "_", "_",
+                                "62", "_", "64", "_",
+                                "64", "_", "67", "_",
+                                "65", "_", "65", "_",
+                                "48", "_", "_", "50",
+                                "62", "_", "64", "_"]
+        
         # Note buffer to store generated notes for each instrument
         self._note_buffer = {
             instrument: list(self.last_seed_notes[instrument]) for instrument in self.last_seed_notes
         }
 
-        logger.info(f"🎵 {self.__class__.__name__} initialized with tempo={tempo}, key_signature={key_signature}, time_signature={time_signature}, temperature={temperature}")
+        logger.info(f"🎵 {self.__class__.__name__} initialized with key_signature={key_signature}, time_signature={time_signature}, temperature={temperature}")
 
     def _map_classes(self, obj_class):
         """
@@ -470,23 +449,23 @@ class LSTMOrchestralMusician(BaseMusician):
         """
 
         base_class = obj_class.split("_")[0]
-
         mapping = {
-            "car": ('piano', 0),
-            "truck": ('piano', 0),
-            "bus": ('piano', 0),
-            "train": ('electric_piano', 1),
-            "plane": ('electric_piano', 1),
-            "bicycle": ('bass', 6),
-            "motorcycle": ('bass', 6),
-            "person": ('bass', 6),
+            #               instrument, channel
+            "car":          ('piano', 0),
+            "truck":        ('piano', 0),
+            "bus":          ('piano', 0),
+            "train":        ('electric_piano', 1),
+            "plane":        ('electric_piano', 1),
+            "bicycle":      ('bass', 6),
+            "motorcycle":   ('bass', 6),
+            "person":       ('bass', 6),
             "traffic light": ('strings', 4),
             "traffic sign": ('strings', 4),
-            "stop sign": ('strings', 4),
+            "stop sign":    ('strings', 4),
 
-            "typing": ('piano', 0),
-            "scroll": ('strings', 4),
-            "mousemove": ('pad', 5),
+            "typing":       ('piano', 0),
+            "scroll":       ('strings', 4),
+            "mousemove":    ('pad', 5),
         }
 
         return mapping.get(base_class, None)
@@ -531,23 +510,13 @@ class LSTMOrchestralMusician(BaseMusician):
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
                     velocity = int(intensity * (127 - 31) + 31)
 
-                if self._rt_generator is None:
-                    self._rt_generator = self.generator.generate_melody_RT(
-                        seed=" ".join(self.last_seed_notes),
-                        length=200,
-                        temperature=self.temperature
-                    )
+                self._rt_generator = self.generator.generate_melody_RT(
+                    seed=" ".join(self.last_seed_notes),
+                    length=100,
+                    temperature=self.temperature
+                )
 
-                try:
-                    new_note = next(self._rt_generator)
-                except StopIteration:
-                    self._rt_generator = self.generator.generate_melody_RT(
-                        seed=" ".join(self.last_seed_notes),
-                        length=200,
-                        temperature=self.temperature
-                    )
-                    new_note = next(self._rt_generator)
-                
+                new_note = next(self._rt_generator)
                 note = int(new_note)
 
                 self.active_notes[channel][e["object_id"]] = {
@@ -571,7 +540,7 @@ class LSTMOrchestralMusician(BaseMusician):
                     continue
                 note = related_note
 
-                self._note_buffer[instrument].extend(["r", "_"])
+                self._note_buffer[instrument].extend(["r"])
 
             else:
                 self._note_buffer[instrument].append("_")
@@ -591,7 +560,7 @@ class LSTMOrchestralMusician(BaseMusician):
             )
             logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity}, 'instrument': '{instrument}'")
 
-            self.last_seed_notes[instrument] = self._note_buffer[instrument][-16:]
+            self.last_seed_notes[instrument] = self._note_buffer[instrument][-32:]
 
         for channel in self.active_notes:
             for object_id, note_info in list(self.active_notes[channel].items()):
@@ -711,12 +680,10 @@ class Musician:
 
     def set_tempo(self, tempo: int) -> None:
         self.tempo = tempo
-        self.musician.tempo = tempo
 
     def set_instrument(self, instrument: str) -> None:
         if instrument not in LSTMMusician.AVAILABLE_INSTRUMENTS:
-            available = ", ".join(LSTMMusician.AVAILABLE_INSTRUMENTS)
-            raise ValueError(f"Unsupported instrument: {instrument}. Supported instruments: {available}")
+            raise ValueError(f"Unsupported instrument: {instrument}. Supported instruments: {", ".join(LSTMMusician.AVAILABLE_INSTRUMENTS)}")
         self.instrument = instrument
         if isinstance(self.musician, LSTMMusician):
             self.musician.instrument = instrument
@@ -744,7 +711,7 @@ class Musician:
         """
         
         logger.warning("Saving generated melody to MIDI is not implemented yet.")
-        pass  # Placeholder for future implementation
+        pass 
 
     def __call__(self, results, frame_id: int = 0, state: Dict[str, Any] = None) -> MusicFrame:
         """
