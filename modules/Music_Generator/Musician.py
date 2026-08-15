@@ -359,7 +359,7 @@ class LSTMMusician(BaseMusician):
                     continue
                 note = related_note
 
-                self._note_buffer.extend(["r"])
+                self._note_buffer.append("r")
 
             else:
                 self._note_buffer.append("_")
@@ -427,19 +427,20 @@ class LSTMOrchestralMusician(BaseMusician):
         self.generator = MelodyGenerator()
         self._rt_generator = None
 
-        self.last_seed_notes = ["64", "_", "67", "_",
-                                "65", "_", "65", "_",
-                                "65", "_", "_", "_",
-                                "62", "_", "64", "_",
-                                "64", "_", "67", "_",
-                                "65", "_", "65", "_",
-                                "48", "_", "_", "50",
-                                "62", "_", "64", "_"]
+        self.last_seed_notes = {
+            instrument: ["64", "_", "67", "_",
+                         "65", "_", "65", "_",
+                         "65", "_", "_", "_",
+                         "62", "_", "64", "_",
+                         "64", "_", "67", "_",
+                         "65", "_", "65", "_",
+                         "48", "_", "_", "50",
+                         "62", "_", "64", "_"]
+            for instrument in ["piano", "electric_piano", "bass", "strings", "pad"]
+        }
         
         # Note buffer to store generated notes for each instrument
-        self._note_buffer = {
-            instrument: list(self.last_seed_notes) for instrument in self.last_seed_notes
-        }
+        self._note_buffer = self.last_seed_notes.copy()
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with key_signature={key_signature}, time_signature={time_signature}, temperature={temperature}")
 
@@ -450,22 +451,22 @@ class LSTMOrchestralMusician(BaseMusician):
 
         base_class = obj_class.split("_")[0]
         mapping = {
-            #               instrument, channel
-            "car":          ('piano', 0),
-            "truck":        ('piano', 0),
-            "bus":          ('piano', 0),
-            "train":        ('electric_piano', 1),
-            "plane":        ('electric_piano', 1),
-            "bicycle":      ('bass', 6),
-            "motorcycle":   ('bass', 6),
-            "person":       ('bass', 6),
-            "traffic light": ('strings', 4),
-            "traffic sign": ('strings', 4),
-            "stop sign":    ('strings', 4),
+            #                   instrument, channel
+            "car":              ('piano', 0),
+            "truck":            ('piano', 0),
+            "bus":              ('piano', 0),
+            "train":            ('electric_piano', 1),
+            "plane":            ('electric_piano', 1),
+            "bicycle":          ('bass', 6),
+            "motorcycle":       ('bass', 6),
+            "person":           ('bass', 6),
+            "traffic light":    ('strings', 4),
+            "traffic sign":     ('strings', 4),
+            "stop sign":        ('strings', 4),
 
-            "typing":       ('piano', 0),
-            "scroll":       ('strings', 4),
-            "mousemove":    ('pad', 5),
+            "typing":           ('piano', 0),
+            "scroll":           ('strings', 4),
+            "mousemove":        ('pad', 5),
         }
 
         return mapping.get(base_class, None)
@@ -511,7 +512,7 @@ class LSTMOrchestralMusician(BaseMusician):
                     velocity = int(intensity * (127 - 31) + 31)
 
                 self._rt_generator = self.generator.generate_melody_RT(
-                    seed=" ".join(self.last_seed_notes),
+                    seed=" ".join(self.last_seed_notes[instrument]),
                     length=100,
                     temperature=self.temperature
                 )
@@ -540,7 +541,7 @@ class LSTMOrchestralMusician(BaseMusician):
                     continue
                 note = related_note
 
-                self._note_buffer[instrument].extend(["r"])
+                self._note_buffer[instrument].append("r")
 
             else:
                 self._note_buffer[instrument].append("_")
@@ -560,7 +561,7 @@ class LSTMOrchestralMusician(BaseMusician):
             )
             logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity}, 'instrument': '{instrument}'")
 
-            self.last_seed_notes = self._note_buffer[instrument][-32:]
+            self.last_seed_notes[instrument] = self._note_buffer[instrument][-32:]
 
         for channel in self.active_notes:
             for object_id, note_info in list(self.active_notes[channel].items()):
