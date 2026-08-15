@@ -433,25 +433,6 @@ def handle_set_music_settings(data):
         emit('music_settings_updated', {'success': False, 'error': str(e)})
         logger.error("❌ Error applying music settings: %s", e)
 
-@socketio.on('switch_musician')
-def handle_switch_musician(data):
-    """Handle musician switch request from client"""
-
-    try:
-        musician_type = (data or {}).get('musician_type')
-        if not musician_type:
-            emit('musician_switched', {'success': False, 'error': 'musician_type is required'})
-            return
-
-        result = processor.switch_musician(musician_type)
-        emit('musician_switched', result)
-        if result.get('success'):
-            logger.info("🎭 Musician switched to: %s", result.get('musician_type'))
-        
-    except Exception as e:
-        emit('musician_switched', {'success': False, 'error': str(e)})
-        logger.error("❌ Error switching musician: %s", e)
-
 def shutdown_server(signum, frame):
     """Handle server shutdown signals."""
 
@@ -510,5 +491,6 @@ if __name__ == '__main__':
     # Set debug mode based on argument
     if args.debug:
         processor.enable_debug_mode(True)
+        set_level(logger, "DEBUG")
 
     run_processor_server(args.host, args.port, args.debug, args.interval)
