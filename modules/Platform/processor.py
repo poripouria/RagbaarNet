@@ -17,7 +17,7 @@ from queue import Queue, Empty
 
 from modules.Detection.Detector import Detector
 from modules.Music_Generator.Musician import Musician
-from modules.Platform.channels import BaseChannel, AVAILABLE_CHANNELS, DrivingPipeline
+from modules.Platform.channels import BaseChannel, AVAILABLE_CHANNELS
 from modules.Platform.midi_output import MidiOutput
 from modules.utils.logging_setup import setup_logging, set_level
 logger = setup_logging("INFO", name="Platform.processor")
@@ -36,7 +36,7 @@ class Processor:
         self.socketio = socketio_instance
         self.frame_counter = 0
 
-        self.input_queue = Queue(maxsize=10)
+        self.input_queue = Queue(maxsize=16)
 
         self.is_processing = False
         self.current_frame = None
@@ -56,7 +56,7 @@ class Processor:
         logger.info("🔄 Initializing music generation platfom...")
         try:
             self.musician = Musician('lstm-onessen-orchestral', tempo=120, key_signature="C_major", time_signature=(4,4))
-            self.music_queue = Queue(maxsize=5)
+            self.music_queue = Queue(maxsize=8)
             self.current_music = None
             self.music_enabled = True
             logger.info("✅ Music Generator initialized successfully")
@@ -78,9 +78,11 @@ class Processor:
             except Exception as e:
                 logger.exception("❌ Error initializing MIDI output: %s", e)
                 self.midi_output = None
+        else:
+            logger.info("🔊 Audio backend set to '%s' - MIDI output disabled.", self.audio_backend)
 
         # Pick exactly one channel for this run and the single Detector strategy that goes with it.
-        self.channel = self._select_channel(debug_mode=self.debug_mode)
+        self.channel = self._select_channel()
         self.detector = Detector(self.channel.detector_strategy)
 
         # Start processing thread
@@ -105,7 +107,7 @@ class Processor:
         channel_cls = AVAILABLE_CHANNELS.get(choice)
         if channel_cls is None:
             logger.warning("⚠️ Invalid choice '%s' - defaulting to 'driving'.", choice_raw)
-            channel_cls = DrivingPipeline
+            channel_cls = AVAILABLE_CHANNELS.get(1)
         
         return channel_cls()
 
@@ -163,7 +165,8 @@ class Processor:
         Main loop that continuously processes items from the input queue, applies the selected channel's
         logic, and updates the display and music generation accordingly.
         """
-        logger.info("🚀 Processing loop started (channel: %s)", self.channel.name)
+        logger.info("🚀 Processing loop started (channel: %s, interval: %d)", 
+                    self.channel.name, self.channel.processing_interval)
 
         while True:
             try:
@@ -222,9 +225,10 @@ class Processor:
                         self.current_music = music_data
                         self._broadcast_music_update(music_data)
 
+                logger.info("🎞️ Frame %d processed.", self.frame_counter)
                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                     self.last_debug_time = time.time()
-                    logger.debug("🖥️ Frame %d processed. Queue size: %d, Music queue size: %d",
+                    logger.debug("🖥️ Frame %d info: Queue size: %d, Music queue size: %d",
                                  self.frame_counter, self.input_queue.qsize(), self.music_queue.qsize())
 
                 self.frame_counter += 1
@@ -405,19 +409,6 @@ class Processor:
             logger.error(f"❌ Error applying music settings: {e}")
             return {'success': False, 'error': str(e)}
 
-    def switch_musician(self, musician_type: str):
-        """Switch to a different music generation model (keeps current tempo/key/timesign)"""
-
-        if not hasattr(self, 'musician') or self.musician is None:
-            return {'success': False, 'error': 'Musician system not initialized'}
-
-        try:
-            self.musician.switch_musician(musician_type)
-            return {'success': True, 'musician_type': self.musician.musician_type}
-        except Exception as e:
-            logger.error(f"❌ Error switching musician: {e}")
-            return {'success': False, 'error': str(e)}
-
     # --- lifecycle / misc ---------------------------------------------------------
 
     def shutdown(self):
@@ -455,6 +446,8 @@ class Processor:
 
         self.debug_mode = enable
         set_level(logger, "DEBUG" if enable else "INFO")
+        if getattr(self, 'channel', None) is not None:
+            self.channel.set_debug_mode(enable)
         logger.info("🐛 Debug mode %s", "enabled - verbose logging activated" if enable else "disabled - minimal logging activated")
 
     def set_main_ui_connected(self, connected=True):
