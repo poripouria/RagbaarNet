@@ -297,6 +297,7 @@ class ROIEventsDetector(BaseDetector):
 
         for object_id, previous in self.state["objects"].items():
             if object_id in updated_objects:
+                previous["missing_frames"] = 0
                 continue
             previous["missing_frames"] += 1
             if previous["missing_frames"] <= self.max_missing_frames:
