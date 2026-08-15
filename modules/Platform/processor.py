@@ -80,7 +80,7 @@ class Processor:
                 self.midi_output = None
 
         # Pick exactly one channel for this run and the single Detector strategy that goes with it.
-        self.channel = self._select_channel()
+        self.channel = self._select_channel(debug_mode=self.debug_mode)
         self.detector = Detector(self.channel.detector_strategy)
 
         # Start processing thread
