@@ -438,7 +438,7 @@ class LSTMOrchestralMusician(BaseMusician):
         
         # Note buffer to store generated notes for each instrument
         self._note_buffer = {
-            instrument: list(self.last_seed_notes[instrument]) for instrument in self.last_seed_notes
+            instrument: list(self.last_seed_notes) for instrument in self.last_seed_notes
         }
 
         logger.info(f"🎵 {self.__class__.__name__} initialized with key_signature={key_signature}, time_signature={time_signature}, temperature={temperature}")
@@ -560,7 +560,7 @@ class LSTMOrchestralMusician(BaseMusician):
             )
             logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity}, 'instrument': '{instrument}'")
 
-            self.last_seed_notes[instrument] = self._note_buffer[instrument][-32:]
+            self.last_seed_notes = self._note_buffer[instrument][-32:]
 
         for channel in self.active_notes:
             for object_id, note_info in list(self.active_notes[channel].items()):
