@@ -6,15 +6,12 @@ This module provides an extensible framework for generating music based on visua
 It supports various music generation strategies with easy integration for additional models.
 """
 
-import os
-import sys
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from modules.utils.logging_setup import setup_logging
-
 logger = setup_logging("INFO", name="Music_Generator.Musician")
 
 
@@ -37,7 +34,7 @@ class MusicEvent:
         metadata: Additional event-specific information
     """
 
-    event_type: str     # e.g. "note_on", "note_off"
+    event_type: str             # e.g. "note_on", "note_off"
     note: Optional[int] = None
     channel: int = 0
     velocity: Optional[int] = None
@@ -172,7 +169,7 @@ class RuleBasedMusician(BaseMusician):
         Generate music based on the input scene data.
         """
 
-        logger.info(f"🎵 Generating music for frame {frame_id}")
+        logger.info(f"🎵 Generating Rule-Based music for frame {frame_id}")
 
         self.frame_counter = frame_id
 
@@ -235,7 +232,7 @@ class RuleBasedMusician(BaseMusician):
                             metadata={"object_id": object_id}
                         ))
                         self.active_notes[channel].pop(object_id, None)
-                    logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
+                    logger.warning(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
             events=music_events,
@@ -364,7 +361,7 @@ class LSTMMusician(BaseMusician):
                 area = e.get("area/ROI", None)
                 if area is not None:
                     if area < 0.005:
-                        logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
+                        logger.info(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
                         continue
                     # Scale area to velocity range (Power Curve Scaler) Area:0.005-0.5, Velocity:32-128
                     normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
@@ -453,7 +450,7 @@ class LSTMMusician(BaseMusician):
                     )
                 )
                 self.active_notes[0].pop(object_id, None)
-                logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
+                logger.warning(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
             events=music_events,
@@ -573,7 +570,7 @@ class LSTMOrchestralMusician(BaseMusician):
                 area = e.get("area/ROI", None)
                 if area is not None:
                     if area < 0.005:
-                        logger.warning(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
+                        logger.info(f"Event with very small area ({area}). Skipping note generation for class '{obj_class}'.")
                         continue
                     normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
                     curved_area = normalized_area ** 0.8
@@ -660,7 +657,7 @@ class LSTMOrchestralMusician(BaseMusician):
                         )
                     )
                     self.active_notes[channel].pop(object_id, None)
-                    logger.info(f"Auto-released note for object_id {object_id} due to missing frames.")
+                    logger.warning(f"Auto-released note for object_id {object_id} due to missing frames.")
 
         return MusicFrame(
             events=music_events,
@@ -702,7 +699,8 @@ class Musician:
         },
     }
 
-    def __init__(self, musician_type: str = "lstm-onessen-orchestral", tempo: int = 120, key_signature: str = "C_major", time_signature: tuple = (4, 4), instrument: str = "piano"):
+    def __init__(self, musician_type: str="lstm-onessen-orchestral", 
+                 tempo: int=120, key_signature: str="C_major", time_signature: tuple=(4, 4), instrument: str="piano"):
         """
         Initialize the main Musician.
 
@@ -721,14 +719,10 @@ class Musician:
 
         entry = self.MUSICIAN_REGISTRY.get(self.musician_type)
         if entry is None:
-            available = ", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))
-            raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: {available}")
-        
+            raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: {", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))}")
         self.musician = self._create_musician(entry)
 
         self.generated_melody = []
-
-        logger.info(f"🎵 Musician initialized: {musician_type}")
 
     def _create_musician(self, entry):
         if entry["class"] is LSTMMusician:
@@ -742,7 +736,7 @@ class Musician:
         key_signature: Optional[str] = None,
         time_signature: Optional[tuple] = None,
         instrument: Optional[str] = None
-    ) -> None:
+    ):
         """
         Switch to a different music generation model.
 
@@ -764,10 +758,9 @@ class Musician:
         if entry is None:
             available = ", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))
             raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: {available}")
-        
         self.musician = self._create_musician(entry)
 
-        logger.info(f"🔄 Switched to {musician_type} musician")
+        logger.info(f"🎭 Musician switched to: {musician_type}")
 
     def set_tempo(self, tempo: int) -> None:
         self.tempo = tempo
@@ -776,7 +769,7 @@ class Musician:
     def set_instrument(self, instrument: str) -> None:
         if instrument not in LSTMMusician.AVAILABLE_INSTRUMENTS:
             available = ", ".join(LSTMMusician.AVAILABLE_INSTRUMENTS)
-            raise ValueError(f"Unsupported LSTM instrument: {instrument}. Supported instruments: {available}")
+            raise ValueError(f"Unsupported instrument: {instrument}. Supported instruments: {available}")
         self.instrument = instrument
         if isinstance(self.musician, LSTMMusician):
             self.musician.instrument = instrument
@@ -784,10 +777,8 @@ class Musician:
     @classmethod
     def list_available_musicians(cls) -> List[dict]:
         """
-        Return metadata for every musician type that can be selected/switched to.
-
-        Used by the Platform UI to populate the music settings picker without
-        duplicating the list of supported types.
+        Return metadata for every musician type that can be selected/switched to. Used by the 
+        Platform UI to populate the music settings picker without duplicating the list of supported types.
         """
 
         return [
@@ -808,11 +799,7 @@ class Musician:
         logger.warning("Saving generated melody to MIDI is not implemented yet.")
         pass  # Placeholder for future implementation
 
-    def __call__(self, 
-                 results,
-                 frame_id: int = 0,
-                 state: Dict[str, Any] = None
-                ) -> MusicFrame:
+    def __call__(self, results, frame_id: int = 0, state: Dict[str, Any] = None) -> MusicFrame:
         """
         Generate music based on segmentation data.
 
