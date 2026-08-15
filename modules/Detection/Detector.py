@@ -5,16 +5,13 @@ Modular Scene Detection Framework for passing to Music Generation Module.
 This module provides an extensible framework for detecting scene events based on input data,
 """
 
-import os
-import sys
 import cv2
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Any
 
 from modules.utils.logging_setup import setup_logging
-
-logger = setup_logging("INFO", name="Detection.Detector")
+logger = setup_logging("INFO", name="Detection.detector")
 
 class ROI:
     """
@@ -32,18 +29,14 @@ class ROI:
             corners: List of 4 corner points (x, y)
             controls: List of 4 bezier control points (x, y)
             frame_size: (width, height) of the frame these masks must align with.
-                Must match the actual segmentation_map / mask resolution used at
-                collision-check time, or intersects_mask() will silently misfire
-                (wrong shape -> wrong/empty results).
         """
 
+        self.frame_width, self.frame_height = frame_size
         if len(corners) != 4 or len(controls) != 4:
             raise ValueError("ROI must have exactly 4 corners and 4 control points")
-
         self.corners = corners
         self.controls = controls
-        self.frame_width, self.frame_height = frame_size
-
+        
         self.polygon = self._build_polygon()
         self.edges = self._build_edges()
 
@@ -53,9 +46,7 @@ class ROI:
     def _build_boundary_mask(self, width, height, thickness=3):
 
         mask = np.zeros((height, width), dtype=np.uint8)
-
         pts = np.array(self.polygon, dtype=np.int32)
-
         cv2.polylines(
             mask,
             [pts],
@@ -63,27 +54,17 @@ class ROI:
             color=255,
             thickness=thickness
         )
-
         return mask.astype(bool)
 
     def _build_edge_masks(self, width, height, thickness=3):
 
         edge_masks = []
-
         samples_per_edge = len(self.polygon) // 4
-
         for i in range(4):
-
             mask = np.zeros((height, width), dtype=np.uint8)
-
             start = i * samples_per_edge
             end = (i + 1) * samples_per_edge
-
-            pts = np.array(
-                self.polygon[start:end],
-                dtype=np.int32
-            )
-
+            pts = np.array(self.polygon[start:end], dtype=np.int32)
             cv2.polylines(
                 mask,
                 [pts],
@@ -91,31 +72,24 @@ class ROI:
                 color=255,
                 thickness=thickness
             )
-
             edge_masks.append(mask.astype(bool))
-
+        
         return edge_masks
 
     def _quad_bezier(self, p0, p1, p2, t):
 
-        return (
-            (1 - t) ** 2 * np.array(p0)
-            + 2 * (1 - t) * t * np.array(p1)
-            + t ** 2 * np.array(p2)
-        )
+        return ((1 - t) ** 2 * np.array(p0)
+                + 2 * (1 - t) * t * np.array(p1)
+                + t ** 2 * np.array(p2))
 
     def _build_polygon(self):
 
         poly = []
-
         n = len(self.corners)
-
         for i in range(n):
-
             p0 = self.corners[i]
             p2 = self.corners[(i + 1) % n]
             p1 = self.controls[i]
-
             for t in np.linspace(0, 1, 20):
                 pt = self._quad_bezier(p0, p1, p2, t)
                 poly.append((pt[0], pt[1]))
@@ -125,12 +99,9 @@ class ROI:
     def _build_edges(self):
 
         edges = []
-
         for i in range(len(self.polygon)):
-
             a = self.polygon[i]
             b = self.polygon[(i + 1) % len(self.polygon)]
-
             edges.append((a, b))
 
         return edges
@@ -138,29 +109,23 @@ class ROI:
     def calculate_intersection_area(self, mask):
 
         intersection = np.logical_and(mask, self.boundary_mask)
-        area = np.sum(intersection)
-
-        return area
+        return np.sum(intersection)
 
     def calculate_ROI_area(self):
 
-        area = np.sum(self.boundary_mask)
-        return area
+        return np.sum(self.boundary_mask)
 
     def intersects_mask(self, mask, return_edges=False):
 
         touching = np.logical_and(mask, self.boundary_mask).any()
-
         if not return_edges:
             return touching
 
         edge_names = ["top", "right", "bottom", "left"]
         edges = []
-
         for name, edge_mask in zip(edge_names, self.edge_masks):
             if np.logical_and(mask, edge_mask).any():
                 edges.append(name)
-
         erea = self.calculate_intersection_area(mask)
 
         return {
@@ -178,15 +143,10 @@ class BaseDetector(ABC):
     """
 
     def __init__(self):
-        # All sequential data is tracked by frame_id, which is passed in at each call.
         self.frame_counter = 0  
 
     @abstractmethod
     def detect_scene_events(self, *args, **kwargs):
-        """
-        Detect scene events.
-        This method must be implemented by all subclasses.
-        """
         pass
 
 class ROIEventsDetector(BaseDetector):
@@ -199,7 +159,7 @@ class ROIEventsDetector(BaseDetector):
 
         # state: keeps track of objects
         self.state = {
-            "objects": {},          # object_id -> object info
+            "objects": {},              # object_id -> object info
             "next_object_id": 0
         }
 
@@ -232,19 +192,14 @@ class ROIEventsDetector(BaseDetector):
         roi_state = (roi_payload, frame_size)
         if self.prev_roi_payload != roi_state:
             self.prev_roi_payload = roi_state
-            self.roi = ROI(
-                corners=roi_payload.get("corners", []),
-                controls=roi_payload.get("controls", []),
-                frame_size=frame_size,
-            )
-            
+            self.roi = ROI(corners=roi_payload.get("corners", []),
+                           controls=roi_payload.get("controls", []),
+                           frame_size=frame_size)
             logger.info(f"💢 ROI updated for frame {self.frame_counter}. ROI area: {self.roi.calculate_ROI_area()}")
 
     def assign_object_ids(self, objects, masks, max_distance=200):
         """
         Assign unique IDs to detected objects based on their bounding boxes and class names. 
-        The rule is to match objects across frames based on IoU proximity and class similarity, 
-        while also considering the maximum allowed distance for matching.
         """
 
         updated_objects = {}
@@ -416,19 +371,16 @@ class KeyEventsDetector(BaseDetector):
 
         # state: keeps track of which keys are currently held down
         self.state = {
-            "held": {},   # key -> {"since": frame_id, "class_name": str}
+            "held": {},                 # key -> {"since": frame_id, "class_name": str}
         }
 
     def __call__(self, input: Any, frame_id: int = 0):
-        """
-        Args:
-            input: a single raw observation dict.
-        """
 
         self.frame_counter = frame_id
         return self.detect_scene_events(input)
 
     def detect_scene_events(self, observation: dict = None):
+
         events = []
         if not observation:
             return events
@@ -468,11 +420,8 @@ class KeyEventsDetector(BaseDetector):
 
 
 class SceneCaptioningDetector(BaseDetector):
-    """Placeholder strategy for a future captioning-driven channel.
-
-    NOTE: not implemented yet - detect_scene_events currently returns an empty
-    list every call so selecting this strategy doesn't crash, it just produces
-    no music until the real captioning logic is written.
+    """
+    Placeholder strategy for a future captioning-driven channel.
     """
 
     def __init__(self):
@@ -500,7 +449,7 @@ class Detector:
         
         self.strategy = strategy
         self.detector = self._create_detector(strategy)
-        logger.info(f"Detector initialized with strategy: {strategy}")
+        logger.info(f"✅ Detector initialized with strategy: {strategy}")
 
     def _create_detector(self, strategy: str):
 
