@@ -52,7 +52,6 @@ out/
 # Signing & secrets
 *.jks
 *.keystore
-*.hprof
 keystore.properties
 signing.properties
 google-services.json
