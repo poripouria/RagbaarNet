@@ -439,7 +439,10 @@ class Processor:
                 self.midi_output.close()
 
             logger.info("🎼 Saving generated music...")
-            self.musician.save_generated_melody()
+            if self.musician is not None:
+                saved_paths = self.musician.save_generated_melody()
+                if saved_paths:
+                    logger.info("🎼 Generated melody saved: %s", saved_paths)
 
             logger.info("🛑 Shutting down Main processor...")
             # Send shutdown signal to the processing loop
