@@ -3,7 +3,6 @@ This module sends generated MusicFrame events to a MIDI output port
 such as LoopMIDI, allowing an external DAW to render the music.
 """
 
-import os
 from typing import Optional
 import mido
 

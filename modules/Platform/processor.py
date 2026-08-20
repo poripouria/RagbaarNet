@@ -8,7 +8,6 @@ The architecture is designed to be modular, allowing for different input modalit
 by different channels, each with its own detection strategy.
 """
 
-import os
 import time
 import threading
 import traceback
