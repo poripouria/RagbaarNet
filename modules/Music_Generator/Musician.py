@@ -638,8 +638,8 @@ class Musician:
 
     def _record_settings_change(self) -> None:
         """
-        Snapshot the current tempo/key/time-signature (plus musician/instrument) with a
-        timestamp, but only if it actually differs from the last recorded snapshot.
+        Snapshot the current tempo/key/time-signature (plus musician/instrument) with a timestamp, 
+        but only if it actually differs from the last recorded snapshot.
         """
 
         snapshot = {
@@ -744,9 +744,37 @@ class Musician:
 
         Args:
             format: The format to save the melody in ("midi", "json", or "both").
-            save_path: Optional directory or base file path (without extension) for the
-                output. Defaults to config.GENERATED_MELODIES_DIR with a timestamped name.
+            save_path: Optional directory or base file path (without extension) for the output.
         """
+
+        def _resolve_track_channel(instrument: str, event_channel: int, channel_owners: dict) -> int:
+
+            preferred = config.INSTRUMENT_MIDI_CHANNELS.get(instrument, event_channel)
+            if preferred not in channel_owners or channel_owners[preferred] == instrument:
+                channel_owners[preferred] = instrument
+                return preferred
+
+            logger.warning(f"MIDI channel {preferred} is already used by '{channel_owners[preferred]}' - reassigning '{instrument}' to avoid a program-change collision.")
+            for candidate in range(16):
+                if candidate == 9:  # reserved for the fixed GM percussion kit
+                    continue
+                if candidate not in channel_owners:
+                    channel_owners[candidate] = instrument
+                    return candidate
+
+            logger.warning(f"No free MIDI channel left for '{instrument}' - reusing channel {preferred}, which may still collide.")
+            return preferred
+
+        if format not in ("both", "midi", "json"):
+            logger.warning(f"Unknown save format '{format}' - defaulting to 'both'.")
+            format = "both"
+
+        logger.info(f"🎼 Settings history for this melody ({len(self._settings_history)} change(s)):")
+        for snapshot in self._settings_history:
+            logger.info(
+                f"   - tempo={snapshot['tempo']} key={snapshot['key_signature']} "
+                f"time_signature={snapshot['time_signature']} musician={snapshot['musician_type']}"
+            )
 
         if not any(frame.events for frame in self.generated_melody):
             logger.warning("No generated melody events to save - skipping.")
@@ -832,35 +860,36 @@ class Musician:
                         ))
                         last_meta_tick, last_time_sig = tick_int, payload["time_signature"]
         
-                # --- One note track per (instrument, channel) pair ---
-                tracks_by_key: Dict[Tuple[str, int], mido.MidiTrack] = {}
-                last_tick_by_key: Dict[Tuple[str, int], int] = {}
+                # --- One note track per distinct instrument ---
+                channel_owners = {}
+                tracks_by_instrument = {}
+                last_tick_by_instrument = {}
         
                 for tick, kind, payload in ticked_timeline:
                     if kind != "note":
                         continue
                     event: MusicEvent = payload
                     instrument = event.instrument or "unknown"
-                    track_key = (instrument, event.channel)
         
-                    if track_key not in tracks_by_key:
+                    if instrument not in tracks_by_instrument:
+                        channel = _resolve_track_channel(instrument, event.channel, channel_owners)
                         track = mido.MidiTrack()
-                        track.name = f"{instrument} (ch{event.channel})"
-                        if event.channel != 9:  # channel 9 is the fixed GM percussion kit, no program needed
+                        track.name = f"{instrument} (ch{channel})"
+                        if channel != 9:  # channel 9 is the fixed GM percussion kit, no program needed
                             program = config.GM_INSTRUMENT_PROGRAMS.get(instrument, 0)
-                            track.append(mido.Message("program_change", program=program, channel=event.channel, time=0))
+                            track.append(mido.Message("program_change", program=program, channel=channel, time=0))
                         midi_file.tracks.append(track)
-                        tracks_by_key[track_key] = track
-                        last_tick_by_key[track_key] = 0
+                        tracks_by_instrument[instrument] = (track, channel)
+                        last_tick_by_instrument[instrument] = 0
         
-                    track = tracks_by_key[track_key]
+                    track, channel = tracks_by_instrument[instrument]
                     tick_int = round(tick)
-                    delta = max(0, tick_int - last_tick_by_key[track_key])
+                    delta = max(0, tick_int - last_tick_by_instrument[instrument])
                     track.append(mido.Message(
                         event.event_type, note=event.note, velocity=event.velocity or 0,
-                        channel=event.channel, time=delta
+                        channel=channel, time=delta
                     ))
-                    last_tick_by_key[track_key] = tick_int
+                    last_tick_by_instrument[instrument] = tick_int
         
                 midi_file.save(str(midi_path))
                 logger.info(f"🎼 Generated melody saved as MIDI: {midi_path}")
