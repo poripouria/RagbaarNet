@@ -873,7 +873,7 @@ class Musician:
             try:
                 payload = {
                     "musician_type": self.musician_type,
-                    "saved_at": time.time(),
+                    "saved_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
                     "settings_history": self._settings_history,
                     "frames": [
                         {

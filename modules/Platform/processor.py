@@ -241,8 +241,8 @@ class Processor:
 
                 logger.info("🎞️ Frame %d processed.", self.frame_counter)
                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
-                    logger.debug("🖥️ Frame %d info: Queue size: %d, Last debug time: %f",
-                                 self.frame_counter, self.input_queue.qsize(), time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.last_debug_time)))
+                    logger.debug("🖥️ Frame %d info: Queue size: %d, Last debug time: %s",
+                                 self.frame_counter, self.input_queue.qsize(), time.strftime("%H:%M:%S", time.localtime(self.last_debug_time)))
                     self.last_debug_time = time.time()
 
                 self.frame_counter += 1
@@ -342,7 +342,7 @@ class Processor:
             'segmentation_info': None,
             'music_info': None,
             'frame_counter': self.frame_counter,
-            'timestamp': time.time(),
+            'timestamp': time.strftime("%H:%M:%S", time.localtime()),
         }
 
         if self.current_display is not None:
