@@ -8,8 +8,6 @@
  * Depends on core.js for currentInstrument/currentVolume/etc.
  */
 
-// Throttle updates to 50ms (20 FPS)
-
 // Audio system variables
 let audioContext = null;
 
@@ -124,7 +122,7 @@ function connectWithReverbSend(node, sendAmount, velocity = 1) {
 
 // Per-instrument output trim (0-1 multiplier applied on top of velocity, right before triggerAttack)
 const INSTRUMENT_OUTPUT_TRIM = {
-    piano: 1.0, 
+    piano: 1.0,
     electric_piano: 0.95,
     strings: 0.6,
     bass: 1.05,
@@ -421,13 +419,13 @@ function handleMusicEvents(musicData) {
             // Nearest grid point on the central clock
             const scheduleTime = Tone.Transport.state === 'started'
             ? Tone.Transport.nextSubdivision(QUANTIZE_GRID)
-            : Tone.now() + 0.02;    // Fallback
+            : Tone.now() + 0.01;    // Fallback
 
-            // Schedule each music event
-            musicData.events.forEach((event, index) => {
-                playMusicEvent(event, scheduleTime);
-            });
-        }
+        // Schedule each music event
+        musicData.events.forEach((event, index) => {
+            playMusicEvent(event, scheduleTime);
+        });
+    }
 
         // Update UI with music info
         updateMusicInfo(musicData);
@@ -502,7 +500,7 @@ function playTonalInstrument(event, instrument, channel, scheduleTime) {
         return;
     }
 
-    activeNotes.set(voiceKey, { voice, instrument: factoryName, channel });
+    activeNotes.set(voiceKey, { voice, instrument: factoryName, channel, attackTime: scheduleTime });
 
     // Safety timeout (in case a NoteOff never arrives from the backend)
     const timeout = (voice.release + 4) * 1000;
@@ -549,11 +547,13 @@ function stopNote(note, channel = 0) {
 
     if (!voiceData) return;
 
-    const { voice } = voiceData;
+    const { voice, attackTime } = voiceData;
 
     try {
         if (!voice.isPluck) {
-            voice.synth.triggerRelease(Tone.now());
+            const MIN_NOTE_DURATION = 0.01; // seconds
+            const releaseTime = Math.max(Tone.now(), (attackTime || 0) + MIN_NOTE_DURATION);
+            voice.synth.triggerRelease(releaseTime);
         }
         // PluckSynth has no triggerRelease — it just rings out and gets disposed below.
     } catch(e){}
@@ -575,8 +575,8 @@ function hardStopAllAudio() {
     if (masterGain && typeof Tone !== 'undefined') {
         const now = Tone.now();
         masterGain.gain.cancelScheduledValues(now);
-        masterGain.gain.linearRampToValueAtTime(masterGain.gain.value || 0.3, now + 0.05);
         masterGain.gain.setValueAtTime(0, now);
+        masterGain.gain.linearRampToValueAtTime(masterGain.gain.value || 0.3, now + 0.05);
     }
 
     console.log('🛑 Hard stop: all audio silenced immediately');
