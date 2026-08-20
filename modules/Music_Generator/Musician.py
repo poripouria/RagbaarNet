@@ -7,9 +7,12 @@ It supports various music generation strategies with easy integration for additi
 """
 
 import time
+import json
+import mido
+from pathlib import Path
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, Tuple
 
 from modules import config
 from modules.utils.logging_setup import setup_logging
@@ -633,6 +636,7 @@ class Musician:
             musician_type: Type of musician, see Musician.MUSICIAN_REGISTRY for supported values.
             tempo: Music tempo in BPM
             key_signature: Key signature for music generation
+            time_signature: Time signature for music generation
             instrument: Instrument used by the LSTM musician
         """
 
@@ -648,6 +652,32 @@ class Musician:
         self.musician = self._create_musician(entry)
 
         self.generated_melody = []
+
+        # Timeline of tempo/key/time-signature snapshots
+        self._settings_history = []
+        self._record_settings_change()
+
+    def _record_settings_change(self) -> None:
+        """
+        Snapshot the current tempo/key/time-signature (plus musician/instrument) with a
+        timestamp, but only if it actually differs from the last recorded snapshot.
+        """
+
+        snapshot = {
+            "timestamp": time.time(),
+            "tempo": self.tempo,
+            "key_signature": self.key_signature,
+            "time_signature": tuple(self.time_signature),
+            "musician_type": self.musician_type,
+            "instrument": self.instrument,
+        }
+
+        if self._settings_history:
+            last = self._settings_history[-1]
+            if all(last[k] == snapshot[k] for k in ("tempo", "key_signature", "time_signature", "musician_type", "instrument")):
+                return
+
+        self._settings_history.append(snapshot)
 
     def _create_musician(self, entry):
         if entry["class"] is LSTMMusician:
@@ -684,11 +714,25 @@ class Musician:
             available = ", ".join(sorted(self.MUSICIAN_REGISTRY.keys()))
             raise ValueError(f"Unsupported musician type: {musician_type}. Supported types: {available}")
         self.musician = self._create_musician(entry)
+        self._record_settings_change()
 
         logger.info(f"🎭 Musician switched to: {musician_type}")
 
     def set_tempo(self, tempo: int) -> None:
         self.tempo = tempo
+        self._record_settings_change()
+
+    def set_key_signature(self, key_signature: str) -> None:
+        self.key_signature = key_signature
+        if hasattr(self.musician, "key_signature"):
+            self.musician.key_signature = key_signature
+        self._record_settings_change()
+
+    def set_time_signature(self, time_signature: tuple) -> None:
+        self.time_signature = time_signature
+        if hasattr(self.musician, "time_signature"):
+            self.musician.time_signature = time_signature
+        self._record_settings_change()
 
     def set_instrument(self, instrument: str) -> None:
         if instrument not in LSTMMusician.AVAILABLE_INSTRUMENTS:
@@ -696,6 +740,7 @@ class Musician:
         self.instrument = instrument
         if isinstance(self.musician, LSTMMusician):
             self.musician.instrument = instrument
+        self._record_settings_change()
 
     @classmethod
     def list_available_musicians(cls) -> List[dict]:
@@ -714,13 +759,158 @@ class Musician:
             for musician_id, info in cls.MUSICIAN_REGISTRY.items()
         ]
 
-    def save_generated_melody(self, save_path: Optional[str] = None) -> None:
+    def save_generated_melody(self, save_path: Optional[str] = None, format: str = "both") -> None:
         """
-        Save the generated melody (List of MusicFrames) to a MIDI file.
+        Save every MusicFrame generated so far as a MIDI file and a companion JSON dump.
+
+        Args:
+            format: The format to save the melody in ("midi", "json", or "both").
+            save_path: Optional directory or base file path (without extension) for the
+                output. Defaults to config.GENERATED_MELODIES_DIR with a timestamped name.
         """
+
+        if not any(frame.events for frame in self.generated_melody):
+            logger.warning("No generated melody events to save - skipping.")
+            return None
+
+        # Path handling
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        default_name = f"melody_{self.musician_type}_{timestamp}"
+        if save_path is None:
+            base = config.GENERATED_MELODIES_DIR / default_name
+        else:
+            base = Path(save_path)
+            if base.is_dir() or str(save_path).endswith(("/", "\\")):
+                base = base / default_name
+            else:
+                base = base.with_suffix("")
+        base.parent.mkdir(parents=True, exist_ok=True)
+        base_path =  base
+
+        if format == "both" or format == "midi":
+            midi_path = base_path.with_suffix(".mid")
+            try:
+                ppq = config.MIDI_TICKS_PER_BEAT
+                
+                timeline = [(snapshot["timestamp"], "settings", snapshot) 
+                            for snapshot in self._settings_history]
+                for frame in self.generated_melody:
+                    for event in frame.events:
+                        if event.note is None:
+                            continue
+                        timeline.append((event.timestamp, "note", event))
+                timeline.sort(key=lambda item: item[0])
+                if not timeline:
+                    raise ValueError("Nothing to export: no settings history or note events were recorded.")
         
-        logger.warning("Saving generated melody to MIDI is not implemented yet.")
-        pass 
+                # --- Pass 1: assign every timeline item an absolute tick position ---
+                current_tempo_bpm = timeline[0][2]["tempo"] if timeline[0][1] == "settings" else self.tempo
+                current_time = timeline[0][0]
+                current_tick = 0.0
+                ticked_timeline: List[Tuple[float, str, Any]] = []
+                for abs_time, kind, payload in timeline:
+                    dt = max(0.0, abs_time - current_time)
+                    current_tick += dt * (current_tempo_bpm / 60.0) * ppq
+                    ticked_timeline.append((current_tick, kind, payload))
+                    current_time = abs_time
+                    if kind == "settings":
+                        current_tempo_bpm = payload["tempo"]
+        
+                midi_file = mido.MidiFile(type=1, ticks_per_beat=ppq)
+        
+                # --- Meta track: tempo, key signature, and time signature changes ---
+                meta_track = mido.MidiTrack()
+                meta_track.name = "meta"
+                midi_file.tracks.append(meta_track)
+        
+                last_meta_tick, last_tempo, last_key, last_time_sig = 0, None, None, None
+                for tick, kind, payload in ticked_timeline:
+                    if kind != "settings":
+                        continue
+                    tick_int = round(tick)
+        
+                    if payload["tempo"] != last_tempo:
+                        meta_track.append(mido.MetaMessage(
+                            "set_tempo", tempo=mido.bpm2tempo(payload["tempo"]),
+                            time=max(0, tick_int - last_meta_tick)
+                        ))
+                        last_meta_tick, last_tempo = tick_int, payload["tempo"]
+        
+                    mido_key = config._KEY_SIGNATURE_TO_MIDO.get(str(payload["key_signature"]).strip().lower().replace(' ', '_'))
+                    if mido_key is None:
+                        logger.warning(f"Skipping unrecognized key signature '{payload['key_signature']}' in MIDI export.")
+                    elif mido_key != last_key:
+                        meta_track.append(mido.MetaMessage(
+                            "key_signature", key=mido_key, time=max(0, tick_int - last_meta_tick)
+                        ))
+                        last_meta_tick, last_key = tick_int, mido_key
+        
+                    if payload["time_signature"] != last_time_sig:
+                        numerator, denominator = payload["time_signature"]
+                        meta_track.append(mido.MetaMessage(
+                            "time_signature", numerator=numerator, denominator=denominator,
+                            time=max(0, tick_int - last_meta_tick)
+                        ))
+                        last_meta_tick, last_time_sig = tick_int, payload["time_signature"]
+        
+                # --- One note track per (instrument, channel) pair ---
+                tracks_by_key: Dict[Tuple[str, int], mido.MidiTrack] = {}
+                last_tick_by_key: Dict[Tuple[str, int], int] = {}
+        
+                for tick, kind, payload in ticked_timeline:
+                    if kind != "note":
+                        continue
+                    event: MusicEvent = payload
+                    instrument = event.instrument or "unknown"
+                    track_key = (instrument, event.channel)
+        
+                    if track_key not in tracks_by_key:
+                        track = mido.MidiTrack()
+                        track.name = f"{instrument} (ch{event.channel})"
+                        if event.channel != 9:  # channel 9 is the fixed GM percussion kit, no program needed
+                            program = config.GM_INSTRUMENT_PROGRAMS.get(instrument, 0)
+                            track.append(mido.Message("program_change", program=program, channel=event.channel, time=0))
+                        midi_file.tracks.append(track)
+                        tracks_by_key[track_key] = track
+                        last_tick_by_key[track_key] = 0
+        
+                    track = tracks_by_key[track_key]
+                    tick_int = round(tick)
+                    delta = max(0, tick_int - last_tick_by_key[track_key])
+                    track.append(mido.Message(
+                        event.event_type, note=event.note, velocity=event.velocity or 0,
+                        channel=event.channel, time=delta
+                    ))
+                    last_tick_by_key[track_key] = tick_int
+        
+                midi_file.save(str(midi_path))
+                logger.info(f"🎼 Generated melody saved as MIDI: {midi_path}")
+            except Exception:
+                logger.exception("❌ Failed to save generated melody as MIDI.")
+                midi_path = None
+
+        if format == "both" or format == "json":
+            json_path = base_path.with_suffix(".json")
+            try:
+                payload = {
+                    "musician_type": self.musician_type,
+                    "saved_at": time.time(),
+                    "settings_history": self._settings_history,
+                    "frames": [
+                        {
+                            "frame_id": frame.frame_id,
+                            "metadata": frame.metadata,
+                            "events": [asdict(event) for event in frame.events],
+                        }
+                        for frame in self.generated_melody
+                    ],
+                }
+                with open(json_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, indent=2, default=str)
+                logger.info(f"🖋️ Generated melody saved as JSON: {json_path}")
+            except Exception:
+                logger.exception("❌ Failed to save generated melody as JSON.")
+                json_path = None
 
     def __call__(self, results, frame_id: int = 0, state: Dict[str, Any] = None) -> MusicFrame:
         """
@@ -729,7 +919,7 @@ class Musician:
         Args:
             results: Detection results
             frame_id: Frame identifier for tracking
-
+            state: Current state of the music generation process
         Returns:
             MusicFrame containing generated music events
         """
