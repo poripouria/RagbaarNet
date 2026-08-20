@@ -187,7 +187,6 @@ class Processor:
                         except Empty:
                             break
                         if newer_item is None:
-                            # Put the shutdown sentinel back so the outer loop can see it.
                             self.input_queue.put(None)
                             break
                         item = newer_item
@@ -242,9 +241,9 @@ class Processor:
 
                 logger.info("🎞️ Frame %d processed.", self.frame_counter)
                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
+                    logger.debug("🖥️ Frame %d info: Queue size: %d, Last debug time: %f",
+                                 self.frame_counter, self.input_queue.qsize(), self.last_debug_time)
                     self.last_debug_time = time.time()
-                    logger.debug("🖥️ Frame %d info: Queue size: %d",
-                                 self.frame_counter, self.input_queue.qsize())
 
                 self.frame_counter += 1
 
