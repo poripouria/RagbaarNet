@@ -7,7 +7,6 @@ It supports YOLO and Segformer models with easy integration for additional model
 """
 
 import os
-import sys
 import cv2
 import torch
 import numpy as np
