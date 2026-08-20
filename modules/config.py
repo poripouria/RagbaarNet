@@ -137,6 +137,25 @@ RULE_BASED_CLASS_MAPPING = {
     "stop sign":        (69, 80, 'strings'),
 }
 
+LSTM_ORCHESTRAL_CLASS_MAPPING = {
+    #                   instrument
+    "car":              'piano',
+    "truck":            'piano',
+    "bus":              'piano',
+    "train":            'electric_piano',
+    "plane":            'electric_piano',
+    "bicycle":          'bass',
+    "motorcycle":       'bass',
+    "person":           'bass',
+    "traffic light":    'strings',
+    "traffic sign":     'strings',
+    "stop sign":        'strings',
+
+    "typing":           'piano',
+    "scroll":           'strings',
+    "mousemove":        'pad',
+}
+
 TYPING_KEY_CLASS_MAP = {chr(c): "typing_letter" for c in range(ord('a'), ord('z') + 1)}
 TYPING_KEY_CLASS_MAP.update({str(d): "typing_digit" for d in range(10)})
 TYPING_KEY_CLASS_MAP.update({
