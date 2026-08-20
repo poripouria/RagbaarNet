@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple, Union, Optional, Any
 from ultralytics import YOLO
 from transformers import SegformerConfig, SegformerImageProcessor, SegformerForSemanticSegmentation
 
+from modules import config
 from modules.utils.logging_setup import setup_logging
 
 logger = setup_logging("INFO", name="segmentation.segmentor")
@@ -134,7 +135,7 @@ class YOLOSegmentor(BaseSegmentor):
     capabilities including bounding boxes and individual object masks.
     """
 
-    def __init__(self, model_path: str = "modules/Segmentation/Pre-trained Models/yolo11/yolo11l-seg.pt", device: str = 'auto'):
+    def __init__(self, model_path: str = config.YOLO_MODEL_PATH, device: str = 'auto'):
         """
         Initialize YOLO segmentor.
 
@@ -313,12 +314,8 @@ class SegformerSegmentor(BaseSegmentor):
     with support for various Segformer model variants.
     """
 
-    def __init__(
-        self,
-        model_path: str = "nvidia/segformer-b2-finetuned-cityscapes-1024-1024",
-        device: str = 'auto',
-        local_files_only: Optional[bool] = None,
-        return_confidence: bool = True,
+    def __init__(self, model_path: str = config.SEGFORMER_MODEL_PATH, device: str = 'auto',
+        local_files_only: Optional[bool] = None, return_confidence: bool = True,
     ):
         """
         Initialize Segformer segmentor.

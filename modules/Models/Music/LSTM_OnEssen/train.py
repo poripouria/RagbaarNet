@@ -14,6 +14,7 @@ import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, TensorDataset
 
+from modules import config
 from modules.utils.logging_setup import setup_logging
 from modules.Models.Music.LSTM_OnEssen.preprocess import generate_training_sequences, SEQUENCE_LENGTH, MAPPING_PATH
 
@@ -24,7 +25,7 @@ LEARNING_RATE      = 0.001
 EPOCHS             = 60
 BATCH_SIZE         = 128
 DROPOUT            = 0.1
-MODEL_SAVE_PATH    = "modules/Models/Music/LSTM_OnEssen/LSTM_OnEssen.pt"
+MODEL_SAVE_PATH    = str(config.LSTM_MODEL_PATH)
 
 class LSTM_OnEssen(nn.Module):
     """Two-layer LSTM for symbolic music generation.

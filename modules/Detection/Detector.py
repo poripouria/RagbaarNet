@@ -10,6 +10,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Any
 
+from modules import config
 from modules.utils.logging_setup import setup_logging
 logger = setup_logging("INFO", name="Detection.detector")
 
@@ -44,7 +45,7 @@ class ROI:
         self.boundary_mask = self._build_boundary_mask(width=self.frame_width, height=self.frame_height)
         self.edge_masks = self._build_edge_masks(width=self.frame_width, height=self.frame_height)
 
-    def _build_boundary_mask(self, width, height, thickness=3):
+    def _build_boundary_mask(self, width, height, thickness=config.ROI_THICKNESS):
 
         mask = np.zeros((height, width), dtype=np.uint8)
         pts = np.array(self.polygon, dtype=np.int32)
@@ -57,7 +58,7 @@ class ROI:
         )
         return mask.astype(bool)
 
-    def _build_edge_masks(self, width, height, thickness=3):
+    def _build_edge_masks(self, width, height, thickness=config.ROI_THICKNESS):
 
         edge_masks = []
         samples_per_edge = len(self.polygon) // 4
@@ -91,7 +92,7 @@ class ROI:
             p0 = self.corners[i]
             p2 = self.corners[(i + 1) % n]
             p1 = self.controls[i]
-            for t in np.linspace(0, 1, 20):
+            for t in np.linspace(0, 1, config.ROI_SAMPLES_PER_EDGE):
                 pt = self._quad_bezier(p0, p1, p2, t)
                 poly.append((pt[0], pt[1]))
 
@@ -166,7 +167,8 @@ class ROIEventsDetector(BaseDetector):
 
         self.roi = None                 # Will be set per frame if provided
         self.prev_roi_payload = None    # Tracks ROI coordinates and frame dimensions
-        self.max_missing_frames = 10    # Number of frames to keep an object in memory after it disappears
+        
+        self.max_missing_frames = config.MAX_MISSING_FRAMES    # Number of frames to keep an object in memory after it disappears
 
     def __call__(self, input: Any, frame_id: int = 0):
 
@@ -198,7 +200,7 @@ class ROIEventsDetector(BaseDetector):
                            frame_size=frame_size)
             logger.info(f"💢 ROI updated for frame {self.frame_counter}. ROI area: {self.roi.calculate_ROI_area()}")
 
-    def assign_object_ids(self, objects, masks, max_distance=200):
+    def assign_object_ids(self, objects, masks, max_distance=config.MAX_OBJECT_DISTANCE):
         """
         Assign unique IDs to detected objects based on their bounding boxes and class names. 
         """

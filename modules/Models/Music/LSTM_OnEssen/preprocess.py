@@ -11,13 +11,14 @@ import json
 import numpy as np
 import music21 as m21
 
+from modules import config
 from modules.utils.logging_setup import setup_logging
 logger = setup_logging("INFO", name="Models.Music.LSTM_OnEssen")
 
-KERN_DATASET_PATH           = "Dataset/KernScores/essen/europa/deutschl"
-SAVE_DIR                    = "modules/Models/Music/LSTM_OnEssen/dataset"
-SINGLE_FILE_DATASET_PATH    = "modules/Models/Music/LSTM_OnEssen/single_file_dataset"
-MAPPING_PATH                = "modules/Models/Music/LSTM_OnEssen/mapping.json"
+KERN_DATASET_PATH           = str(config.KERN_DATASET_PATH)
+SAVE_DIR                    = str(config.LSTM_MODEL_DIR / "dataset")
+SINGLE_FILE_DATASET_PATH    = str(config.LSTM_SINGLE_FILE_DATASET)
+MAPPING_PATH                = str(config.LSTM_MAPPING_PATH)
 ACCEPTABLE_DURATIONS        = [ # durations are expressed in quarter length
     0.25,   # 16th note
     0.5,    # 8th note

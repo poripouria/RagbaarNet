@@ -7,6 +7,7 @@ import os
 from typing import Optional
 import mido
 
+from modules import config
 from modules.Music_Generator.Musician import MusicFrame
 from modules.utils.logging_setup import setup_logging
 logger = setup_logging("INFO", name="Platform.midi_output")
@@ -16,10 +17,7 @@ class MidiOutput:
     """Send MusicFrame events to a configured MIDI output port."""
 
     def __init__(self, port_name: Optional[str] = None):
-        self.port_name = port_name or os.environ.get(
-            "RAGBAARNET_MIDI_PORT",
-            "RagbaarNetMIDI Port 1",
-        ).strip()
+        self.port_name = (port_name or config.DEFAULT_MIDI_PORT).strip()
         self.port = None
 
         self._open()

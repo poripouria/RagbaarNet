@@ -13,6 +13,7 @@ import colorsys
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Tuple
 
+from modules import config
 from modules.utils.logging_setup import setup_logging, set_level
 logger = setup_logging("INFO", name="Platform.channels")
 
@@ -55,17 +56,16 @@ class DrivingPipeline(BaseChannel):
         """
         from modules.Models.Segmentation.Segmentor import Segmentor
 
-        self.processing_interval = int(os.environ.get('RAGBAARNET_DRIVING_INTERVAL', '1'))
+        self.processing_interval = 1
         self._tick = 0
 
-        max_side_raw = os.environ.get('RAGBAARNET_PROCESSING_MAX_SIDE', '').strip()
-        self.processing_max_side = int(max_side_raw) if max_side_raw.isdigit() else None
+        self.processing_max_side = config.PROCESSING_MAX_SIDE
         if self.processing_max_side is not None:
             logger.info("↔️ Driving channel will resize frames to max side %d for processing", self.processing_max_side)
 
         self.debug_mode = False
 
-        self.encode_params = [cv2.IMWRITE_JPEG_QUALITY, 75]
+        self.encode_params = [cv2.IMWRITE_JPEG_QUALITY, config.JPEG_QUALITY]
         self._last_overlay_b64 = None
         self._last_overlay_hash = None
         self._color_mapping_cache: Dict[tuple, np.ndarray] = {}
@@ -79,21 +79,12 @@ class DrivingPipeline(BaseChannel):
 
             if model_type == 'yolo':
                 if not model_path:
-                    model_path = os.path.join(
-                        os.path.dirname(__file__), '..', 'Models', 'Segmentation',
-                        'Pre-trained Models', 'yolo26', 'yolo26n-seg.pt',
-                    )
+                    model_path = config.YOLO_MODEL_PATH
                 self.segmentor = Segmentor('yolo', model_path=model_path)
                 logger.info("✅ YOLO Segmentor initialized successfully")
             elif model_type == 'segformer':
                 if not model_path:
-                    model_path = os.environ.get(
-                        'RAGBAARNET_SEGFORMER_PATH',
-                        os.path.abspath(os.path.join(
-                            os.path.dirname(__file__), '..', 'Models', 'Segmentation',
-                            'Pre-trained Models', 'segformer-b2-finetuned-cityscapes-1024-1024',
-                        ))
-                    )
+                    model_path = config.SEGFORMER_MODEL_PATH
                 self.segmentor = Segmentor('segformer', model_path=model_path)
                 logger.info("✅ SegFormer Segmentor initialized successfully")
             else:
@@ -114,57 +105,7 @@ class DrivingPipeline(BaseChannel):
             label = str(label).strip().lower().replace("_", " ").replace("-", " ")
             labels.append(label)
 
-        palette = {
-            # Cityscapes Semantic Classes
-            "road":            [128,  64, 128],   # Viola Purple
-            "sidewalk":        [244,  35, 232],   # Bright Magenta
-            "building":        [ 70,  70,  70],   # Dark Gray
-            "wall":            [102, 102, 156],   # Slate Blue
-            "fence":           [190, 153, 153],   # Dusty Pink
-            "pole":            [153, 153, 153],   # Light Gray
-            "traffic light":   [250, 170,  30],   # Amber
-            "traffic sign":    [220, 220,   0],   # Lemon Yellow
-            "vegetation":      [107, 142,  35],   # Olive Green
-            "terrain":         [152, 251, 152],   # Pale Green
-            "sky":             [ 70, 130, 180],   # Steel Blue
-            "person":          [220,  20,  60],   # Crimson
-            "rider":           [255,   0,   0],   # Pure Red
-            "car":             [  0,   0, 142],   # Navy Blue
-            "truck":           [  0,   0,  70],   # Midnight Blue
-            "bus":             [  0,  60, 100],   # Deep Teal Blue
-            "train":           [  0,  80, 100],   # Dark Cyan
-            "motorcycle":      [  0,   0, 230],   # Royal Blue
-            "bicycle":         [119,  11,  32],   # Burgundy
-            # Extended Cityscapes Labels
-            "parking":         [160, 160, 160],   # Cool Gray
-            "rail track":      [230, 150, 140],   # Salmon Pink
-            "guard rail":      [180, 165, 180],   # Silver Lilac
-            "bridge":          [150, 100, 100],   # Warm Brown
-            "tunnel":          [150, 120,  90],   # Earth Brown
-            "caravan":         [  0,   0,  90],   # Dark Navy
-            "trailer":         [  0,   0, 110],   # Indigo Blue
-            # COCO Road Objects
-            "stop sign":       [255,   0,   0],   # Stop Sign Red
-            "fire hydrant":    [178,  34,  34],   # Firebrick
-            "bench":           [160,  82,  45],   # Saddle Brown
-            "parking meter":   [112, 128, 144],   # Slate Gray
-            # Animals (Road Relevant)
-            "bird":            [135, 206, 235],   # Sky Blue
-            "dog":             [139,  69,  19],   # Saddle Brown
-            "cat":             [205, 133,  63],   # Peru
-            "horse":           [160,  82,  45],   # Sienna
-            "sheep":           [245, 245, 220],   # Beige
-            "cow":             [110,  70,  30],   # Dark Brown
-            "elephant":        [105, 105, 105],   # Dim Gray
-            "bear":            [ 92,  64,  51],   # Coffee Brown
-            "zebra":           [240, 240, 240],   # Light Gray
-            "giraffe":         [218, 165,  32],   # Goldenrod
-            # Temporary Road Objects
-            "cone":            [255, 140,   0],   # Dark Orange
-            "traffic cone":    [255, 140,   0],   # Dark Orange
-            "barrier":         [255, 215,   0],   # Gold
-            "bollard":         [255, 255, 255],   # White
-        }
+        palette = config.SEGMENTATION_PALETTE
 
         def hashed_color(label: str):
             digest = hashlib.md5(label.encode("utf-8")).digest()
@@ -366,14 +307,7 @@ class TypingPipeline(BaseChannel):
     detector_strategy = "key-events"
     alternate_strategy = None
 
-    _KEY_CLASS_MAP: Dict[str, str] = {chr(c): "typing_letter" for c in range(ord('a'), ord('z') + 1)}
-    _KEY_CLASS_MAP.update({str(d): "typing_digit" for d in range(10)})
-    _KEY_CLASS_MAP.update({
-        "backspace": "typing_delete", "enter": "typing_newline",
-        "tab": "typing_indent", "space": "typing_space",
-        "scroll": "scroll",
-        "mousemove": "mousemove",
-    })
+    _KEY_CLASS_MAP: Dict[str, str] = config.TYPING_KEY_CLASS_MAP
 
     def __init__(self):
         self.debug_mode = False

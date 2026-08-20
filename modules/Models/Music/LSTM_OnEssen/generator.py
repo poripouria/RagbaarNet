@@ -12,6 +12,7 @@ import numpy as np
 import music21 as m21
 from pathlib import Path
 
+from modules import config
 from modules.Models.Music.LSTM_OnEssen.train import LSTM_OnEssen
 from modules.Models.Music.LSTM_OnEssen.preprocess import SEQUENCE_LENGTH
 from modules.utils.logging_setup import setup_logging
@@ -20,8 +21,8 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 BASE_DIR = Path(__file__).parent
-MODEL_SAVE_PATH = BASE_DIR / 'LSTM_OnEssen.pt'
-MAPPING_PATH = BASE_DIR / 'mapping.json' 
+MODEL_SAVE_PATH = config.LSTM_MODEL_PATH
+MAPPING_PATH = config.LSTM_MAPPING_PATH
 
 class MelodyGenerator:
     """A class that wraps the LSTM model and offers utilities to generate melodies.

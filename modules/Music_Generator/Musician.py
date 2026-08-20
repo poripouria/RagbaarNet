@@ -11,22 +11,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from modules import config
 from modules.utils.logging_setup import setup_logging
 logger = setup_logging("INFO", name="Music_Generator.Musician")
 
 
 # Fixed MIDI channel per instrument voice, shared by every musician implementation
-INSTRUMENT_MIDI_CHANNELS: Dict[str, int] = {
-    'piano': 0,
-    'electric_piano': 1,
-    'acoustic_guitar': 2,
-    'electric_guitar': 3,
-    'strings': 4,
-    'pad': 5,
-    'bass': 6,
-    'synth': 7,
-    'drums': 9,
-}
+INSTRUMENT_MIDI_CHANNELS = config.INSTRUMENT_MIDI_CHANNELS
 
 
 @dataclass
@@ -82,7 +73,7 @@ class BaseMusician(ABC):
     NOTE_ON_TYPES = frozenset({"ROI_TOUCH", "NOTE_ON"})
     NOTE_OFF_TYPES = frozenset({"ROI_RELEASE", "NOTE_OFF"})
 
-    def __init__(self, key_signature: str="C_major", time_signature: tuple=(4, 4)):
+    def __init__(self, key_signature: str=config.DEFAULT_KEY_SIGNATURE, time_signature: tuple=config.DEFAULT_TIME_SIGNATURE):
         """
         Initialize the base musician.
 
@@ -96,7 +87,7 @@ class BaseMusician(ABC):
         self.active_notes = {i: {} for i in range(16)}  # Initialize active notes for all 16 MIDI channels
 
         self.frame_counter = 0
-        self.max_missing_frames = 10     # Number of frames to keep an object in memory after it disappears
+        self.max_missing_frames = config.MAX_MISSING_FRAMES     # Number of frames to keep an object in memory after it disappears
 
     def __call__(self, results: List[Dict[str, Any]], frame_id: int=0, state: Dict[str, Any]=None):
 
@@ -141,7 +132,7 @@ class RuleBasedMusician(BaseMusician):
     particularly focusing on objects interacting with a defined Region of Interest (ROI).
     """
 
-    def __init__(self, key_signature="C_major", time_signature: tuple=(4, 4)):
+    def __init__(self, key_signature=config.DEFAULT_KEY_SIGNATURE, time_signature: tuple=config.DEFAULT_TIME_SIGNATURE):
         """
         Args:
             tempo: Music tempo in BPM
@@ -157,20 +148,7 @@ class RuleBasedMusician(BaseMusician):
         Map object class to MIDI note, velocity, instrument, and channel."""
 
         base_class = obj_class.split("_")[0]
-        mapping = {
-            #                   MIDI, velocity, instrument
-            "car":              (60, 100, 'piano'),
-            "truck":            (48, 120, 'piano'),
-            "bus":              (48, 90, 'piano'),
-            "train":            (55, 110, 'electric_piano'),
-            "plane":            (72, 100, 'electric_piano'),
-            "bicycle":          (64, 90, 'acoustic_guitar'),
-            "person":           (72, 110, 'acoustic_guitar'),
-            "motorcycle":       (70, 100, 'electric_guitar'),
-            "traffic light":    (67, 70, 'strings'),
-            "traffic sign":     (67, 70, 'strings'),
-            "stop sign":        (69, 80, 'strings'),
-        }
+        mapping = config.RULE_BASED_CLASS_MAPPING
 
         entry = mapping.get(base_class, None)
         if entry is None:
@@ -269,7 +247,7 @@ class LSTMMusician(BaseMusician):
         "pad", "synth"
     )
 
-    def __init__(self, key_signature="C_major", time_signature: tuple=(4, 4), temperature=0.9, instrument="piano"):
+    def __init__(self, key_signature=config.DEFAULT_KEY_SIGNATURE, time_signature: tuple=config.DEFAULT_TIME_SIGNATURE, temperature=0.9, instrument="piano"):
         """
         Args:
             key_signature: Key signature for music generation
@@ -437,7 +415,7 @@ class LSTMOrchestralMusician(BaseMusician):
     is similar to the LSTMMusician but is designed to produce orchestral sounds.
     """
 
-    def __init__(self, key_signature="C_major", time_signature=(4, 4), temperature=0.9):
+    def __init__(self, key_signature=config.DEFAULT_KEY_SIGNATURE, time_signature=config.DEFAULT_TIME_SIGNATURE, temperature=0.9):
         """
         Args:
             key_signature: Key signature for music generation
@@ -645,8 +623,9 @@ class Musician:
         },
     }
 
-    def __init__(self, musician_type: str="lstm-onessen-orchestral", 
-                 tempo: int=120, key_signature: str="C_major", time_signature: tuple=(4, 4), instrument: str="piano"):
+    def __init__(self, musician_type: str=config.DEFAULT_MUSICIAN_TYPE,
+                 tempo: int=config.DEFAULT_TEMPO, key_signature: str=config.DEFAULT_KEY_SIGNATURE,
+                 time_signature: tuple=config.DEFAULT_TIME_SIGNATURE, instrument: str="piano"):
         """
         Initialize the main Musician.
 
@@ -672,8 +651,8 @@ class Musician:
 
     def _create_musician(self, entry):
         if entry["class"] is LSTMMusician:
-            return entry["class"](self.tempo, self.key_signature, self.time_signature, instrument=self.instrument)
-        return entry["class"](self.tempo, self.key_signature, self.time_signature)
+            return entry["class"](self.key_signature, self.time_signature, instrument=self.instrument)
+        return entry["class"](self.key_signature, self.time_signature)
 
     def switch_musician(
         self,
