@@ -497,7 +497,7 @@ class SegformerSegmentor(BaseSegmentor):
         confidence_map = None
         if self.return_confidence:
             softmax_probs = torch.softmax(upsampled_logits, dim=1)
-            confidence_map = torch.max(softmax_probs, dim=1)[0].cpu().numpy()[0]
+            confidence_map = torch.max(softmax_probs, dim=1)[0].to(torch.float32).cpu().numpy()[0]
 
         # Extract individual masks and bounding boxes for each detected class
         instances = []

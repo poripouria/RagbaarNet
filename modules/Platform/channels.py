@@ -242,11 +242,12 @@ class DrivingPipeline(BaseChannel):
 
             if seg_frame is not frame:
                 try:
-                    result.segmentation_map = cv2.resize(
-                        result.segmentation_map, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
+                    result.segmentation_map = cv2.resize(result.segmentation_map, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
                     if result.confidence_map is not None:
-                        result.confidence_map = cv2.resize(
-                            result.confidence_map, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+                        conf_map = np.asarray(result.confidence_map)
+                        if conf_map.dtype == np.float16:
+                            conf_map = conf_map.astype(np.float32)
+                        result.confidence_map = cv2.resize(conf_map, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
 
                     scale_x, scale_y = orig_w / float(seg_frame.shape[1]), orig_h / float(seg_frame.shape[0])
                     for detected_object in result.bounding_boxes:
