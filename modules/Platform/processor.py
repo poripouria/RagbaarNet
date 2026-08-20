@@ -180,6 +180,22 @@ class Processor:
                 if item is None:
                     break   # Shutdown signal received, exit the loop
 
+                dropped_stale = 0
+                if item.get('kind') == 'frame':
+                    while True:
+                        try:
+                            newer_item = self.input_queue.get_nowait()
+                        except Empty:
+                            break
+                        if newer_item is None:
+                            # Put the shutdown sentinel back so the outer loop can see it.
+                            self.input_queue.put(None)
+                            break
+                        item = newer_item
+                        dropped_stale += 1
+                if dropped_stale:
+                    logger.debug("⏩ Skipped %d stale queued frame(s) to catch up to the latest.", dropped_stale)
+
                 detector_input, display_payload = self.channel.to_observation(item)
 
                 self.current_frame = item['frame'] if item['kind'] == 'frame' else None

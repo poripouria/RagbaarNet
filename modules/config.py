@@ -62,7 +62,7 @@ YOLO_MODEL_PATH = os.environ.get(
 )
 SEGFORMER_MODEL_PATH = os.environ.get(
     'RAGBAARNET_SEGFORMER_PATH',
-    str(MODELS_DIR / 'Segmentation' / 'Pre-trained Models' / 'segformer-b2-finetuned-cityscapes-1024-1024')
+    str(MODELS_DIR / 'Segmentation' / 'Pre-trained Models' / 'segformer-b0-finetuned-cityscapes-512-1024')
 )
 
 # Music
