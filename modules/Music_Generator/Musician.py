@@ -269,14 +269,10 @@ class LSTMMusician(BaseMusician):
         self.generator = MelodyGenerator()
         self._rt_generator = None
 
-        self.last_seed_notes = ["67", "_", "67", "_", 
-                                "67", "_", "_", "65", 
-                                "64", "_", "62", "_", 
-                                "60", "_", "60", "_",
-                                "48", "_", "_", "_",
-                                "50", "_", "52", "_",
-                                "60", "61", "62", "_", 
-                                "60", "_", "60", "_"]
+        self.last_seed_notes = ["67", "_", "67", "_", "67", "_", "_", "65", 
+                                "64", "_", "62", "_", "60", "_", "60", "_",
+                                "48", "_", "_", "_", "50", "_", "52", "_",
+                                "60", "61", "62", "_", "60", "_", "60", "_"]
         self._note_buffer = list(self.last_seed_notes)
 
         self.important_labels = [
@@ -365,10 +361,13 @@ class LSTMMusician(BaseMusician):
                     continue
                 note = related_note
 
-                self._note_buffer.append("r")
-
             else:
-                self._note_buffer.append("_")
+                # Check if there are any active notes or not, to append a rest
+                if any(self.active_notes[0].values()):
+                    self._note_buffer.append("_")
+                else:
+                    self._note_buffer.append("r")
+                
                 continue
 
             music_events.append(
@@ -434,14 +433,10 @@ class LSTMOrchestralMusician(BaseMusician):
         self._rt_generator = None
 
         self.last_seed_notes = {
-            instrument: ["64", "_", "67", "_",
-                         "65", "_", "65", "_",
-                         "65", "_", "_", "_",
-                         "62", "_", "64", "_",
-                         "64", "_", "67", "_",
-                         "65", "_", "65", "_",
-                         "48", "_", "_", "50",
-                         "62", "_", "64", "_"]
+            instrument: ["64", "_", "67", "_", "65", "_", "65", "_",
+                         "65", "_", "_", "_", "62", "_", "64", "_",
+                         "64", "_", "67", "_", "65", "_", "65", "_",
+                         "48", "_", "_", "50", "62", "_", "64", "_"]
             for instrument in ["piano", "electric_piano", "bass", "strings", "pad"]
         }
         
@@ -456,24 +451,7 @@ class LSTMOrchestralMusician(BaseMusician):
         """
 
         base_class = obj_class.split("_")[0]
-        mapping = {
-            #                   instrument
-            "car":              'piano',
-            "truck":            'piano',
-            "bus":              'piano',
-            "train":            'electric_piano',
-            "plane":            'electric_piano',
-            "bicycle":          'bass',
-            "motorcycle":       'bass',
-            "person":           'bass',
-            "traffic light":    'strings',
-            "traffic sign":     'strings',
-            "stop sign":        'strings',
-
-            "typing":           'piano',
-            "scroll":           'strings',
-            "mousemove":        'pad',
-        }
+        mapping = config.LSTM_ORCHESTRAL_CLASS_MAPPING
 
         instrument = mapping.get(base_class, None)
         if instrument is None:
@@ -551,10 +529,11 @@ class LSTMOrchestralMusician(BaseMusician):
                     continue
                 note = related_note
 
-                self._note_buffer[instrument].append("r")
-
             else:
-                self._note_buffer[instrument].append("_")
+                if any(self.active_notes[channel].values()):
+                    self._note_buffer[instrument].append("_")
+                else:
+                    self._note_buffer[instrument].append("r")
                 continue
 
             music_events.append(
