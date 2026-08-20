@@ -39,6 +39,8 @@ DEFAULT_AUDIO_BACKEND = os.environ.get('RAGBAARNET_AUDIO_BACKEND', 'tone').strip
 
 # --- MIDI Settings ---
 DEFAULT_MIDI_PORT = os.environ.get('RAGBAARNET_MIDI_PORT', 'RagbaarNetMIDI Port 1')
+GENERATED_MELODIES_DIR = PROJECT_ROOT / 'modules' / 'Music_Generator' / 'Generated Melodies'
+MIDI_TICKS_PER_BEAT = 480
 INSTRUMENT_MIDI_CHANNELS = {
     'piano': 0,
     'electric_piano': 1,
@@ -49,6 +51,51 @@ INSTRUMENT_MIDI_CHANNELS = {
     'bass': 6,
     'synth': 7,
     'drums': 9,
+}
+
+GM_INSTRUMENT_PROGRAMS = {
+    'piano': 0,             # Acoustic Grand Piano
+    'electric_piano': 4,    # Electric Piano 1
+    'acoustic_guitar': 24,  # Acoustic Guitar (nylon)
+    'electric_guitar': 27,  # Electric Guitar (clean)
+    'strings': 48,          # String Ensemble 1
+    'pad': 88,              # Pad 1 (new age)
+    'bass': 32,             # Acoustic Bass
+    'synth': 80,            # Lead 1 (square)
+    'drums': 0,             # Ignored - channel 9 already implies the GM percussion kit
+}
+
+_KEY_SIGNATURE_TO_MIDO = {
+    'cb_major': 'Cb', 
+    'gb_major': 'Gb', 
+    'db_major': 'Db', 
+    'ab_major': 'Ab',
+    'eb_major': 'Eb', 
+    'bb_major': 'Bb', 
+    'f_major': 'F', 
+    'c_major': 'C',
+    'g_major': 'G', 
+    'd_major': 'D', 
+    'a_major': 'A', 
+    'e_major': 'E',
+    'b_major': 'B', 
+    'f#_major': 'F#', 
+    'c#_major': 'C#',
+    'ab_minor': 'Abm', 
+    'eb_minor': 'Ebm', 
+    'bb_minor': 'Bbm', 
+    'f_minor': 'Fm',
+    'c_minor': 'Cm', 
+    'g_minor': 'Gm', 
+    'd_minor': 'Dm', 
+    'a_minor': 'Am',
+    'e_minor': 'Em', 
+    'b_minor': 'Bm', 
+    'f#_minor': 'F#m', 
+    'c#_minor': 'C#m',
+    'g#_minor': 'G#m', 
+    'd#_minor': 'D#m', 
+    'a#_minor': 'A#m',
 }
 
 # --- Model Paths ---
