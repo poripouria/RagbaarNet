@@ -26,7 +26,7 @@ JPEG_QUALITY = 75
 PROCESSING_MAX_SIDE = int(os.environ.get('RAGBAARNET_PROCESSING_MAX_SIDE', 0)) or None
 
 # --- Detection Parameters ---
-MAX_MISSING_FRAMES = 10
+MAX_MISSING_FRAMES = 8
 MAX_OBJECT_DISTANCE = 200   # Pixels
 ROI_THICKNESS = 3           # Pixels
 ROI_SAMPLES_PER_EDGE = 20
@@ -58,7 +58,7 @@ MODELS_DIR = PROJECT_ROOT / 'modules' / 'Models'
 # Segmentation
 YOLO_MODEL_PATH = os.environ.get(
     'RAGBAARNET_SEGMENTATION_MODEL_PATH',
-    str(MODELS_DIR / 'Segmentation' / 'Pre-trained Models' / 'yolo26' / 'yolo26n-seg.pt')
+    str(MODELS_DIR / 'Segmentation' / 'Pre-trained Models' / 'yolo26' / 'yolo26s-seg.pt')
 )
 SEGFORMER_MODEL_PATH = os.environ.get(
     'RAGBAARNET_SEGFORMER_PATH',
