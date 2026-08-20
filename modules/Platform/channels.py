@@ -89,6 +89,7 @@ class DrivingPipeline(BaseChannel):
                 logger.info("✅ SegFormer Segmentor initialized successfully")
             else:
                 self.segmentor = None
+                logger.warning("⚠️ Unknown segmentation model type '%s'; segmentation will be disabled", model_type)
         except Exception as e:
             logger.exception("❌ Error initializing segmentor: %s", e)
             self.segmentor = None
