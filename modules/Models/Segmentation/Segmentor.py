@@ -386,7 +386,7 @@ class SegformerSegmentor(BaseSegmentor):
             except Exception:
                 # Some local snapshots may only include weights/config (e.g., model.safetensors + config.json)
                 # but not preprocessor_config.json. In that case, fall back to defaults.
-                self.processor = SegformerImageProcessor()  # fallback
+                self.processor = SegformerImageProcessor()
 
             # Load config and force correct labels
             config = SegformerConfig.from_pretrained(resolved_id, local_files_only=local_files_only)
@@ -673,65 +673,7 @@ class Segmentor:
                 labels.append(label)
 
             # Standard palette (Cityscapes + useful COCO road objects)
-
-            palette = {
-
-                # Cityscapes Semantic Classes
-                "road":            [128,  64, 128],   # Viola Purple
-                "sidewalk":        [244,  35, 232],   # Bright Magenta
-                "building":        [ 70,  70,  70],   # Dark Gray
-                "wall":            [102, 102, 156],   # Slate Blue
-                "fence":           [190, 153, 153],   # Dusty Pink
-                "pole":            [153, 153, 153],   # Light Gray
-                "traffic light":   [250, 170,  30],   # Amber
-                "traffic sign":    [220, 220,   0],   # Lemon Yellow
-                "vegetation":      [107, 142,  35],   # Olive Green
-                "terrain":         [152, 251, 152],   # Pale Green
-                "sky":             [ 70, 130, 180],   # Steel Blue
-
-                "person":          [220,  20,  60],   # Crimson
-                "rider":           [255,   0,   0],   # Pure Red
-
-                "car":             [  0,   0, 142],   # Navy Blue
-                "truck":           [  0,   0,  70],   # Midnight Blue
-                "bus":             [  0,  60, 100],   # Deep Teal Blue
-                "train":           [  0,  80, 100],   # Dark Cyan
-                "motorcycle":      [  0,   0, 230],   # Royal Blue
-                "bicycle":         [119,  11,  32],   # Burgundy
-
-                # Extended Cityscapes Labels
-                "parking":         [160, 160, 160],   # Cool Gray
-                "rail track":      [230, 150, 140],   # Salmon Pink
-                "guard rail":      [180, 165, 180],   # Silver Lilac
-                "bridge":          [150, 100, 100],   # Warm Brown
-                "tunnel":          [150, 120,  90],   # Earth Brown
-                "caravan":         [  0,   0,  90],   # Dark Navy
-                "trailer":         [  0,   0, 110],   # Indigo Blue
-
-                # COCO Road Objects
-                "stop sign":       [255,   0,   0],   # Stop Sign Red
-                "fire hydrant":    [178,  34,  34],   # Firebrick
-                "bench":           [160,  82,  45],   # Saddle Brown
-                "parking meter":   [112, 128, 144],   # Slate Gray
-
-                # Animals (Road Relevant)
-                "bird":            [135, 206, 235],   # Sky Blue
-                "dog":             [139,  69,  19],   # Saddle Brown
-                "cat":             [205, 133,  63],   # Peru
-                "horse":           [160,  82,  45],   # Sienna
-                "sheep":           [245, 245, 220],   # Beige
-                "cow":             [110,  70,  30],   # Dark Brown
-                "elephant":        [105, 105, 105],   # Dim Gray
-                "bear":            [ 92,  64,  51],   # Coffee Brown
-                "zebra":           [240, 240, 240],   # Light Gray
-                "giraffe":         [218, 165,  32],   # Goldenrod
-
-                # Temporary Road Objects
-                "cone":            [255, 140,   0],   # Dark Orange
-                "traffic cone":    [255, 140,   0],   # Dark Orange
-                "barrier":         [255, 215,   0],   # Gold
-                "bollard":         [255, 255, 255],   # White
-            }
+            palette = config.SEGMENTATION_PALETTE
 
             def hashed_color(label: str):
                 """
@@ -739,14 +681,10 @@ class Segmentor:
                 """
 
                 digest = hashlib.md5(label.encode("utf-8")).digest()
-
                 hue = digest[0] / 255.0
-
                 saturation = 0.65 + (digest[1] / 255.0) * 0.30
                 value = 0.75 + (digest[2] / 255.0) * 0.20
-
                 r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)
-
                 return [
                     int(r * 255),
                     int(g * 255),
@@ -755,16 +693,12 @@ class Segmentor:
 
             # Build color map
             color_map = {}
-
             for class_id, label in enumerate(labels):
-
                 if label in palette:
                     color_map[class_id] = palette[label]
                 else:
                     color_map[class_id] = hashed_color(label)
-
-            # Optional ignore label (Cityscapes convention)
-            color_map[255] = [0, 0, 0]
+            color_map[255] = [0, 0, 0]  # Optional ignore label (Cityscapes convention)
 
             return color_map
 
@@ -852,64 +786,35 @@ class Segmentor:
         # Segmentation
         if result.class_labels:
 
-            # Build deterministic color mapping
             mapping = _get_color_mapping_array(result.class_labels)
 
-            # RGB visualization
             rgb_segmentation = mapping[segmentation_map]
 
             axes[1].imshow(rgb_segmentation)
             axes[1].axis("off")
 
             model_name = result.metadata.get("model_type", "Segmentation")
-
-            detected = _derive_detected_classes(
-                segmentation_map,
-                result.class_labels
-            )
-
-            axes[1].set_title(
-                f"{model_name}\n"
-                f"{len(detected)} detected classes"
-            )
+            detected = _derive_detected_classes(segmentation_map, result.class_labels)
+            axes[1].set_title(f"{model_name}\n"
+                              f"{len(detected)} detected classes"
+                              )
 
             # Colorbar
-            colors = (
-                mapping[:len(result.class_labels)].astype(np.float32) / 255.0
-            )
-
+            colors = (mapping[:len(result.class_labels)].astype(np.float32) / 255.0)
             cmap = mcolors.ListedColormap(colors)
-
-            norm = mcolors.BoundaryNorm(
-                np.arange(len(result.class_labels) + 1) - 0.5, cmap.N
-            )
-
-            sm = plt.cm.ScalarMappable(
-                cmap=cmap, norm=norm
-            )
-
+            norm = mcolors.BoundaryNorm(np.arange(len(result.class_labels) + 1) - 0.5, cmap.N)
+            sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
             sm.set_array([])
-
-            cbar = plt.colorbar(
-                sm, ax=axes[1], ticks=np.arange(len(result.class_labels))
-            )
-
-            cbar.ax.set_yticklabels(
-                result.class_labels, fontsize=8
-            )
+            cbar = plt.colorbar(sm, ax=axes[1], ticks=np.arange(len(result.class_labels)))
+            cbar.ax.set_yticklabels(result.class_labels, fontsize=8)
 
         else:
-
-            axes[1].imshow(
-                segmentation_map, cmap="gray", interpolation="nearest"
-            )
-
+            axes[1].imshow(segmentation_map, cmap="gray", interpolation="nearest")
             axes[1].set_title("Segmentation")
             axes[1].axis("off")
 
         # Confidence Map
         if show_confidence and result.confidence_map is not None:
-
             im_conf = axes[2].imshow(
                 result.confidence_map,
                 cmap="hot",
@@ -917,14 +822,9 @@ class Segmentor:
                 vmax=1,
                 interpolation="nearest"
             )
-
             axes[2].set_title("Confidence Map")
             axes[2].axis("off")
-
-            plt.colorbar(
-                im_conf,
-                ax=axes[2]
-            )
+            plt.colorbar(im_conf, ax=axes[2])
 
         plt.tight_layout()
         plt.show()
@@ -942,7 +842,6 @@ class Segmentor:
             SegmentationResult containing all segmentation information
         """
 
-        # Handle different input types
         if isinstance(image, str):
             image_path = image
             image = cv2.imread(image_path)
@@ -950,8 +849,7 @@ class Segmentor:
                 raise ValueError(f"Failed to read image from path: {image_path}")
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         elif isinstance(image, np.ndarray) and len(image.shape) == 3 and image.shape[2] == 3:
-            # Assume it's already in RGB format
-            pass
+            pass    # Assume it's already in RGB format
         else:
             raise ValueError("Image must be a numpy array (RGB) or path to image file")
 
