@@ -17,6 +17,7 @@ from flask import Flask, jsonify, send_from_directory, redirect, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
+from modules import config
 from modules.Platform.processor import Processor
 from modules.utils.logging_setup import setup_logging, set_level
 logger = setup_logging("INFO", name="Platform.main")
@@ -24,11 +25,11 @@ logger = setup_logging("INFO", name="Platform.main")
 
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'video_processing_secret'
+app.config['SECRET_KEY'] = config.SECRET_KEY
 CORS(app)  # Enable CORS for all routes
 
 # Reduce Socket.IO/engineio log noise in production
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins=config.CORS_ALLOWED_ORIGINS)
 
 # Global processor instance - pass socketio for real-time broadcasting
 processor = Processor(socketio_instance=socketio)
@@ -66,7 +67,7 @@ def receive_telemetry():
 
     return jsonify({'success': True})
 
-def run_telemetry_server(host='0.0.0.0', port=5500):
+def run_telemetry_server(host=config.SERVER_HOST, port=config.TELEMETRY_PORT):
     logger.info("📡 Starting telemetry receiver on %s:%s (POST /telemetry)", host, port)
     telemetry_app.run(host=host, port=port, debug=False, use_reloader=False)
 
@@ -444,7 +445,7 @@ def shutdown_server(signum, frame):
     logger.info("✅ Server shutdown complete.")
     raise SystemExit(0)
 
-def run_processor_server(host='0.0.0.0', port=5000, debug=False, interval=1):
+def run_processor_server(host=config.SERVER_HOST, port=config.PROCESSOR_PORT, debug=False, interval=1):
     """Run the processor server"""
 
     signal.signal(signal.SIGINT, shutdown_server)

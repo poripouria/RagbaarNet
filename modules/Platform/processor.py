@@ -15,6 +15,7 @@ import traceback
 from typing import Any, Dict
 from queue import Queue, Empty
 
+from modules import config
 from modules.Detection.Detector import Detector
 from modules.Music_Generator.Musician import Musician
 from modules.Platform.channels import BaseChannel, AVAILABLE_CHANNELS
@@ -36,7 +37,7 @@ class Processor:
         self.socketio = socketio_instance
         self.frame_counter = 0
 
-        self.input_queue = Queue(maxsize=16)
+        self.input_queue = Queue(maxsize=config.INPUT_QUEUE_MAXSIZE)
 
         self.is_processing = False
         self.current_frame = None
@@ -45,7 +46,7 @@ class Processor:
         self.debug_mode = False
         self.last_debug_time = 0
         self.last_socket_debug_time = 0
-        self.debug_interval = 10.0
+        self.debug_interval = config.DEBUG_INTERVAL
 
         self.main_ui_connected = False
         self.status_page_clients = set()
@@ -55,8 +56,13 @@ class Processor:
 
         logger.info("🔄 Initializing music generation platfom...")
         try:
-            self.musician = Musician('lstm-onessen-orchestral', tempo=120, key_signature="C_major", time_signature=(4,4))
-            self.music_queue = Queue(maxsize=8)
+            self.musician = Musician(
+                config.DEFAULT_MUSICIAN_TYPE,
+                tempo=config.DEFAULT_TEMPO,
+                key_signature=config.DEFAULT_KEY_SIGNATURE,
+                time_signature=config.DEFAULT_TIME_SIGNATURE
+            )
+            self.music_queue = Queue(maxsize=config.MUSIC_QUEUE_MAXSIZE)
             self.current_music = None
             self.music_enabled = True
             logger.info("✅ Music Generator initialized successfully")
@@ -66,7 +72,7 @@ class Processor:
             self.music_enabled = False
 
         # Determine audio backend for music output (tone, midi, or both)
-        self.audio_backend = os.environ.get('RAGBAARNET_AUDIO_BACKEND', 'tone').strip().lower()
+        self.audio_backend = config.DEFAULT_AUDIO_BACKEND
         if self.audio_backend not in ('tone', 'midi', 'both'):
             logger.warning("⚠️ Invalid audio backend '%s' - defaulting to 'tone'.", self.audio_backend)
             self.audio_backend = 'tone'
