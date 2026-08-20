@@ -61,7 +61,6 @@ class Processor:
                 key_signature=config.DEFAULT_KEY_SIGNATURE,
                 time_signature=config.DEFAULT_TIME_SIGNATURE
             )
-            self.music_queue = Queue(maxsize=config.MUSIC_QUEUE_MAXSIZE)
             self.current_music = None
             self.music_enabled = True
             logger.info("✅ Music Generator initialized successfully")
@@ -238,21 +237,14 @@ class Processor:
                             'time_signature': self.musician.time_signature,
                         }
 
-                        if self.music_queue.full():
-                            try:
-                                self.music_queue.get_nowait()
-                            except Empty:
-                                pass
-
-                        self.music_queue.put(music_data)
                         self.current_music = music_data
                         self._broadcast_music_update(music_data)
 
                 logger.info("🎞️ Frame %d processed.", self.frame_counter)
                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                     self.last_debug_time = time.time()
-                    logger.debug("🖥️ Frame %d info: Queue size: %d, Music queue size: %d",
-                                 self.frame_counter, self.input_queue.qsize(), self.music_queue.qsize())
+                    logger.debug("🖥️ Frame %d info: Queue size: %d",
+                                 self.frame_counter, self.input_queue.qsize())
 
                 self.frame_counter += 1
 
@@ -338,7 +330,6 @@ class Processor:
             'music_enabled': self.music_enabled if hasattr(self, 'music_enabled') else False,
             'active_channel': getattr(self.channel, 'name', None),
             'queue_size': self.input_queue.qsize(),
-            'music_queue_size': self.music_queue.qsize() if hasattr(self, 'music_queue') else 0,
         }
 
     def get_synchronized_display(self, for_main_ui=True):

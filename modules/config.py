@@ -20,7 +20,6 @@ SECRET_KEY = 'video_processing_secret'
 
 # --- Pipeline Settings ---
 INPUT_QUEUE_MAXSIZE = 16
-MUSIC_QUEUE_MAXSIZE = 16
 DEBUG_INTERVAL = 10.0       # Seconds between debug logs
 JPEG_QUALITY = 75
 PROCESSING_MAX_SIDE = int(os.environ.get('RAGBAARNET_PROCESSING_MAX_SIDE', 0)) or None

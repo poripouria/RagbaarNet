@@ -389,7 +389,6 @@ def handle_get_music_status():
                 'time_signature': processor.musician.time_signature,
                 'musician_type': processor.musician.musician_type,
                 'instrument': processor.musician.instrument,
-                'queue_size': processor.music_queue.qsize() if hasattr(processor, 'music_queue') else 0,
             }
         else:
             status = {'enabled': False, 'musician_available': False}
