@@ -314,7 +314,7 @@ class SegformerSegmentor(BaseSegmentor):
     """
 
     def __init__(self, model_path: str = config.SEGFORMER_MODEL_PATH, device: str = 'auto',
-        local_files_only: Optional[bool] = None, return_confidence: bool = True,
+        local_files_only: Optional[bool] = None, return_confidence: bool = True
     ):
         """
         Initialize Segformer segmentor.
@@ -322,6 +322,7 @@ class SegformerSegmentor(BaseSegmentor):
         Args:
             model_path: Hugging Face model identifier or local path
             device: Device to run the model on
+            local_files_only: Whether model loading should be restricted to local files only (no network)
             return_confidence: Whether to compute per-pixel confidence map
         """
 
@@ -572,7 +573,7 @@ class Segmentor:
     allowing easy switching between models and unified result handling.
     """
 
-    def __init__(self, model_type: str = 'segformer', model_path: str = None, device: str = 'auto'):
+    def __init__(self, model_type: str = 'yolo', model_path: str = None, device: str = 'auto'):
         """
         Initialize the main Segmentor.
 
@@ -589,9 +590,9 @@ class Segmentor:
 
         # Check and log if GPU is available and will be used
         if torch.cuda.is_available():
-            logger.info(f"🔥CUDA is available. {self.model_type} will run on GPU.")
+            logger.info(f"🔥 CUDA is available. {self.model_type} will run on GPU.")
         else:
-            logger.info(f"⚠️CUDA is NOT available. {self.model_type} will run on CPU, which may be slow.")
+            logger.info(f"⚠️ CUDA is NOT available. {self.model_type} will run on CPU, which may be slow.")
 
     def _create_segmentor(self, model_type: str, model_path: str, device: str) -> BaseSegmentor:
         """Create the appropriate segmentor based on model type."""
@@ -600,16 +601,13 @@ class Segmentor:
 
         if model_type_norm == 'yolo':
             if model_path is None:
-                model_path = "yolo11s-seg.pt"
+                model_path = config.YOLO_MODEL_PATH
             return YOLOSegmentor(model_path, device)
         elif model_type_norm == 'segformer':
             if model_path is None:
                 model_path = "nvidia/segformer-b2-finetuned-cityscapes-1024-1024"
-
             is_local_path = model_path and os.path.exists(model_path)
-
             return SegformerSegmentor(model_path=model_path, device=device, local_files_only=is_local_path)
-
         else:
             raise ValueError(f"Unsupported model type: {model_type}.\n"
                              f"Supported types: 'yolo', 'segformer'")
