@@ -242,7 +242,7 @@ class Processor:
                 logger.info("🎞️ Frame %d processed.", self.frame_counter)
                 if self.debug_mode and (time.time() - self.last_debug_time) > self.debug_interval:
                     logger.debug("🖥️ Frame %d info: Queue size: %d, Last debug time: %f",
-                                 self.frame_counter, self.input_queue.qsize(), self.last_debug_time)
+                                 self.frame_counter, self.input_queue.qsize(), time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.last_debug_time)))
                     self.last_debug_time = time.time()
 
                 self.frame_counter += 1
