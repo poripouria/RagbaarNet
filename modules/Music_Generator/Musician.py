@@ -743,8 +743,8 @@ class Musician:
         Save every MusicFrame generated so far as a MIDI file and a companion JSON dump.
 
         Args:
-            format: The format to save the melody in ("midi", "json", or "both").
             save_path: Optional directory or base file path (without extension) for the output.
+            format: The format to save the melody in ("midi", "json", or "both").
         """
 
         def _resolve_track_channel(instrument: str, event_channel: int, channel_owners: dict) -> int:
@@ -797,7 +797,7 @@ class Musician:
         if format == "both" or format == "midi":
             midi_path = base_path.with_suffix(".mid")
             try:
-                ppq = config.MIDI_TICKS_PER_BEAT
+                ppq = config.MIDI_TICKS_PER_BEAT    # Pulses Per Quarter note (PPQ) for MIDI timing resolution
                 
                 timeline = [(snapshot["timestamp"], "settings", snapshot) 
                             for snapshot in self._settings_history]
