@@ -500,8 +500,7 @@ function ragbaarNet(scene) {
             const end = editor.selectionEnd;
             editor.value = editor.value.slice(0, start) + '\t' + editor.value.slice(end);
             editor.selectionStart = editor.selectionEnd = start + 1;
-            updateGutter();
-            updateHighlight();
+            scheduleRender();
         }
 
         // Ctrl/Cmd+S saves instead of triggering the browser's "Save Page" dialog.
@@ -584,18 +583,30 @@ function ragbaarNet(scene) {
 
     // --- Fake line-number gutter, synced to content + scroll -------------------
     const gutter = document.getElementById('gutter');
+    let lastGutterLineCount = -1;
 
     function updateGutter() {
         const lineCount = editor.value.split('\n').length;
+        // Skip the rebuild (and its reflow) when the line count hasn't actually changed
+        if (lineCount === lastGutterLineCount) return;
+        lastGutterLineCount = lineCount;
         let html = '';
         for (let i = 1; i <= lineCount; i++) html += `<div>${i}</div>`;
         gutter.innerHTML = html;
     }
 
-    editor.addEventListener('input', () => {
-        updateGutter();
-        updateHighlight();
-    });
+    let renderScheduled = false;
+    function scheduleRender() {
+        if (renderScheduled) return;
+        renderScheduled = true;
+        requestAnimationFrame(() => {
+            renderScheduled = false;
+            updateGutter();
+            updateHighlight();
+        });
+    }
+
+    editor.addEventListener('input', scheduleRender);
     editor.addEventListener('scroll', () => {
         gutter.scrollTop = editor.scrollTop;
         highlightPre.scrollTop = editor.scrollTop;
