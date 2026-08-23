@@ -42,7 +42,7 @@ let frameCounter = 0;
 let lastFrameSentTime = 0;
 
 // Adapt frame send rate on mobile to reduce bandwidth/CPU contention
-let frameSendInterval = isMobileDevice() ? 250 : 150;
+let frameSendInterval = isMobileDevice() ? 180 : 60;
 
 // ms
 let processingCanvas = null;
