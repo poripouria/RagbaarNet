@@ -119,7 +119,7 @@ LSTM_SINGLE_FILE_DATASET = LSTM_MODEL_DIR / 'single_file_dataset'
 
 # Datasets
 KERN_DATASET_PATH = PROJECT_ROOT / "Dataset/KernScores/essen/europa/deutschl"
-LMD_DATASET_PATH = PROJECT_ROOT / "Dataset/Lakh MIDI"  # Placeholder
+LMD_DATASET_PATH = PROJECT_ROOT / "Dataset/Lakh MIDI" / "clean_midi"
 
 # --- Mappings ---
 RULE_BASED_CLASS_MAPPING = {
