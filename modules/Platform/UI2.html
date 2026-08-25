@@ -47,7 +47,7 @@
 
     .traffic-lights { display: flex; gap: 7px; }
     .traffic-lights span {
-        width: 11px; height: 11px; border-radius: 50%; display: inline-block;
+        width: 11px; height: 11px; border-radius: 50%; display: inline-block; cursor: pointer;
     }
     .traffic-lights .red { background: #ff5f56; }
     .traffic-lights .yellow { background: #ffbd2e; }
@@ -75,6 +75,30 @@
     }
     .status-dot.connected { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
 
+    /* --- onboarding tip banner ----------------------------------------------- */
+    .tip-banner {
+        background: rgba(0, 255, 136, 0.08);
+        border-bottom: 1px solid var(--border-color);
+        padding: 8px 16px;
+        font-size: 13px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: var(--text-primary);
+        flex-shrink: 0;
+    }
+    .tip-banner strong { color: var(--accent); }
+    .tip-banner button {
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        font-size: 18px;
+        cursor: pointer;
+        line-height: 1;
+        padding: 0 4px;
+    }
+    .tip-banner button:hover { color: var(--text-primary); }
+
     /* --- editor area -------------------------------------------------------- */
     .editor-wrapper {
         flex: 1;
@@ -97,21 +121,6 @@
     }
 
     .gutter div { padding-right: 12px; }
-
-    #editor {
-        flex: 1;
-        background: var(--bg-editor);
-        color: var(--text-primary);
-        font-family: 'Consolas', 'Courier New', monospace;
-        font-size: 14px;
-        line-height: 1.6;
-        padding: 16px;
-        border: none;
-        outline: none;
-        resize: none;
-        tab-size: 4;
-        white-space: pre;
-    }
 
     /* --- bottom status bar --------------------------------------------------- */
     .statusbar {
@@ -152,31 +161,6 @@
         gap: 6px;
     }
 
-    /* --- start-engine overlay (Web Audio needs a user gesture) --------------- */
-    .start-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.75);
-        backdrop-filter: blur(2px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 50;
-    }
-
-    .start-btn {
-        background: var(--accent);
-        color: #0a0a0a;
-        border: none;
-        border-radius: 10px;
-        padding: 14px 28px;
-        font-size: 15px;
-        font-weight: 600;
-        cursor: pointer;
-        box-shadow: 0 4px 16px rgba(0, 255, 136, 0.3);
-    }
-    .start-btn:hover { filter: brightness(1.08); }
-
     .volume-control {
         display: flex;
         align-items: center;
@@ -204,7 +188,7 @@
         padding: 0;
     }
     .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .icon-btn.stop-btn:hover { border-color: #ff5f56; color: #ff5f56; }
+    .icon-btn.stop-btn.playing:hover { border-color: #ff5f56; color: #ff5f56; }
 
     /* Editable filename in the title bar - looks like plain text until you
        notice the dashed underline, then it's obviously an input. */
@@ -223,11 +207,7 @@
         border-bottom-color: var(--text-muted);
     }
 
-    /* --- syntax-highlighted editor -------------------------------------------
-       Classic overlay trick: a real <textarea> sits on top with invisible text
-       (just a visible caret), while a Prism-highlighted <pre><code> underneath,
-       kept pixel-identical (same font/padding/line-height) and scroll-synced,
-       shows the colored text through it. */
+    /* --- syntax-highlighted editor ------------------------------------------- */
     .code-area {
         position: relative;
         flex: 1;
@@ -277,18 +257,38 @@
         color: var(--text-muted);
         opacity: 1;
     }
+
+    /* --- mobile warning overlay ---------------------------------------------- */
+    .mobile-warning {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: var(--bg-primary);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+        text-align: center;
+        visibility: hidden;
+        opacity: 0;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+
+    .mobile-warning.visible {
+        visibility: visible;
+        opacity: 1;
+    }
 </style>
 </head>
 <body>
 
-    <div class="start-overlay" id="startOverlay">
-        <button class="start-btn" id="startBtn">🎵 Start Music Engine</button>
-    </div>
-
     <div class="titlebar">
         <div class="titlebar-left">
             <div class="traffic-lights">
-                <span class="red"></span><span class="yellow"></span><span class="green"></span>
+                <span class="red" id="redBtn" title="Close / Save with confirmation"></span>
+                <span class="yellow"></span>
+                <span class="green" id="greenBtn" title="Quick Save"></span>
             </div>
             <div class="titlebar-title">
                 <strong>RagbaarNet</strong> —
@@ -303,9 +303,13 @@
                 <input type="range" id="volumeSlider" min="0" max="100" value="70">
                 <span id="volumeLabel">70%</span>
             </div>
-            <button class="icon-btn" id="saveBtn" title="Save as file (Ctrl+S)">💾</button>
-            <button class="icon-btn stop-btn" id="stopBtn" title="Silence everything immediately">⏹</button>
+            <button class="icon-btn stop-btn" id="stopBtn" title="Start Music Engine">▶</button>
         </div>
+    </div>
+
+    <div class="tip-banner" id="tipBanner">
+        <span>💡 <strong>Tip:</strong> Click the <strong>▶ Play button</strong> to start the music engine, and rename <strong>"session.js"</strong> to change syntax highlighting.</span>
+        <button id="closeTipBtn" title="Dismiss tip">&times;</button>
     </div>
 
     <div class="editor-wrapper">
@@ -315,7 +319,8 @@
             <textarea id="editor" spellcheck="false" autocomplete="off" autocapitalize="off"
                 placeholder=
 "// Start typing and enjoy your performance! Each key press sends a NOTE_ON/NOTE_OFF to the processor.
-function ragbaarNet(scene) {
+
+function RagbaarNet(scene) {
     return generateMusic(scene);
 }"
             ></textarea>
@@ -363,23 +368,43 @@ function ragbaarNet(scene) {
     const highlightCode = document.getElementById('highlightCode');
     const highlightPre = document.getElementById('highlightPre');
     const filenameInput = document.getElementById('filenameInput');
+    const editor = document.getElementById('editor');
 
     function updateHighlight() {
         highlightCode.className = `language-${detectLanguage(filenameInput.value)}`;
-        // Trailing newline keeps the <pre>'s height honest when the last line is empty.
         highlightCode.textContent = editor.value + '\n';
         Prism.highlightElement(highlightCode);
     }
 
     function updateVolumeControls(vol) {
+        currentVolume = clampVolumeValue(vol);
         const label = document.getElementById('volumeLabel');
-        if (label) label.textContent = `${vol}%`;
+        if (label) label.textContent = `${currentVolume}%`;
+
+        const slider = document.getElementById('volumeSlider');
+        if (slider) slider.value = currentVolume;
+
+        if (masterGain) {
+            masterGain.gain.rampTo(currentVolume / 100, 0.05);
+        }
     }
 
-    function handleVolumeSliderInput(e) {
-        currentVolume = clampVolumeValue(e.target.value);
-        if (masterGain) masterGain.gain.rampTo(currentVolume / 100, 0.05);
-        updateVolumeControls(currentVolume);
+    function handleVolumeSliderInput() {
+        updateVolumeControls(this.value);
+    }
+
+    // --- Onboarding Tip Banner -------------------------------------------------
+    const tipBanner = document.getElementById('tipBanner');
+    const closeTipBtn = document.getElementById('closeTipBtn');
+
+    if (tipBanner && closeTipBtn) {
+        if (localStorage.getItem('ragbaar_tip_dismissed') === 'true') {
+            tipBanner.style.display = 'none';
+        }
+        closeTipBtn.addEventListener('click', () => {
+            tipBanner.style.display = 'none';
+            localStorage.setItem('ragbaar_tip_dismissed', 'true');
+        });
     }
 
     // --- Processor connection (same host-detection logic as the main UI) -----
@@ -393,6 +418,38 @@ function ragbaarNet(scene) {
 
     const statusDot = document.getElementById('statusDot');
     const statusTextEl = document.getElementById('statusText');
+
+    // --- Mobile device check ---------------------------------------------------
+    function checkDevice() {
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                         (window.innerWidth <= 768) ||
+                         ('ontouchstart' in window);
+
+        if (isMobile) {
+            const warning = document.createElement('div');
+            warning.className = 'mobile-warning visible';
+            warning.innerHTML = `
+                <div style="font-size: 64px; margin-bottom: 24px;">💻</div>
+                <h1 style="font-size: 24px; margin-bottom: 16px;">Laptop Recommended</h1>
+                <p style="font-size: 16px; line-height: 1.5; color: var(--text-muted); max-width: 400px; margin-bottom: 32px;">
+                    RagbaarNet uses real-time LSTM models that require significant CPU power. Mid-level mobile phones may experience audio noise and performance issues.
+                </p>
+                <p style="font-size: 16px; line-height: 1.5; color: var(--text-muted); max-width: 400px; margin-bottom: 32px;">
+                    For the best orchestral experience, please use a <strong>laptop or desktop computer</strong>.
+                </p>
+                <button id="ignoreMobileWarning" style="background: var(--accent); color: var(--bg-primary); border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; font-size: 15px; cursor: pointer;">
+                    Continue on Mobile (Performance may suffer)
+                </button>
+            `;
+            document.body.appendChild(warning);
+
+            document.getElementById('ignoreMobileWarning').addEventListener('click', () => {
+                warning.style.opacity = '0';
+                setTimeout(() => warning.remove(), 300);
+            });
+        }
+    }
+    checkDevice();
 
     socket.on('connect', () => {
         statusDot.classList.add('connected');
@@ -408,45 +465,52 @@ function ragbaarNet(scene) {
         statusTextEl.textContent = 'Connection error — is main.py running?';
     });
 
-    // The actual sound: hand every music_update straight to audio-engine.js's own handler. 
-    // It schedules playMusicEvent() per event (note_on -> triggerAttack, note_off -> stopNote)
     let noteCount = 0;
     const noteCountEl = document.getElementById('noteCount');
     socket.on('music_update', (data) => {
         noteCount += (data.events_count || 0);
         noteCountEl.textContent = noteCount;
-        handleMusicEvents(data);
+        handleMusicEvents(data); // from audio-engine.js
     });
 
-    // --- Start-engine gesture (Web Audio requires a real user interaction) -----
-    const startOverlay = document.getElementById('startOverlay');
-    const startBtn = document.getElementById('startBtn');
+    // --- Start-engine gesture --------------------------------------------------
+    const stopBtn = document.getElementById('stopBtn');
 
-    startBtn.addEventListener('click', async () => {
-        try {
-            await Tone.start();
-            initializeAudioSystem();          // builds the mastering chain + instrument factories
-            isMusicGenerationActive = true;   // audio-engine.js checks this before playing tonal notes
-            Tone.Transport.bpm.value = currentTempo;
-            Tone.Transport.start();
-            initBeatGenerator();
-            startOverlay.style.display = 'none';
-            editor.focus();
-            console.log('🎵 Audio engine started');
-        } catch (err) {
-            console.error('❌ Failed to start audio engine:', err);
-            statusTextEl.textContent = 'Failed to start audio — see console';
+    stopBtn.addEventListener('click', async () => {
+        if (!isMusicGenerationActive) {
+            try {
+                await Tone.start();
+                if (typeof initializeAudioSystem === 'function') {
+                    initializeAudioSystem();
+                }
+                isMusicGenerationActive = true;
+                Tone.Transport.bpm.value = currentTempo;
+                Tone.Transport.start();
+                if (typeof initBeatGenerator === 'function') initBeatGenerator();
+
+                stopBtn.textContent = '■';
+                stopBtn.title = 'Silence everything immediately';
+                stopBtn.classList.add('playing');
+                editor.focus();
+                console.log('🎵 Audio engine started');
+            } catch (err) {
+                console.error('❌ Failed to start audio engine:', err);
+                statusTextEl.textContent = 'Failed to start audio — see console';
+            }
+        } else {
+            isMusicGenerationActive = false;
+            Tone.Transport.stop();
+            if (typeof hardStopAllAudio === 'function') hardStopAllAudio();
+            if (typeof stopBeatGenerator === 'function') stopBeatGenerator();
+
+            stopBtn.textContent = '▶';
+            stopBtn.title = 'Start Music Engine';
+            stopBtn.classList.remove('playing');
+            console.log('🛑 Audio engine stopped');
         }
     });
 
-    document.getElementById('stopBtn').addEventListener('click', () => {
-        if (typeof hardStopAllAudio === 'function') {
-            hardStopAllAudio();
-            stopBeatGenerator();
-        }
-    });
-
-    // --- Save (downloads the buffer under whatever name is in the title bar) ---
+    // --- Save functionality ----------------------------------------------------
     function saveFile() {
         const filename = filenameInput.value.trim() || 'session.txt';
         const blob = new Blob([editor.value], { type: 'text/plain' });
@@ -460,10 +524,11 @@ function ragbaarNet(scene) {
         URL.revokeObjectURL(url);
     }
 
-    document.getElementById('saveBtn').addEventListener('click', saveFile);
+    document.getElementById('redBtn').addEventListener('click', () => {
+        if (confirm("Save the file?")) saveFile();
+    });
+    document.getElementById('greenBtn').addEventListener('click', saveFile);
 
-    // Filename drives syntax highlighting (see detectLanguage above) and
-    // auto-sizes to its own content so it doesn't look like a fixed-width box.
     function resizeFilenameInput() {
         filenameInput.size = Math.max(6, filenameInput.value.length);
     }
@@ -474,7 +539,6 @@ function ragbaarNet(scene) {
     resizeFilenameInput();
 
     // --- Keystroke capture -----------------------------------------------------
-    const editor = document.getElementById('editor');
     const lastKeyEl = document.getElementById('lastKey');
     const heldKeysEl = document.getElementById('heldKeys');
     const heldKeys = new Set();
@@ -503,14 +567,11 @@ function ragbaarNet(scene) {
             scheduleRender();
         }
 
-        // Ctrl/Cmd+S saves instead of triggering the browser's "Save Page" dialog.
-        // The keystroke still counts musically (see below) - it's a real keypress.
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
             e.preventDefault();
             saveFile();
         }
 
-        // Ignore OS key-repeat: we only want one NOTE_ON per physical press.
         if (e.repeat) return;
 
         const key = e.key.toLowerCase();
@@ -525,12 +586,9 @@ function ragbaarNet(scene) {
         const key = e.key.toLowerCase();
         heldKeys.delete(key);
         renderHeldKeys();
-
         sendEvent('keyup', key);
     });
 
-    // If the editor loses focus mid-keypress (alt-tab, etc.),
-    // release everything so Musician doesn't hold a note forever.
     editor.addEventListener('blur', () => {
         heldKeys.forEach(key => sendEvent('keyup', key));
         heldKeys.clear();
@@ -539,11 +597,10 @@ function ragbaarNet(scene) {
         releaseMouseSoon.cancel();
     });
 
-    // --- Scroll -> string, mouse movement -> pad --------------------------------
+    // --- Scroll & Mouse gestures -----------------------------------------------
     function makeGestureTrigger(key, holdMs) {
         let isHeld = false;
         let releaseTimer = null;
-
         function trigger() {
             if (!isHeld) {
                 isHeld = true;
@@ -555,24 +612,19 @@ function ragbaarNet(scene) {
                 sendEvent('keyup', key);
             }, holdMs);
         }
-
         trigger.cancel = () => {
             clearTimeout(releaseTimer);
             if (isHeld) sendEvent('keyup', key);
             isHeld = false;
         };
-
         return trigger;
     }
 
     const releaseScrollSoon = makeGestureTrigger('scroll', 250);
     const releaseMouseSoon = makeGestureTrigger('mousemove', 350);
 
-    editor.addEventListener('wheel', () => {
-        releaseScrollSoon();
-    }, { passive: true });
+    editor.addEventListener('wheel', () => releaseScrollSoon(), { passive: true });
 
-    // Throttle mousemove sampling
     let lastMouseSample = 0;
     editor.addEventListener('mousemove', () => {
         const now = Date.now();
@@ -581,13 +633,12 @@ function ragbaarNet(scene) {
         releaseMouseSoon();
     });
 
-    // --- Fake line-number gutter, synced to content + scroll -------------------
+    // --- Gutter & Highlighting sync --------------------------------------------
     const gutter = document.getElementById('gutter');
     let lastGutterLineCount = -1;
 
     function updateGutter() {
         const lineCount = editor.value.split('\n').length;
-        // Skip the rebuild (and its reflow) when the line count hasn't actually changed
         if (lineCount === lastGutterLineCount) return;
         lastGutterLineCount = lineCount;
         let html = '';
