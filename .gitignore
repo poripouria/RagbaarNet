@@ -22,6 +22,7 @@ Dataset/
 FL Studio/
 modules/utils/Tests/
 modules/Music_Generator/Generated Melodies/
+modules/Models/Music/Transformer_OnLakh
 assets/test/
 single_file_dataset
 
