@@ -25,6 +25,7 @@ modules/Music_Generator/Generated Melodies/
 modules/Models/Music/Transformer_OnLakh
 assets/test/
 single_file_dataset
+modules/utils/Music Representations/_prev/
 
 # Large model weights (keep local)
 modules/Models/Segmentation/Pre-trained Models/*
