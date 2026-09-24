@@ -284,13 +284,13 @@ class RandomMusician(BaseMusician):
                 logger.info(f"Skipping unimportant object class '{obj_class}'.")
                 continue
 
-            note = random.choice(self.vocabs)
-            velocity = 90
-            instrument = "piano"
-            channel = 0
             event = None
+            note = None
+            velocity, instrument, channel = 90, "piano", 0
+
             if e["type"] in self.NOTE_ON_TYPES:
                 event = "note_on"
+                note = random.choice(self.vocabs)
                 self.active_notes[channel][e["object_id"]] = {
                     "voice_id": voice_id,
                     "note": note,
@@ -301,7 +301,17 @@ class RandomMusician(BaseMusician):
                 voice_id += 1
             elif e["type"] in self.NOTE_OFF_TYPES:
                 event = "note_off"
-                self.active_notes[channel].pop(e["object_id"], None)
+                
+                # Find the related note for this object_id
+                related_note = None
+                if e["object_id"] in self.active_notes[0]:
+                    related_note = self.active_notes[0][e["object_id"]]["note"]
+                    channel = self.active_notes[0][e["object_id"]]["channel"]
+                    self.active_notes[0].pop(e["object_id"], None)
+                else:
+                    logger.warning(f"No previous note found to turn off on release event for object_id {e['object_id']}.")
+                    continue
+                note = related_note
             else:
                 continue
 
