@@ -9,6 +9,7 @@ It supports various music generation strategies with easy integration for additi
 import time
 import json
 import mido
+import random
 from pathlib import Path
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
@@ -138,7 +139,6 @@ class RuleBasedMusician(BaseMusician):
     def __init__(self, key_signature=config.DEFAULT_KEY_SIGNATURE, time_signature: tuple=config.DEFAULT_TIME_SIGNATURE):
         """
         Args:
-            tempo: Music tempo in BPM
             key_signature: Key signature for music generation
             time_signature: Time signature for music generation
         """
@@ -237,6 +237,113 @@ class RuleBasedMusician(BaseMusician):
             }
         )
 
+class RandomMusician(BaseMusician):
+    """
+    Random musician that generates music events randomly, without any scene event mapping.
+    """
+
+    def __init__(self, key_signature=config.DEFAULT_KEY_SIGNATURE, time_signature: tuple=config.DEFAULT_TIME_SIGNATURE):
+        """
+        Args:
+            key_signature: Key signature for music generation
+            time_signature: Time signature for music generation
+        """
+        super().__init__(key_signature, time_signature)
+
+        self.important_labels = [
+            "car", "truck", "bus", "train", "plane",
+            "bicycle", "motorcycle", "person",
+            "traffic light", "traffic sign", "stop sign",
+        ]
+
+        with open(config.LSTM_MAPPING_PATH, 'r') as f:
+            self.mapping = json.load(f)
+        # Remove "r", "_" and "/" from the vocabs to avoid generating rests or sustain events randomly
+        self.vocabs = [int(note) for note in self.mapping.keys() if note not in ("r", "_", "/")]
+        logger.info(f"List of vocabs ({len(self.vocabs)}): {self.vocabs}")
+
+        logger.info(f"🎵 {self.__class__.__name__} initialized with key_signature={key_signature}, time_signature={time_signature}")
+
+    def generate_music(self, results, frame_id, state):
+        """
+        Generate random notes for NOT_ON event types.
+        """
+
+        logger.info(f"🎵 Generating Random music for frame {frame_id}")
+
+        self.frame_counter = frame_id
+
+        scene_events = results
+        music_events = []
+        voice_id = 0
+
+        for e in scene_events:
+
+            obj_class = e["class"]
+            if obj_class.split("_")[0] not in self.important_labels:
+                logger.info(f"Skipping unimportant object class '{obj_class}'.")
+                continue
+
+            note = random.choice(self.vocabs)
+            velocity = 90
+            instrument = "piano"
+            channel = 0
+            event = None
+            if e["type"] in self.NOTE_ON_TYPES:
+                event = "note_on"
+                self.active_notes[channel][e["object_id"]] = {
+                    "voice_id": voice_id,
+                    "note": note,
+                    "velocity": velocity,
+                    "instrument": instrument,
+                    "channel": channel
+                }
+                voice_id += 1
+            elif e["type"] in self.NOTE_OFF_TYPES:
+                event = "note_off"
+                self.active_notes[channel].pop(e["object_id"], None)
+            else:
+                continue
+
+            music_events.append(
+                MusicEvent(
+                    event_type=event,
+                    note=note,
+                    channel=channel,
+                    velocity=velocity if e["type"] in self.NOTE_ON_TYPES else 0,
+                    instrument=instrument,
+                    timeid=self.frame_counter,
+                    timestamp=time.time(),
+                    metadata=e
+                )
+            )
+            logger.info(f"Mapped scene event: {e} to music event: 'type': {event}, 'note': {note}, 'velocity': {velocity if e['type'] in self.NOTE_ON_TYPES else 0}, 'instrument': '{instrument}'")
+
+        for object_id, note_info in list(self.active_notes[0].items()):
+            if self._is_stale(state, object_id):
+                music_events.append(
+                    MusicEvent(
+                        event_type="note_off",
+                        note=note_info["note"],
+                        channel=note_info.get("channel", 0),
+                        velocity=0,
+                        instrument=note_info["instrument"],
+                        timeid=self.frame_counter,
+                        timestamp=time.time(),
+                        metadata={"object_id": object_id}
+                    )
+                )
+                self.active_notes[0].pop(object_id, None)
+                logger.warning(f"Auto-released note for object_id {object_id} due to missing frames.")
+
+        return MusicFrame(
+            events=music_events,
+            frame_id=frame_id,
+            metadata={
+                "scene_events": scene_events,
+            }
+        )
+
 class LSTMMusician(BaseMusician):
     """
     LSTM-based musician that generates music using a trained LSTM model. This musician
@@ -313,16 +420,16 @@ class LSTMMusician(BaseMusician):
                 if area is not None:
                     if area < 0.005:
                         logger.info(f"Event with very small area ({area}). Using minimum velocity for class '{obj_class}'.")
-                        velocity = 15
+                        velocity = 32
                     else:
-                        # Scale area to velocity range (Power Curve Scaler) Area:0.005-0.5, Velocity:32-128
+                        # Scale area to velocity range (Power Curve Scaler) Area:0.005-0.5, Velocity:64-128
                         normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
                         curved_area = normalized_area ** 0.8
-                        velocity = int(curved_area * (127 - 31) + 31)
+                        velocity = int(curved_area * (127 - 63) + 63)
                 else:
                     # Non-spatial events (e.g. a keyboard NOTE_ON) have no area - fall back to the event's 'intensity'
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
-                    velocity = int(intensity * (127 - 31) + 31)
+                    velocity = int(intensity * (127 - 63) + 63)
 
                 # Generate new notes using the LSTM model
                 self._rt_generator = self.generator.generate_melody_RT(
@@ -490,14 +597,14 @@ class LSTMOrchestralMusician(BaseMusician):
                 if area is not None:
                     if area < 0.005:
                         logger.info(f"Event with very small area ({area}). Using minimum velocity for class '{obj_class}'.")
-                        velocity = 15
+                        velocity = 32
                     else:
                         normalized_area = min(1.0, (area - 0.005) / (0.5 - 0.005))
                         curved_area = normalized_area ** 0.8
-                        velocity = int(curved_area * (127 - 31) + 31)
+                        velocity = int(curved_area * (127 - 63) + 63)
                 else:
                     intensity = max(0.0, min(1.0, e.get("intensity", 1.0)))
-                    velocity = int(intensity * (127 - 31) + 31)
+                    velocity = int(intensity * (127 - 63) + 63)
 
                 self._rt_generator = self.generator.generate_melody_RT(
                     seed=" ".join(self.last_seed_notes[instrument]),
@@ -579,6 +686,7 @@ class LSTMOrchestralMusician(BaseMusician):
         )
 
 
+
 class Musician:
     """
     Main Musician class that provides a unified interface for different music generation models.
@@ -592,6 +700,11 @@ class Musician:
             "class": RuleBasedMusician,
             "label": "Rule-Based Musician",
             "description": "Rule-based multi-instrument demo mapping (drums, bass, strings, etc.).",
+        },
+        "random": {
+            "class": RandomMusician,
+            "label": "Random Musician",
+            "description": "Randomly generate notes.",
         },
         "lstm-onessen": {
             "class": LSTMMusician,
